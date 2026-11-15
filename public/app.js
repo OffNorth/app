@@ -1,6 +1,7 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
 import { getConsent, setConsent, SERVICES } from './consent.js';
 import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix, LOCALES, setLang, t, TV_LOCALE } from './i18n.js';
+import { makeSnapshot } from './snapshot.js';
 const REFRESH_MS = 60_000;
 const TABS = ['crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
 const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
@@ -27,9 +28,10 @@ const state = {
 /* ---------- Formatage ---------- */
 const loc = () => LOCALES[getLang()];
 const nf = (min, max = min) => new Intl.NumberFormat(loc(), { minimumFractionDigits: min, maximumFractionDigits: max });
-let NF0, NF1, NF2, timeFmt, timeSecFmt;
+let NF0, NF1, NF2, timeFmt, timeSecFmt, dateTimeFmt;
 function initFormats() {
   NF0 = nf(0); NF1 = nf(1); NF2 = nf(2);
+  dateTimeFmt = new Intl.DateTimeFormat(loc(), { dateStyle: 'long', timeStyle: 'short' });
   timeFmt = new Intl.DateTimeFormat(loc(), { hour: '2-digit', minute: '2-digit' });
   timeSecFmt = new Intl.DateTimeFormat(loc(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
@@ -205,28 +207,38 @@ function heatmapPlaceholder(statsEl, map) {
     : `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">${t('noData')}</div>`;
 }
 
-const upDown = (list) => {
+/* Statistiques au-dessus des heatmaps : { label, value (texte ou segments colorés), sub, cls } — page et image. */
+function statHTML(s) {
+  const value = Array.isArray(s.value)
+    ? s.value.map((g) => (g.cls ? `<span class="${g.cls}">${esc(g.text)}</span>` : esc(g.text))).join('')
+    : esc(s.value);
+  return `<div class="stat"><div class="stat-label">${esc(s.label)}</div>
+      <div class="stat-value">${value}</div><div class="stat-sub ${s.cls || ''}">${esc(s.sub || '')}</div></div>`;
+}
+function upDown(list) {
   const up = list.filter((c) => isNum(c.changePct) && c.changePct > 0).length;
   const down = list.filter((c) => isNum(c.changePct) && c.changePct < 0).length;
   const na = list.filter((c) => !isNum(c.changePct)).length;
-  return `<div class="stat"><div class="stat-label">${t('upDown')}</div>
-      <div class="stat-value"><span class="pos">▲ ${up}</span> · <span class="neg">▼ ${down}</span></div><div class="stat-sub">${t('inTop25')}${na ? ` · ${na} ${ND}` : ''}</div></div>`;
-};
-const updated = (data) => `<div class="stat"><div class="stat-label">${t('updated')}</div>
-      <div class="stat-value">${fmtTime(data.fetchedAt, true)}</div><div class="stat-sub">${esc(data.source || ND)}${data.stale ? ` · ${t('stale')}` : ''}</div></div>`;
+  return { label: t('upDown'), value: [{ text: `▲ ${up}`, cls: 'pos' }, { text: ' · ' }, { text: `▼ ${down}`, cls: 'neg' }],
+    sub: `${t('inTop25')}${na ? ` · ${na} ${ND}` : ''}` };
+}
+const updated = (data) => ({ label: t('updated'), value: fmtTime(data.fetchedAt, true), sub: `${data.source || ND}${data.stale ? ` · ${t('stale')}` : ''}` });
+
+function cryptoStats(data) {
+  const g = data.global || {};
+  return [
+    { label: t('totalCap'), value: fmtCap(g.totalMarketCap), sub: `${fmtPct(g.totalChangePct)} ${t('over24h')}`, cls: signClass(g.totalChangePct) },
+    { label: t('btcDom'), value: isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}${pctSign()}` : ND, sub: t('ofCap') },
+    upDown(data.coins),
+    updated(data),
+  ];
+}
 
 function renderCrypto() {
   const data = state.crypto;
   const statsEl = $('#crypto-stats'), map = $('#treemap');
   if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
-  const g = data.global || {};
-  statsEl.innerHTML = `
-    <div class="stat"><div class="stat-label">${t('totalCap')}</div>
-      <div class="stat-value">${fmtCap(g.totalMarketCap)}</div><div class="stat-sub ${signClass(g.totalChangePct)}">${fmtPct(g.totalChangePct)} ${t('over24h')}</div></div>
-    <div class="stat"><div class="stat-label">${t('btcDom')}</div>
-      <div class="stat-value">${isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}${pctSign()}` : ND}</div><div class="stat-sub">${t('ofCap')}</div></div>
-    ${upDown(data.coins)}
-    ${updated(data)}`;
+  statsEl.innerHTML = cryptoStats(data).map(statHTML).join('');
   renderTiles(map, data.coins.map((c) => ({ ...c, label: c.symbol })), {
     maxAbs: 8, period: t('period24h'), priceText: (c) => fmtPrice(c.price), onOpen: openChart,
   });
@@ -239,25 +251,103 @@ function fmtStockPrice(v, cur) {
   return `${(Math.abs(v) >= 10000 ? NF0 : NF2).format(v)}\u00a0${esc(cur)}`;
 }
 
-function renderStocks() {
-  const data = state.stocks;
-  const statsEl = $('#stocks-stats'), map = $('#treemap-stocks');
-  if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
+function stocksStats(data) {
   const list = data.companies;
   const total = list.reduce((s, c) => s + (isNum(c.marketCap) ? c.marketCap : 0), 0);
   const us = list.find((c) => /^(NASDAQ|NYSE):/.test(c.tv?.link || ''));
   const usState = us ? statusOf(us) : null;
-  statsEl.innerHTML = `
-    <div class="stat"><div class="stat-label">${t('top25cap')}</div>
-      <div class="stat-value">${fmtCap(total)}</div><div class="stat-sub">${t('hourly')}</div></div>
-    <div class="stat"><div class="stat-label">${t('wallStreet')}</div>
-      <div class="stat-value">${usState ? esc(usState.chip) : ND}</div><div class="stat-sub">${usState ? esc(usState.foot) : ''}</div></div>
-    ${upDown(list)}
-    ${updated(data)}`;
-  renderTiles(map, list, {
+  return [
+    { label: t('top25cap'), value: fmtCap(total), sub: t('hourly') },
+    { label: t('wallStreet'), value: usState ? usState.chip : ND, sub: usState ? usState.foot : '' },
+    upDown(list),
+    updated(data),
+  ];
+}
+
+function renderStocks() {
+  const data = state.stocks;
+  const statsEl = $('#stocks-stats'), map = $('#treemap-stocks');
+  if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
+  statsEl.innerHTML = stocksStats(data).map(statHTML).join('');
+  renderTiles(map, data.companies, {
     maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
   });
 }
+
+/* ---------- Image téléchargeable des heatmaps ---------- */
+let snapURL = null;
+async function openSnapshot(kind) {
+  const crypto = kind === 'crypto';
+  const data = crypto ? state.crypto : state.stocks;
+  const items = crypto ? data?.coins?.map((c) => ({ ...c, label: c.symbol })) : data?.companies;
+  const btn = document.querySelector(`[data-snap="${kind}"]`);
+  if (!items?.length || btn.disabled) return;
+  btn.disabled = true;
+  btn.querySelector('span').textContent = t('snap.making');
+  try {
+    const maxAbs = crypto ? 8 : 4;
+    const old = state.offline[crypto ? 'crypto' : 'stocks'] || data.stale;
+    const blob = await makeSnapshot({
+      title: t('appName'),
+      subtitle: t(crypto ? 'title.crypto' : 'title.actions'),
+      when: `${isNum(data.fetchedAt) ? dateTimeFmt.format(data.fetchedAt) : ND}${old ? ` · ${t('stale')}` : ''}`,
+      stats: crypto ? cryptoStats(data) : stocksStats(data),
+      items,
+      layout: squarify,
+      color: (p) => heat(p, maxAbs),
+      fmtPct: (r) => fmtPct(r.changePct),
+      priceText: crypto ? (c) => fmtPrice(c.price) : (c) => fmtStockPrice(c.price, c.currency),
+      legend: [
+        { color: '#b42323', text: t(crypto ? 'legend.down24' : 'legend.down') },
+        { color: '#2b333d', text: t('legend.flat') },
+        { color: '#15803d', text: t(crypto ? 'legend.up24' : 'legend.upSession') },
+      ],
+      note: t(crypto ? 'snap.noteCrypto' : 'snap.noteStocks'),
+      sources: crypto ? t('snap.srcCrypto', { s: data.source || ND }) : t('snap.srcStocks'),
+      disclaimer: t('disclaimer'),
+      site: location.host,
+    });
+    const stamp = isNum(data.fetchedAt) ? new Date(data.fetchedAt) : new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const name = `marches-${crypto ? 'crypto' : 'entreprises'}-${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.png`;
+    showSnapshot(blob, name);
+  } catch {
+    btn.querySelector('span').textContent = t('snap.failed');
+    setTimeout(() => { btn.querySelector('span').textContent = t('snap.btn'); }, 2500);
+    btn.disabled = false;
+    return;
+  }
+  btn.disabled = false;
+  btn.querySelector('span').textContent = t('snap.btn');
+}
+
+function showSnapshot(blob, name) {
+  if (snapURL) URL.revokeObjectURL(snapURL);
+  snapURL = URL.createObjectURL(blob);
+  const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
+  const canShare = !!(file && navigator.canShare?.({ files: [file] }));
+  $('#snap-img').src = snapURL;
+  $('#snap-save').href = snapURL;
+  $('#snap-save').download = name;
+  const share = $('#snap-share');
+  share.hidden = !canShare;
+  share.onclick = async () => {
+    try { await navigator.share({ files: [file] }); } catch { /* partage annulé */ }
+  };
+  $('#snap').hidden = false;
+  document.body.style.overflow = 'hidden';
+  $('#snap-close').focus();
+}
+function closeSnapshot() {
+  if ($('#snap').hidden) return;
+  $('#snap').hidden = true;
+  $('#snap-img').removeAttribute('src');
+  document.body.style.overflow = '';
+  if (snapURL) { URL.revokeObjectURL(snapURL); snapURL = null; }
+}
+for (const b of document.querySelectorAll('[data-snap]')) b.addEventListener('click', () => openSnapshot(b.dataset.snap));
+$('#snap-close').addEventListener('click', closeSnapshot);
+$('#snap').addEventListener('click', (e) => { if (e.target.id === 'snap') closeSnapshot(); });
 
 /* ---------- Écran graphique TradingView ---------- */
 const tvCache = new Map(); // symbole → réponse /api/tv (ou promesse en cours)
@@ -584,6 +674,7 @@ function applyStatic() {
   document.title = t('appName');
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  for (const el of document.querySelectorAll('[data-i18n-alt]')) el.alt = t(el.dataset.i18nAlt);
   for (const el of document.querySelectorAll('[data-legal]')) el.href = `${legalPrefix(l)}/${el.dataset.legal}.html`;
   const sel = $('#lang');
   if (sel && !sel.options.length) sel.innerHTML = LANGS.map((x) => `<option value="${x}">${LANG_LABELS[x]}</option>`).join('');
@@ -642,7 +733,9 @@ document.querySelector('.tabbar').addEventListener('click', (e) => {
 $('#refresh').addEventListener('click', refresh);
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#chart').hidden) $('#chart-close').click();
+  if (e.key !== 'Escape') return;
+  if (!$('#snap').hidden) closeSnapshot();
+  else if (!$('#chart').hidden) $('#chart-close').click();
 });
 
 /* ---------- Gestes : pull-to-refresh + balayage entre onglets ---------- */

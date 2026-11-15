@@ -33,6 +33,10 @@ export const legalPrefix = (l = lang) => (l === 'fr' ? '' : `/${l}`);
 
 const D = {
   fr: {
+    'snap.btn': 'Télécharger l’image', 'snap.making': 'Création de l’image…', 'snap.failed': 'Échec, réessayez', 'snap.title': 'Image de la heatmap',
+    'snap.hint': 'Sur téléphone, vous pouvez aussi appuyer longuement sur l’image pour l’enregistrer.', 'snap.close': 'Fermer', 'snap.share': 'Partager', 'snap.save': 'Télécharger',
+    'snap.noteCrypto': '· taille = capitalisation · hors stablecoins', 'snap.noteStocks': '· taille = capitalisation',
+    'snap.srcCrypto': 'Source : {s} · cours en dollars US', 'snap.srcStocks': 'Sources : classement companiesmarketcap.com · cours Yahoo Finance (différés)',
     appName: 'Marchés', loading: 'Chargement…', refresh: 'Rafraîchir', language: 'Langue', back: 'Retour', hide: 'Masquer',
     'tab.crypto': 'Crypto', 'tab.actions': 'Actions', 'tab.ameriques': 'Amériques', 'tab.europe': 'Europe', 'tab.asie': 'Asie', 'tab.afrique': 'Afrique',
     'title.crypto': 'Top 25 cryptos hors stablecoins · 24 h', 'title.actions': 'Top 25 entreprises mondiales · séance',
@@ -75,6 +79,10 @@ const D = {
     'note.kospi': 'Graphique : ETF qui suit le KOSPI 200 (indice voisin du KOSPI, non disponible dans ce widget). Prix de l’ETF, pas le niveau de l’indice.',
   },
   en: {
+    'snap.btn': 'Download image', 'snap.making': 'Creating image…', 'snap.failed': 'Failed, try again', 'snap.title': 'Heatmap image',
+    'snap.hint': 'On a phone, you can also long-press the image to save it.', 'snap.close': 'Close', 'snap.share': 'Share', 'snap.save': 'Download',
+    'snap.noteCrypto': '· size = market cap · excl. stablecoins', 'snap.noteStocks': '· size = market cap',
+    'snap.srcCrypto': 'Source: {s} · prices in US dollars', 'snap.srcStocks': 'Sources: ranking companiesmarketcap.com · prices Yahoo Finance (delayed)',
     appName: 'Markets', loading: 'Loading…', refresh: 'Refresh', language: 'Language', back: 'Back', hide: 'Hide',
     'tab.crypto': 'Crypto', 'tab.actions': 'Stocks', 'tab.ameriques': 'Americas', 'tab.europe': 'Europe', 'tab.asie': 'Asia', 'tab.afrique': 'Africa',
     'title.crypto': 'Top 25 cryptos excl. stablecoins · 24h', 'title.actions': 'Top 25 global companies · session',
@@ -117,6 +125,10 @@ const D = {
     'note.kospi': 'Chart: ETF tracking the KOSPI 200 (close to the KOSPI, which is not available in this widget). ETF price, not the index level.',
   },
   zh: {
+    'snap.btn': '下载图片', 'snap.making': '正在生成图片…', 'snap.failed': '失败，请重试', 'snap.title': '热力图图片',
+    'snap.hint': '在手机上，也可以长按图片进行保存。', 'snap.close': '关闭', 'snap.share': '分享', 'snap.save': '下载',
+    'snap.noteCrypto': '· 面积 = 市值 · 不含稳定币', 'snap.noteStocks': '· 面积 = 市值',
+    'snap.srcCrypto': '来源：{s} · 价格以美元计', 'snap.srcStocks': '来源：排名 companiesmarketcap.com · 价格 Yahoo Finance（延迟）',
     appName: '市场行情', loading: '加载中…', refresh: '刷新', language: '语言', back: '返回', hide: '隐藏',
     'tab.crypto': '加密货币', 'tab.actions': '股票', 'tab.ameriques': '美洲', 'tab.europe': '欧洲', 'tab.asie': '亚洲', 'tab.afrique': '非洲',
     'title.crypto': '前25大加密货币（不含稳定币）· 24小时', 'title.actions': '全球市值前25大公司 · 当日',
