@@ -1,9 +1,9 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v5';
+const VERSION = 'v6';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos'; // logos des cryptos, conservés d'une version à l'autre
-const LOGO_HOSTS = ['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com'];
+const LOGO_HOSTS = ['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com', 'companiesmarketcap.com'];
 const ASSETS = [
   '/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-32.png',
@@ -33,7 +33,7 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Logos des cryptos (autre domaine) : cache d'abord, réseau sinon.
+  // Logos des cryptos et des entreprises (autre domaine) : cache d'abord, réseau sinon.
   if (LOGO_HOSTS.includes(url.hostname)) {
     e.respondWith((async () => {
       const cache = await caches.open(IMG);
