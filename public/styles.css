@@ -190,22 +190,6 @@ main {
   padding: 4px 5px; border-radius: 5px; border: 1.5px solid currentColor; min-width: 26px; text-align: center;
 }
 
-/* ---------- Feuille de détail ---------- */
-.sheet { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .5); display: flex; align-items: flex-end; justify-content: center; animation: fade .2s ease; }
-@keyframes fade { from { opacity: 0; } }
-.sheet-card {
-  width: 100%; max-width: 520px; background: var(--surface); border: 1px solid var(--border); border-bottom: 0;
-  border-radius: 20px 20px 0 0; padding: 10px 20px calc(var(--safe-bottom) + 22px);
-  animation: up .25s cubic-bezier(.2, .9, .3, 1);
-}
-@keyframes up { from { transform: translateY(100%); } }
-.sheet-grip { width: 40px; height: 5px; border-radius: 3px; background: var(--border); margin: 0 auto 14px; }
-.sheet h2 { margin: 0; font-size: 22px; }
-.sheet .muted { color: var(--muted); font-size: 14px; margin: 2px 0 14px; }
-.sheet dl { display: grid; grid-template-columns: 1fr auto; gap: 10px 12px; margin: 0; font-size: 16px; }
-.sheet dt { color: var(--muted); }
-.sheet dd { margin: 0; font-weight: 650; text-align: right; }
-
 /* ---------- Écran graphique (TradingView) ---------- */
 .chart {
   position: fixed; inset: 0; z-index: 50; background: var(--bg);
@@ -228,6 +212,7 @@ main {
 }
 .chart-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
 .chart-frame .msg { padding: 24px; line-height: 1.5; }
+.chart-note { margin: -2px 2px 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
 .chart-link {
   display: block; text-align: center; padding: 13px; border-radius: 12px;
   background: var(--surface-2); border: 1px solid var(--border); color: var(--text);

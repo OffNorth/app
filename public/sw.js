@@ -1,5 +1,5 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v2';
+const VERSION = 'v3';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const ASSETS = [

@@ -183,11 +183,11 @@ function renderCrypto() {
 const tvCache = new Map(); // symbole → réponse /api/tv (ou promesse en cours)
 let chartToken = 0;
 
-function tvWidgetURL(tvSymbol) {
+function tvWidgetURL(tvSymbol, interval = '60') {
   let tz = 'Etc/UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* défaut UTC */ }
   const p = new URLSearchParams({
-    symbol: tvSymbol, interval: '60', theme: 'dark', style: '1', locale: 'fr', timezone: tz,
+    symbol: tvSymbol, interval, theme: 'dark', style: '1', locale: 'fr', timezone: tz,
     toolbarbg: '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
     hideideas: '1', studies: '[]',
   });
@@ -205,34 +205,88 @@ function resolveTV(c) {
   return tvCache.get(key);
 }
 
-async function openChart(c, rank, totalTop) {
+const stat = (label, value, cls = '') =>
+  `<div class="stat"><div class="stat-label">${label}</div><div class="stat-value ${cls}">${value}</div></div>`;
+
+/**
+ * Ouvre l'écran graphique. `tv` est un objet ou une promesse :
+ * { tv: 'EXCHANGE:SYMBOL', interval?, link?, note? } | { tv: null, error? }.
+ */
+async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
   const token = ++chartToken;
-  const box = $('#chart'), frame = $('#chart-frame'), link = $('#chart-link');
-  $('#chart-title').innerHTML = `${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`;
-  $('#chart-sub').textContent = `${c.name} · rang ${rank} · variation 24 h`;
-  $('#chart-stats').innerHTML = `
-    <div class="stat"><div class="stat-label">Prix</div><div class="stat-value">${fmtPrice(c.price)}</div></div>
-    <div class="stat"><div class="stat-label">Capitalisation</div><div class="stat-value">${fmtCap(c.marketCap)}</div></div>
-    <div class="stat"><div class="stat-label">Part top 25</div><div class="stat-value">${isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND}</div></div>`;
+  const box = $('#chart'), frame = $('#chart-frame'), link = $('#chart-link'), note = $('#chart-note');
+  $('#chart-title').innerHTML = titleHTML;
+  $('#chart-sub').textContent = sub;
+  $('#chart-stats').innerHTML = statsHTML;
   frame.innerHTML = '<div class="msg">Chargement du graphique…</div>';
   link.hidden = true;
+  note.hidden = true;
   if (box.hidden) {
     box.hidden = false;
     document.body.style.overflow = 'hidden';
     history.pushState({ chart: true }, '');
   }
 
-  const res = await resolveTV(c);
+  const res = await tv;
   if (token !== chartToken || box.hidden) return; // fermé ou autre tuile ouverte entre-temps
   if (res?.tv) {
-    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(c.symbol)}" src="${esc(tvWidgetURL(res.tv))}" allowfullscreen></iframe>`;
-    link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.tv)}`;
+    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen></iframe>`;
+    link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link || res.tv)}`;
     link.hidden = false;
+    if (res.note) { note.textContent = res.note; note.hidden = false; }
   } else if (res?.error) {
     frame.innerHTML = `<div class="msg">Graphique indisponible pour le moment${navigator.onLine ? '' : ' (hors ligne)'}.<br>Réessayez dans un instant.</div>`;
   } else {
-    frame.innerHTML = `<div class="msg">Graphique TradingView ${ND} pour ${esc(c.symbol)} :<br>cette crypto n’y est pas cotée.</div>`;
+    frame.innerHTML = `<div class="msg">${missingMsg}</div>`;
   }
+}
+
+function openChart(c, rank, totalTop) {
+  showChart({
+    titleHTML: `${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
+    sub: `${c.name} · rang ${rank} · variation 24 h`,
+    statsHTML: stat('Prix', fmtPrice(c.price)) + stat('Capitalisation', fmtCap(c.marketCap))
+      + stat('Part top 25', isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND),
+    tv: resolveTV(c),
+    label: c.symbol,
+    missingMsg: `Graphique TradingView ${ND} pour ${esc(c.symbol)} :<br>cette crypto n’y est pas cotée.`,
+  });
+}
+
+/*
+ * Symboles TradingView des indices, vérifiés dans le widget gratuit (nov. 2026).
+ * Certains indices officiels y sont bloqués (licence) : on affiche alors un CFD ou un ETF
+ * qui le suit, signalé à l'écran, et le lien « Ouvrir dans TradingView » mène à l'indice officiel.
+ * Les indices chinois, le Hang Seng et le DAX officiels n'y sont disponibles qu'en journalier.
+ */
+const CFD = (name) => `Graphique : CFD qui suit le ${name} (l’indice officiel n’est pas disponible dans ce widget). Le niveau peut différer légèrement.`;
+const INDEX_TV = {
+  sse: { tv: 'SSE:000001', interval: 'D' },
+  szse: { tv: 'SZSE:399001' },
+  csi300: { tv: 'SSE:000300', interval: 'D' },
+  hsi: { tv: 'HSI:HSI', interval: 'D' },
+  spx: { tv: 'CAPITALCOM:US500', link: 'SP:SPX', note: CFD('S&P 500') },
+  ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: 'Graphique : ETF Fidelity ONEQ qui réplique le Nasdaq Composite (prix de l’ETF en $, pas le niveau de l’indice).' },
+  dji: { tv: 'CAPITALCOM:US30', link: 'DJ:DJI', note: CFD('Dow Jones') },
+  rut: { tv: 'CAPITALCOM:RTY', link: 'TVC:RUT', note: CFD('Russell 2000') },
+  cac: { tv: 'EURONEXT:PX1' },
+  dax: { tv: 'XETR:DAX', interval: 'D' },
+  ftse: { tv: 'CAPITALCOM:UK100', link: 'FTSE:UKX', note: CFD('FTSE 100') },
+  sx5e: { tv: 'STOXX:SX5E' },
+  ibex: { tv: 'BME:IBC' },
+};
+
+function openIndexChart(ix) {
+  const st = statusOf(ix);
+  showChart({
+    titleHTML: `${esc(ix.name)} <span class="${signClass(ix.changePct)}">${fmtPct(ix.changePct)}</span>`,
+    sub: `${st.chip} · ${st.foot}`,
+    statsHTML: stat('Niveau', fmtLevel(ix.price)) + stat('Variation', fmtSigned(ix.change), signClass(ix.change))
+      + stat('Clôture préc.', fmtLevel(ix.prevClose)),
+    tv: INDEX_TV[ix.id] || { tv: null },
+    label: ix.name,
+    missingMsg: `Graphique TradingView ${ND} pour ${esc(ix.name)}.`,
+  });
 }
 
 function closeChart() {
@@ -300,18 +354,7 @@ function renderIndices(region) {
   grid.onclick = (e) => {
     const card = e.target.closest('.idx');
     const ix = card && list.find((i) => i.id === card.dataset.id);
-    if (!ix) return;
-    const st = statusOf(ix);
-    openSheet(`
-      <h2 id="sheet-title">${esc(ix.name)}</h2>
-      <p class="muted">${st.chip} · ${st.foot}</p>
-      <dl>
-        <dt>Niveau</dt><dd>${fmtLevel(ix.price)}${ix.currency ? ` <small>${esc(ix.currency)}</small>` : ''}</dd>
-        <dt>Variation du jour</dt><dd class="${signClass(ix.changePct)}">${fmtPct(ix.changePct)} (${fmtSigned(ix.change)})</dd>
-        <dt>Clôture précédente</dt><dd>${fmtLevel(ix.prevClose)}</dd>
-        <dt>Dernière cotation</dt><dd>${isNum(ix.lastTime) ? `${fmtDay(ix.lastTime)} ${fmtTime(ix.lastTime)}` : ND}</dd>
-        <dt>Source</dt><dd>${esc(ix.source || ND)}</dd>
-      </dl>`);
+    if (ix) openIndexChart(ix);
   };
 }
 
@@ -393,16 +436,8 @@ document.querySelector('.tabbar').addEventListener('click', (e) => {
 });
 $('#refresh').addEventListener('click', refresh);
 
-/* ---------- Feuille de détail ---------- */
-function openSheet(html) {
-  $('#sheet-body').innerHTML = html;
-  $('#sheet').hidden = false;
-}
-$('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet' || e.target.closest('.sheet-grip')) $('#sheet').hidden = true; });
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape') return;
-  if (!$('#chart').hidden) $('#chart-close').click();
-  else $('#sheet').hidden = true;
+  if (e.key === 'Escape' && !$('#chart').hidden) $('#chart-close').click();
 });
 
 /* ---------- Gestes : pull-to-refresh + balayage entre onglets ---------- */
@@ -415,7 +450,7 @@ document.addEventListener('keydown', (e) => {
     ptr.classList.remove('ready');
   };
   window.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1 || !$('#sheet').hidden || !$('#chart').hidden) { active = false; return; }
+    if (e.touches.length !== 1 || !$('#chart').hidden) { active = false; return; }
     active = true;
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
     pulling = window.scrollY <= 0; pull = 0;

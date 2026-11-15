@@ -4,6 +4,7 @@ PWA mobile-first, en français et en thème sombre : heatmap des 25 premières c
 Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 
 - **Crypto** : treemap du top 25 par capitalisation, hors stablecoins (USDT, USDC, USDS, USDe, DAI…). Un appui sur une tuile ouvre son graphique TradingView en plein écran, avec un lien « Ouvrir dans TradingView ». La taille d'une tuile suit la capitalisation ; la couleur va du vert au rouge selon la variation sur 24 h. En-tête : capitalisation totale et sa variation sur 24 h, dominance BTC, nombre de cryptos en hausse et en baisse, heure de mise à jour.
+- **Indices** : un appui sur une tuile ouvre son graphique TradingView. Les indices US et le FTSE 100 officiels sont bloqués dans le widget gratuit : le graphique montre alors un CFD (ou l'ETF ONEQ pour le Nasdaq Composite), avec une mention à l'écran, et « Ouvrir dans TradingView » mène à l'indice officiel.
 - **Chine** : Shanghai Composite, Shenzhen Component, CSI 300, Hang Seng.
 - **USA** : S&P 500, Nasdaq Composite, Dow Jones, Russell 2000.
 - **Europe** : CAC 40, DAX, FTSE 100, Euro Stoxx 50, IBEX 35.

@@ -40,9 +40,9 @@
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
       <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</p>
     </section>
-    <section id="view-chine" class="view" data-tab="chine" aria-label="Chine" hidden><div class="grid" id="grid-chine"></div></section>
-    <section id="view-usa" class="view" data-tab="usa" aria-label="USA" hidden><div class="grid" id="grid-usa"></div></section>
-    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div></section>
+    <section id="view-chine" class="view" data-tab="chine" aria-label="Chine" hidden><div class="grid" id="grid-chine"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-usa" class="view" data-tab="usa" aria-label="USA" hidden><div class="grid" id="grid-usa"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
 
     <div id="install" class="install" hidden></div>
 
@@ -74,14 +74,8 @@
     </div>
     <div class="chart-stats" id="chart-stats"></div>
     <div class="chart-frame" id="chart-frame"></div>
+    <p class="chart-note" id="chart-note" hidden></p>
     <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans TradingView ↗</a>
-  </div>
-
-  <div id="sheet" class="sheet" hidden>
-    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-      <div class="sheet-grip"></div>
-      <div id="sheet-body"></div>
-    </div>
   </div>
 
   <script src="/app.js" type="module"></script>
