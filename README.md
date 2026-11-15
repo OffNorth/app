@@ -3,7 +3,7 @@
 PWA mobile-first, en français et en thème sombre : heatmap des 25 premières cryptos et indices boursiers (Chine, USA, Europe).
 Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 
-- **Crypto** : treemap du top 25 par capitalisation. La taille d'une tuile suit la capitalisation ; la couleur va du vert au rouge selon la variation sur 24 h. En-tête : capitalisation totale et sa variation sur 24 h, dominance BTC, nombre de cryptos en hausse et en baisse, heure de mise à jour.
+- **Crypto** : treemap du top 25 par capitalisation, hors stablecoins (USDT, USDC, USDS, USDe, DAI…). Un appui sur une tuile ouvre son graphique TradingView en plein écran, avec un lien « Ouvrir dans TradingView ». La taille d'une tuile suit la capitalisation ; la couleur va du vert au rouge selon la variation sur 24 h. En-tête : capitalisation totale et sa variation sur 24 h, dominance BTC, nombre de cryptos en hausse et en baisse, heure de mise à jour.
 - **Chine** : Shanghai Composite, Shenzhen Component, CSI 300, Hang Seng.
 - **USA** : S&P 500, Nasdaq Composite, Dow Jones, Russell 2000.
 - **Europe** : CAC 40, DAX, FTSE 100, Euro Stoxx 50, IBEX 35.
@@ -22,7 +22,8 @@ public/            Front statique (HTML/CSS/JS vanilla, aucune dépendance)
   manifest.webmanifest
   icons/           192/512, maskable, apple-touch-icon (générés par scripts/make-icons.mjs)
 api/               Fonctions serverless Vercel (proxy + cache)
-  crypto.js        CoinGecko → repli CoinPaprika
+  crypto.js        CoinGecko → repli CoinPaprika (stablecoins exclus)
+  tv.js            Trouve le symbole TradingView d'une crypto (cache 24 h)
   indices.js       Yahoo Finance chart (query1 → query2) → repli Stooq
   _lib.js          Cache mémoire + en-têtes CDN
 scripts/dev-server.mjs  Serveur local qui imite Vercel (statique + /api)

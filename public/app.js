@@ -1,7 +1,7 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
 const REFRESH_MS = 60_000;
 const TABS = ['crypto', 'chine', 'usa', 'europe'];
-const TAB_TITLES = { crypto: 'Top 25 cryptos · 24 h', chine: 'Indices Chine', usa: 'Indices USA', europe: 'Indices Europe' };
+const TAB_TITLES = { crypto: 'Top 25 cryptos hors stablecoins · 24 h', chine: 'Indices Chine', usa: 'Indices USA', europe: 'Indices Europe' };
 const ND = 'n/d';
 
 const $ = (sel) => document.querySelector(sel);
@@ -175,20 +175,79 @@ function renderCrypto() {
     const btn = e.target.closest('.tile');
     if (!btn) return;
     const c = coins.find((x) => x.id === btn.dataset.id);
-    if (!c) return;
-    const rank = coins.indexOf(c) + 1;
-    openSheet(`
-      <h2 id="sheet-title">${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span></h2>
-      <p class="muted">${esc(c.name)} · rang ${rank}</p>
-      <dl>
-        <dt>Prix</dt><dd>${fmtPrice(c.price)}</dd>
-        <dt>Variation 24 h</dt><dd class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</dd>
-        <dt>Capitalisation</dt><dd>${fmtCap(c.marketCap)}</dd>
-        <dt>Part du top 25</dt><dd>${isNum(c.marketCap) ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND}</dd>
-        <dt>Source</dt><dd>${esc(data.source || ND)}</dd>
-      </dl>`);
+    if (c) openChart(c, coins.indexOf(c) + 1, totalTop);
   };
 }
+
+/* ---------- Écran graphique TradingView ---------- */
+const tvCache = new Map(); // symbole → réponse /api/tv (ou promesse en cours)
+let chartToken = 0;
+
+function tvWidgetURL(tvSymbol) {
+  let tz = 'Etc/UTC';
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* défaut UTC */ }
+  const p = new URLSearchParams({
+    symbol: tvSymbol, interval: '60', theme: 'dark', style: '1', locale: 'fr', timezone: tz,
+    toolbarbg: '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
+    hideideas: '1', studies: '[]',
+  });
+  return `https://s.tradingview.com/widgetembed/?${p}`;
+}
+
+function resolveTV(c) {
+  const key = `${c.symbol}|${c.name}`;
+  if (!tvCache.has(key)) {
+    const q = new URLSearchParams({ symbol: c.symbol, name: c.name });
+    const p = fetch(`/api/tv?${q}`).then((r) => r.json()).catch(() => ({ tv: null, error: 'réseau' }));
+    tvCache.set(key, p);
+    p.then((v) => { if (v.error) tvCache.delete(key); }); // on retentera plus tard en cas d'erreur
+  }
+  return tvCache.get(key);
+}
+
+async function openChart(c, rank, totalTop) {
+  const token = ++chartToken;
+  const box = $('#chart'), frame = $('#chart-frame'), link = $('#chart-link');
+  $('#chart-title').innerHTML = `${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`;
+  $('#chart-sub').textContent = `${c.name} · rang ${rank} · variation 24 h`;
+  $('#chart-stats').innerHTML = `
+    <div class="stat"><div class="stat-label">Prix</div><div class="stat-value">${fmtPrice(c.price)}</div></div>
+    <div class="stat"><div class="stat-label">Capitalisation</div><div class="stat-value">${fmtCap(c.marketCap)}</div></div>
+    <div class="stat"><div class="stat-label">Part top 25</div><div class="stat-value">${isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND}</div></div>`;
+  frame.innerHTML = '<div class="msg">Chargement du graphique…</div>';
+  link.hidden = true;
+  if (box.hidden) {
+    box.hidden = false;
+    document.body.style.overflow = 'hidden';
+    history.pushState({ chart: true }, '');
+  }
+
+  const res = await resolveTV(c);
+  if (token !== chartToken || box.hidden) return; // fermé ou autre tuile ouverte entre-temps
+  if (res?.tv) {
+    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(c.symbol)}" src="${esc(tvWidgetURL(res.tv))}" allowfullscreen></iframe>`;
+    link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.tv)}`;
+    link.hidden = false;
+  } else if (res?.error) {
+    frame.innerHTML = `<div class="msg">Graphique indisponible pour le moment${navigator.onLine ? '' : ' (hors ligne)'}.<br>Réessayez dans un instant.</div>`;
+  } else {
+    frame.innerHTML = `<div class="msg">Graphique TradingView ${ND} pour ${esc(c.symbol)} :<br>cette crypto n’y est pas cotée.</div>`;
+  }
+}
+
+function closeChart() {
+  const box = $('#chart');
+  if (box.hidden) return;
+  chartToken++;
+  box.hidden = true;
+  $('#chart-frame').innerHTML = ''; // décharge le widget
+  document.body.style.overflow = '';
+}
+$('#chart-close').addEventListener('click', () => {
+  if (history.state?.chart) history.back(); // déclenche popstate → closeChart
+  else closeChart();
+});
+window.addEventListener('popstate', closeChart);
 
 /* ---------- Rendu indices ---------- */
 function sparkSVG(spark, prev) {
@@ -276,6 +335,7 @@ function renderChrome() {
   src.push(`Crypto : ${state.crypto?.source || 'CoinGecko'}${state.crypto?.source === 'CoinPaprika' ? ' (repli)' : ''}`);
   const idxSources = [...new Set((state.indices?.indices || []).map((i) => i.source).filter(Boolean))];
   src.push(`Indices : ${idxSources.length ? idxSources.join(', ') : 'Yahoo Finance'} (cours différés)`);
+  src.push('Graphiques : TradingView');
   $('#sources').textContent = `Sources — ${src.join(' · ')}.`;
 }
 
@@ -339,7 +399,11 @@ function openSheet(html) {
   $('#sheet').hidden = false;
 }
 $('#sheet').addEventListener('click', (e) => { if (e.target.id === 'sheet' || e.target.closest('.sheet-grip')) $('#sheet').hidden = true; });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#sheet').hidden = true; });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('#chart').hidden) $('#chart-close').click();
+  else $('#sheet').hidden = true;
+});
 
 /* ---------- Gestes : pull-to-refresh + balayage entre onglets ---------- */
 (() => {
@@ -351,7 +415,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#sheet'
     ptr.classList.remove('ready');
   };
   window.addEventListener('touchstart', (e) => {
-    if (e.touches.length !== 1 || !$('#sheet').hidden) { active = false; return; }
+    if (e.touches.length !== 1 || !$('#sheet').hidden || !$('#chart').hidden) { active = false; return; }
     active = true;
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
     pulling = window.scrollY <= 0; pull = 0;
@@ -422,6 +486,12 @@ window.addEventListener('resize', () => {
 /* ---------- Démarrage ---------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  // Nouvelle version de l'app installée → rechargement unique pour l'afficher.
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
 }
 render();
 refresh();

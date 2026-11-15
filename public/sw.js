@@ -1,5 +1,5 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v1';
+const VERSION = 'v2';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const ASSETS = [
@@ -38,10 +38,10 @@ self.addEventListener('fetch', (e) => {
       const cache = await caches.open(DATA);
       try {
         const res = await fetch(req, { cache: 'no-store' });
-        if (res.ok) cache.put(url.pathname, res.clone());
+        if (res.ok) cache.put(url.pathname + url.search, res.clone());
         return res;
       } catch {
-        const hit = await cache.match(url.pathname);
+        const hit = await cache.match(url.pathname + url.search);
         if (hit) return tagged(hit);
         return new Response(JSON.stringify({ error: 'Hors ligne' }), { status: 503, headers: { 'Content-Type': 'application/json' } });
       }

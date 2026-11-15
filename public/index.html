@@ -38,7 +38,7 @@
     <section id="view-crypto" class="view" data-tab="crypto" aria-label="Crypto">
       <div class="stats" id="crypto-stats"></div>
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
-      <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation</p>
+      <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</p>
     </section>
     <section id="view-chine" class="view" data-tab="chine" aria-label="Chine" hidden><div class="grid" id="grid-chine"></div></section>
     <section id="view-usa" class="view" data-tab="usa" aria-label="USA" hidden><div class="grid" id="grid-usa"></div></section>
@@ -61,6 +61,21 @@
     <button type="button" data-tab="usa"><span class="flag" aria-hidden="true">US</span><span>USA</span></button>
     <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span>Europe</span></button>
   </nav>
+
+  <div id="chart" class="chart" role="dialog" aria-modal="true" aria-labelledby="chart-title" hidden>
+    <div class="chart-head">
+      <button id="chart-close" class="icon-btn" type="button" aria-label="Retour">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="chart-title">
+        <h2 id="chart-title"></h2>
+        <p id="chart-sub"></p>
+      </div>
+    </div>
+    <div class="chart-stats" id="chart-stats"></div>
+    <div class="chart-frame" id="chart-frame"></div>
+    <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans TradingView ↗</a>
+  </div>
 
   <div id="sheet" class="sheet" hidden>
     <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">

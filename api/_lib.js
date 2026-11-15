@@ -47,14 +47,14 @@ export async function cached(key, ttlMs, loader) {
   return pending;
 }
 
-/** Réponse JSON avec cache CDN partagé (45 s) et pas de cache navigateur. */
-export function json(data, status = 200) {
+/** Réponse JSON avec cache CDN partagé (45 s par défaut) et pas de cache navigateur. */
+export function json(data, status = 200, cdnMaxAge = 45) {
   return new Response(JSON.stringify(data), {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'public, max-age=0, must-revalidate',
-      'Vercel-CDN-Cache-Control': status === 200 ? 'max-age=45, stale-while-revalidate=30' : 'no-store',
+      'Vercel-CDN-Cache-Control': status === 200 ? `max-age=${cdnMaxAge}, stale-while-revalidate=30` : 'no-store',
       'Access-Control-Allow-Origin': '*',
     },
   });
