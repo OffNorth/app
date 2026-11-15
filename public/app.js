@@ -1,7 +1,12 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
 const REFRESH_MS = 60_000;
-const TABS = ['crypto', 'chine', 'usa', 'europe'];
-const TAB_TITLES = { crypto: 'Top 25 cryptos hors stablecoins · 24 h', chine: 'Indices Chine', usa: 'Indices USA', europe: 'Indices Europe' };
+const TABS = ['crypto', 'ameriques', 'europe', 'asie', 'afrique'];
+const TAB_TITLES = {
+  crypto: 'Top 25 cryptos hors stablecoins · 24 h', ameriques: 'Indices Amériques', europe: 'Indices Europe',
+  asie: 'Indices Asie-Pacifique', afrique: 'Indices Afrique & Moyen-Orient',
+};
+const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
+const initialTab = (t) => (TABS.includes(t) ? t : LEGACY_TABS[t]);
 const ND = 'n/d';
 
 const $ = (sel) => document.querySelector(sel);
@@ -11,7 +16,7 @@ const store = {
 };
 
 const state = {
-  tab: TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : store.get('tab') || 'crypto',
+  tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'crypto',
   crypto: store.get('crypto'),
   indices: store.get('indices'),
   offline: { crypto: false, indices: false },
@@ -263,6 +268,10 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
     frame.innerHTML = `<div class="msg">Graphique indisponible pour le moment${navigator.onLine ? '' : ' (hors ligne)'}.<br>Réessayez dans un instant.</div>`;
   } else {
     frame.innerHTML = `<div class="msg">${missingMsg}</div>`;
+    if (res?.link) { // pas de graphique intégrable, mais l'indice existe sur tradingview.com
+      link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link)}`;
+      link.hidden = false;
+    }
   }
 }
 
@@ -282,23 +291,58 @@ function openChart(c, rank, totalTop) {
  * Symboles TradingView des indices, vérifiés dans le widget gratuit (nov. 2026).
  * Certains indices officiels y sont bloqués (licence) : on affiche alors un CFD ou un ETF
  * qui le suit, signalé à l'écran, et le lien « Ouvrir dans TradingView » mène à l'indice officiel.
- * Les indices chinois, le Hang Seng et le DAX officiels n'y sont disponibles qu'en journalier.
+ * Plusieurs indices officiels n'y sont disponibles qu'en journalier (interval: 'D').
+ * tv: null → aucun graphique intégrable : seul le lien vers tradingview.com est proposé.
  */
 const CFD = (name) => `Graphique : CFD qui suit le ${name} (l’indice officiel n’est pas disponible dans ce widget). Le niveau peut différer légèrement.`;
+const ETF = (what) => `Graphique : ${what} (l’indice officiel n’est pas disponible dans ce widget). Prix de l’ETF en $, pas le niveau de l’indice.`;
 const INDEX_TV = {
+  // Amériques
+  spx: { tv: 'CAPITALCOM:US500', link: 'SP:SPX', note: CFD('S&P 500') },
+  ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: ETF('ETF Fidelity ONEQ qui réplique le Nasdaq Composite') },
+  dji: { tv: 'CAPITALCOM:US30', link: 'DJ:DJI', note: CFD('Dow Jones') },
+  rut: { tv: 'CAPITALCOM:RTY', link: 'TVC:RUT', note: CFD('Russell 2000') },
+  tsx: { tv: 'TSX:TSX' },
+  ibov: { tv: 'BMFBOVESPA:IBOV' },
+  ipc: { tv: 'INDEX:ME', interval: 'D', link: 'BMV:ME' },
+  merval: { tv: 'INDEX:IAR', interval: 'D', link: 'BCBA:IMV' },
+  // Europe
+  sx5e: { tv: 'STOXX:SX5E' },
+  cac: { tv: 'EURONEXT:PX1' },
+  dax: { tv: 'XETR:DAX', interval: 'D' },
+  ftse: { tv: 'CAPITALCOM:UK100', link: 'FTSE:UKX', note: CFD('FTSE 100') },
+  ibex: { tv: 'BME:IBC' },
+  ftsemib: { tv: 'INDEX:FTSEMIB', interval: 'D' },
+  aex: { tv: 'EURONEXT:AEX' },
+  smi: { tv: 'SIX:SMI', interval: 'D' },
+  bel20: { tv: 'EURONEXT:BEL20' },
+  psi: { tv: 'EURONEXT:PSI20' },
+  atx: { tv: 'VIE:ATX', interval: 'D' },
+  omx: { tv: 'OMXSTO:OMXS30' },
+  osebx: { tv: 'OSL:OSEBX' },
+  wig20: { tv: 'GPW:WIG20', interval: 'D' },
+  xu100: { tv: null, link: 'BIST:XU100' },
+  // Asie-Pacifique
   sse: { tv: 'SSE:000001', interval: 'D' },
   szse: { tv: 'SZSE:399001' },
   csi300: { tv: 'SSE:000300', interval: 'D' },
   hsi: { tv: 'HSI:HSI', interval: 'D' },
-  spx: { tv: 'CAPITALCOM:US500', link: 'SP:SPX', note: CFD('S&P 500') },
-  ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: 'Graphique : ETF Fidelity ONEQ qui réplique le Nasdaq Composite (prix de l’ETF en $, pas le niveau de l’indice).' },
-  dji: { tv: 'CAPITALCOM:US30', link: 'DJ:DJI', note: CFD('Dow Jones') },
-  rut: { tv: 'CAPITALCOM:RTY', link: 'TVC:RUT', note: CFD('Russell 2000') },
-  cac: { tv: 'EURONEXT:PX1' },
-  dax: { tv: 'XETR:DAX', interval: 'D' },
-  ftse: { tv: 'CAPITALCOM:UK100', link: 'FTSE:UKX', note: CFD('FTSE 100') },
-  sx5e: { tv: 'STOXX:SX5E' },
-  ibex: { tv: 'BME:IBC' },
+  n225: { tv: 'INDEX:NKY', interval: 'D', link: 'TVC:NI225' },
+  kospi: { tv: 'TSX:KORX', link: 'KRX:KOSPI', note: 'Graphique : ETF qui suit le KOSPI 200 (indice voisin du KOSPI, non disponible dans ce widget). Prix de l’ETF, pas le niveau de l’indice.' },
+  taiex: { tv: 'INDEX:TAIEX', interval: 'D', link: 'TWSE:TAIEX' },
+  nifty: { tv: 'NASDAQ:INDY', link: 'NSE:NIFTY', note: ETF('ETF iShares India 50 qui réplique le Nifty 50') },
+  sensex: { tv: 'INDEX:SENSEX', interval: 'D', link: 'BSE:SENSEX' },
+  sti: { tv: 'INDEX:STI', interval: 'D', link: 'TVC:STI' },
+  jkse: { tv: 'IDX:COMPOSITE', interval: 'D' },
+  klci: { tv: 'INDEX:KLSE', interval: 'D', link: 'FTSEMYX:FBMKLCI' },
+  set: { tv: null, link: 'SET:SET' },
+  asx200: { tv: 'CAPITALCOM:AU200', link: 'ASX:XJO', note: CFD('S&P/ASX 200') },
+  nz50: { tv: null, link: 'NZX:NZ50G' },
+  // Afrique & Moyen-Orient
+  tasi: { tv: null, link: 'TADAWUL:TASI' },
+  ta125: { tv: 'TASE:TA125' },
+  jse40: { tv: 'TICKMILL:AFRICA40', link: 'JSE:J200', note: CFD('JSE Top 40') },
+  egx30: { tv: 'EGX:EGX30' },
 };
 
 function openIndexChart(ix) {
@@ -310,7 +354,7 @@ function openIndexChart(ix) {
       + stat('Clôture préc.', fmtLevel(ix.prevClose)),
     tv: INDEX_TV[ix.id] || { tv: null },
     label: ix.name,
-    missingMsg: `Graphique TradingView ${ND} pour ${esc(ix.name)}.`,
+    missingMsg: `Graphique ${ND} ici pour ${esc(ix.name)} :<br>TradingView ne l’autorise pas dans ce widget.<br>Il reste consultable sur leur site.`,
   });
 }
 
@@ -353,7 +397,9 @@ function statusOf(ix) {
   switch (ix.state) {
     case 'open': return { chip: 'Ouvert', cls: 'open', foot: `Cours de ${fmtTime(ix.lastTime)} · différé` };
     case 'break': return { chip: 'Pause', cls: 'break', foot: `Dernier cours ${sameLocalDay(ix.lastTime, Date.now()) ? fmtTime(ix.lastTime) : fmtDay(ix.lastTime, ix.timezone)}` };
-    case 'closed': return { chip: 'Fermé', cls: 'closed', foot: `Clôture ${fmtDay(ix.lastTime, ix.timezone)}` };
+    case 'closed': return ix.outdated
+      ? { chip: 'Données anciennes', cls: 'break', foot: `Dernière donnée : ${fmtDay(ix.lastTime, ix.timezone)}` }
+      : { chip: 'Fermé', cls: 'closed', foot: `Clôture ${fmtDay(ix.lastTime, ix.timezone)}` };
     default: return { chip: `Statut ${ND}`, cls: 'unknown', foot: isNum(ix.lastTime) ? `Cours du ${fmtDay(ix.lastTime, ix.timezone)}` : `Date ${ND}` };
   }
 }
@@ -369,6 +415,7 @@ function renderIndices(region) {
   grid.innerHTML = list.map((ix) => {
     const st = statusOf(ix);
     return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" style="background-color:${heat(ix.changePct, 2.5)}">
+      ${ix.country ? `<div class="idx-country">${esc(ix.country)}</div>` : ''}
       <div class="idx-top"><h3>${esc(ix.name)}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
       <div class="idx-level">${fmtLevel(ix.price)}</div>
       <div class="idx-chg">${fmtPct(ix.changePct)} <span>(${fmtSigned(ix.change)})</span></div>

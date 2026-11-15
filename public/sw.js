@@ -1,5 +1,5 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v4';
+const VERSION = 'v5';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos'; // logos des cryptos, conservés d'une version à l'autre
