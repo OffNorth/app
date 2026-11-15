@@ -22,6 +22,17 @@ const DERIVATIVE_SYMBOLS = new Set([
   'EZETH', 'RSETH', 'LBTC', 'BTCB', 'SOLVBTC', 'JITOSOL', 'MSOL', 'BNSOL', 'JUPSOL', 'TBTC',
 ]);
 
+// Logos : uniquement des URL https des CDN d'images des deux sources.
+const LOGO_HOSTS = new Set(['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com']);
+function safeLogo(u) {
+  try {
+    const url = new URL(u);
+    return url.protocol === 'https:' && LOGO_HOSTS.has(url.hostname) ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function geckoHeaders() {
   const key = process.env.COINGECKO_API_KEY;
   return key ? { 'x-cg-demo-api-key': key } : {};
@@ -55,14 +66,19 @@ async function fromCoinGecko() {
   ]);
   if (!Array.isArray(markets) || markets.length === 0) throw new Error('CoinGecko: réponse vide');
   const isStable = (c) => stableIds.has(c.id) || STABLE_SYMBOLS.has(String(c.symbol || '').toUpperCase());
-  const coins = markets.filter((c) => !isStable(c)).slice(0, LIMIT).map((c) => ({
-    id: c.id,
-    symbol: String(c.symbol || '').toUpperCase(),
-    name: c.name,
-    price: num(c.current_price),
-    marketCap: num(c.market_cap),
-    changePct: num(c.price_change_percentage_24h_in_currency ?? c.price_change_percentage_24h),
-  }));
+  const coins = markets.filter((c) => !isStable(c)).slice(0, LIMIT).map((c) => {
+    const logo = safeLogo(c.image); // 250 px ; la variante /small/ fait 50 px
+    return {
+      id: c.id,
+      symbol: String(c.symbol || '').toUpperCase(),
+      name: c.name,
+      price: num(c.current_price),
+      marketCap: num(c.market_cap),
+      changePct: num(c.price_change_percentage_24h_in_currency ?? c.price_change_percentage_24h),
+      logo,
+      logoSmall: logo && logo.includes('/large/') ? logo.replace('/large/', '/small/') : logo,
+    };
+  });
   const g = global?.data;
   return {
     coins,
@@ -108,6 +124,8 @@ async function fromCoinPaprika() {
       price: num(t.quotes.USD.price),
       marketCap: num(t.quotes.USD.market_cap),
       changePct: num(t.quotes.USD.percent_change_24h),
+      logo: safeLogo(`https://static.coinpaprika.com/coin/${encodeURIComponent(t.id)}/logo.png`),
+      logoSmall: safeLogo(`https://static.coinpaprika.com/coin/${encodeURIComponent(t.id)}/logo.png`),
     }));
   return { coins, global, source: 'CoinPaprika' };
 }

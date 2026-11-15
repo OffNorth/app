@@ -107,6 +107,17 @@ function squarify(items, x, y, w, h) {
 }
 
 /* ---------- Rendu crypto ---------- */
+/** Logo d'une crypto : version 50 px pour les petites tailles, 250 px sinon. */
+function logoImg(c, size, cls = 'logo') {
+  const src = size <= 22 ? c.logoSmall || c.logo : c.logo || c.logoSmall;
+  if (!src) return '';
+  return `<img class="${cls}" src="${esc(src)}" width="${size}" height="${size}" alt="" decoding="async" referrerpolicy="no-referrer">`;
+}
+// Logo introuvable → on le retire simplement (le symbole reste affiché).
+document.addEventListener('error', (e) => {
+  if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo')) e.target.remove();
+}, true);
+
 function renderCrypto() {
   const data = state.crypto;
   const statsEl = $('#crypto-stats');
@@ -155,11 +166,25 @@ function renderCrypto() {
     sym = Math.min(sym, (r.w - 6) / (Math.max(r.symbol.length, 2) * 0.68));
     const pct = Math.max(9, Math.min(18, sym * 0.62));
     const px = Math.max(9, Math.min(14, sym * 0.5));
+    const minSide = Math.min(r.w, r.h);
     let inner = '';
+    // Logo au-dessus du texte s'il y a la hauteur (réduit au besoin), sinon à gauche du symbole.
+    const withLogo = (s, textH, maxLogo, minLogo) => {
+      const room = Math.floor(r.h - textH - 12);
+      if (room >= minLogo) return { top: logoImg(r, Math.min(maxLogo, room)), inline: '' };
+      const symW = r.symbol.length * 0.68 * s;
+      if (r.w >= symW + s + 14) return { top: '', inline: logoImg(r, Math.round(s * 0.95)) };
+      return { top: '', inline: '' };
+    };
     if (r.w >= 64 && r.h >= 58) {
-      inner = `<span class="sym" style="font-size:${sym}px">${esc(r.symbol)}</span><span class="pct" style="font-size:${pct}px">${fmtPct(r.changePct)}</span><span class="px" style="font-size:${px}px">${fmtPrice(r.price)}</span>`;
+      const L = withLogo(sym, (sym + pct + px) * 1.15, Math.round(Math.min(44, sym * 1.2, r.w * 0.4)), 16);
+      inner = `${L.top}<span class="sym" style="font-size:${sym}px">${L.inline}${esc(r.symbol)}</span><span class="pct" style="font-size:${pct}px">${fmtPct(r.changePct)}</span><span class="px" style="font-size:${px}px">${fmtPrice(r.price)}</span>`;
     } else if (r.w >= 40 && r.h >= 34) {
-      inner = `<span class="sym" style="font-size:${Math.min(sym, 15)}px">${esc(r.symbol)}</span><span class="pct" style="font-size:${Math.min(pct, 11)}px">${fmtPct(r.changePct, 1)}</span>`;
+      const s = Math.min(sym, 15), p = Math.min(pct, 11);
+      const L = withLogo(s, (s + p) * 1.15, Math.round(Math.min(18, r.w * 0.3)), 12);
+      inner = `${L.top}<span class="sym" style="font-size:${s}px">${L.inline}${esc(r.symbol)}</span><span class="pct" style="font-size:${p}px">${fmtPct(r.changePct, 1)}</span>`;
+    } else if (r.logo && minSide >= 14) {
+      inner = logoImg(r, Math.round(Math.min(minSide * 0.62, 26))); // trop petit pour le texte : logo seul
     } else if (r.w >= 24 && r.h >= 15) {
       inner = `<span class="sym" style="font-size:${Math.max(8, Math.min(sym, 11))}px">${esc(r.symbol)}</span>`;
     }
@@ -243,7 +268,7 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
 
 function openChart(c, rank, totalTop) {
   showChart({
-    titleHTML: `${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
+    titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
     sub: `${c.name} · rang ${rank} · variation 24 h`,
     statsHTML: stat('Prix', fmtPrice(c.price)) + stat('Capitalisation', fmtCap(c.marketCap))
       + stat('Part top 25', isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND),
