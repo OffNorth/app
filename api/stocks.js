@@ -1,4 +1,4 @@
-// GET /api/stocks — les 25 plus grosses entreprises cotées du monde (capitalisation),
+// GET /api/stocks?n=25|50|100 — les n plus grosses entreprises cotées du monde (capitalisation),
 // avec la variation du jour.
 // Classement : CSV public de companiesmarketcap.com (mis en cache 1 h ; on ne lit que le début).
 // Cours et variation : Yahoo Finance (appels groupés, repli indice par indice).
@@ -8,7 +8,8 @@ import { BATCH, fromYahoo, mapLimit, parseYahoo, sparkBatch } from './_yahoo.js'
 
 const TTL = 45_000;
 const RANK_TTL = 3600_000;
-const LIMIT = 25;
+const LIMIT = 100; // lignes lues dans le classement
+const SIZES = [25, 50, 100];
 const CSV_URL = 'https://companiesmarketcap.com/?download=csv';
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36';
 
@@ -76,8 +77,9 @@ function labelOf(symbol, name) {
 
 const logoURL = (symbol, size) => `https://companiesmarketcap.com/img/company-logos/${size}/${encodeURIComponent(symbol)}.webp`;
 
-async function load() {
-  const { rows } = await cached('stocks-ranking', RANK_TTL, fetchRanking);
+async function load(n) {
+  const { rows: all } = await cached('stocks-ranking', RANK_TTL, fetchRanking);
+  const rows = all.slice(0, n);
   const chunks = [];
   for (let i = 0; i < rows.length; i += BATCH) chunks.push(rows.slice(i, i + BATCH).map((r) => r.symbol));
   const maps = await Promise.all(chunks.map((c) => sparkBatch(c).catch(() => new Map())));
@@ -114,9 +116,11 @@ async function load() {
   return { companies, fetchedAt: Date.now(), source: 'Yahoo Finance' }; // classement : companiesmarketcap.com (crédité en pied de page)
 }
 
-export async function GET() {
+export async function GET(request) {
+  const asked = Number(new URL(request.url).searchParams.get('n'));
+  const n = SIZES.includes(asked) ? asked : 25;
   try {
-    return json(await cached('stocks', TTL, load));
+    return json({ ...(await cached(`stocks-${n}`, TTL, () => load(n))), n });
   } catch (err) {
     return json({ error: 'Données entreprises indisponibles', detail: String(err.message || err) }, 502);
   }

@@ -40,7 +40,10 @@
       <thead><tr><th>Name</th><th>Purpose</th><th>Duration</th></tr></thead>
       <tbody>
           <tr><td><code>marches:crypto</code>, <code>marches:indices</code>, <code>marches:stocks</code></td><td>Latest market data, for instant and offline display</td><td>Until the next update or deletion</td></tr>
-          <tr><td><code>marches:tab</code>, <code>marches:lang</code></td><td>Remember the tab and language displayed</td><td>Until deletion</td></tr>
+          <tr><td><code>marches:fx</code></td><td>Latest EUR/USD rate, for display in euros</td><td>Until the next update or deletion</td></tr>
+          <tr><td><code>marches:tab</code>, <code>marches:lang</code>, <code>marches:prefs</code></td><td>Remember the tab, language and settings displayed (period, top, currency)</td><td>Until deletion</td></tr>
+          <tr><td><code>marches:favs</code></td><td>Remember your favorites</td><td>Until deletion</td></tr>
+          <tr><td><code>marches:alertsToken</code>, browser notification subscription</td><td>Only if you create a price alert: random device identifier to manage your alerts, and subscription used to receive notifications</td><td>Until “Delete everything and turn off notifications” or deletion</td></tr>
           <tr><td><code>marches:installDismissed</code></td><td>Stop showing the app install hint</td><td>Until deletion</td></tr>
           <tr><td><code>marches:consent</code></td><td>Remember your TradingView choice (date, version, choice), which also serves as proof of that choice</td><td>6 months</td></tr>
           <tr><td>Service worker cache (<code>marches-*</code>)</td><td>Operation of the installed app and offline mode (pages, styles, logos, latest data)</td><td>Until the next app version or deletion</td></tr>

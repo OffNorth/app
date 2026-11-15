@@ -88,6 +88,24 @@ Navigateur Chromium, iPhone émulé, profil vierge. Testé en local puis en prod
 - **Langues** : l'application et les 4 pages juridiques sont disponibles en français, en anglais et en chinois simplifié (`/en/…`, `/zh/…`), avec un sélecteur de langue. Le choix est mémorisé dans le stockage local (`marches:lang`), une préférence exemptée de consentement et documentée sur la page Cookies. Les traductions précisent que **la version française fait foi**. Les pages sont générées par `scripts/legal-pages.py`.
 - **Logos des indices** : fichiers SVG publics de TradingView, servis via le relais `/api/logo`. Le visiteur ne contacte toujours aucun tiers.
 
+## 5 ter. Nouvelles fonctions du 15/11/2026 : réglages, favoris, euros, alertes de prix
+
+- **Favoris, réglages, taux EUR/USD** : stockés uniquement sur l'appareil (`marches:favs`, `marches:prefs`, `marches:fx`). Ce sont des usages strictement nécessaires au service demandé, exemptés de consentement, et documentés sur la page Cookies. Rien n'est envoyé au serveur.
+- **Alertes de prix** : c'est le premier traitement de données personnelles côté serveur. Il ne démarre que si l'utilisateur crée une alerte.
+  - **Données** : l'adresse d'abonnement push et ses clés de chiffrement, l'empreinte SHA-256 d'un jeton aléatoire de l'appareil (le jeton lui-même reste sur l'appareil, dans `marches:alertsToken`), la langue, les alertes et les dates.
+  - **Hébergement** : Supabase Pte. Ltd. (Singapour), sous-traitant, avec des données hébergées dans l'UE (projet créé en région `eu-west-3`, Paris).
+  - **Transferts hors UE** : le DPA de Supabase prévoit les clauses contractuelles types 2021/914 (vérifié sur supabase.com/legal/dpa). Supabase ne mentionne pas l'adhésion au Data Privacy Framework, et ce point n'est donc pas affirmé.
+  - **Conservation** : les alertes actives sont gardées jusqu'à leur suppression par l'utilisateur, les alertes déclenchées 30 jours. L'appareil est supprimé sur « Tout supprimer », si le service push signale l'abonnement comme expiré (404/410), ou après 90 jours d'inactivité sans alerte active. La purge est faite à chaque vérification.
+  - **Sécurité** :
+    - le navigateur ne parle qu'au site (relais `/api/alerts`, CSP `connect-src 'self'` inchangée, IP non transmise) ;
+    - les tables sont dans un schéma privé non exposé par l'API REST, avec RLS activé ;
+    - les secrets sont dans Supabase Vault : le secret de la tâche planifiée est généré dans la base, les clés VAPID par la fonction ; aucun secret n'est dans le code ni ne transite hors de Supabase ;
+    - les notifications sont chiffrées de bout en bout (RFC 8291) ;
+    - l'envoi est limité aux services push connus (pas de requête vers une adresse arbitraire) ;
+    - un appareil peut avoir au plus 20 alertes actives.
+  - **Information** : nouvelle section « Alertes de prix » (ancre `#alertes`) dans la politique de confidentialité, ligne ajoutée au tableau des traitements, destinataires (Supabase, services push des navigateurs), transferts, droits (suppression en libre-service) et sécurité. Supabase est ajouté aux mentions légales comme hébergeur des alertes. Un article 6 bis a été ajouté aux CGU : envoi non garanti, ce n'est pas un conseil. Tout est disponible en FR, EN et ZH.
+- **Points à valider juridiquement**, ajoutés au §7 : la base légale retenue (art. 6.1.b, exécution du service demandé) et l'inscription éventuelle du traitement au registre (art. 30).
+
 ## 6. Informations à fournir par l'éditeur
 
 1. Statut : **particulier (non professionnel)** ou **professionnel** (micro-entreprise, société, association).
@@ -114,7 +132,11 @@ Les emplacements sont signalés sur le site par des champs surlignés « [À COM
    - vérifier sa qualification (responsable indépendant ou responsable conjoint au sens de CJUE, *Fashion ID*, C-40/17) et son mécanisme de transfert hors UE ;
    - vérifier les conditions d'utilisation des widgets (attribution).
 4. **Preuve du consentement** : elle est conservée sur l'appareil, avec un code versionné. À confirmer comme suffisante au regard de l'art. 7.1 RGPD, sachant qu'aucune donnée ne remonte au serveur.
-5. Contenu informatif financier : absence de « recommandation d'investissement » au sens du règlement (UE) 596/2014 (MAR) ; mentions « pas un conseil » présentes.
+6. **Alertes de prix** :
+   - confirmer la base légale (art. 6.1.b RGPD, exécution du service demandé, plutôt que le consentement, art. 6.1.a) ;
+   - tenir le registre des traitements (art. 30), si l'éditeur y est soumis ;
+   - signer ou accepter le DPA de Supabase (il s'applique avec les conditions d'utilisation de Supabase).
+7. Contenu informatif financier : absence de « recommandation d'investissement » au sens du règlement (UE) 596/2014 (MAR) ; mentions « pas un conseil » présentes.
 
 ## 8. Sources consultées
 

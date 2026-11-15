@@ -3,7 +3,7 @@ import { getConsent, setConsent, SERVICES } from './consent.js';
 import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix, LOCALES, setLang, t, TV_LOCALE } from './i18n.js';
 import { makeSnapshot } from './snapshot.js';
 const REFRESH_MS = 60_000;
-const TABS = ['crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
+const TABS = ['favoris', 'crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
 const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
 const initialTab = (t) => (TABS.includes(t) ? t : LEGACY_TABS[t]);
 const ND = 'n/d';
@@ -14,12 +14,31 @@ const store = {
   set(k, v) { try { localStorage.setItem(`marches:${k}`, JSON.stringify(v)); } catch { /* quota / mode privé */ } },
 };
 
+// Réglages de l'utilisateur (mémorisés sur l'appareil).
+const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD' };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'] };
+const prefs = { ...PREF_DEFAULT };
+for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
+
+/* Favoris : { t: 'c' (crypto) | 's' (entreprise) | 'i' (indice), id, label, name, logo, logoSmall }, mémorisés sur l'appareil. */
+const favKey = (f) => `${f.t}:${f.id}`;
+let favs = (store.get('favs') || []).filter((f) => f && ['c', 's', 'i'].includes(f.t) && f.id);
+const isFav = (f) => favs.some((x) => favKey(x) === favKey(f));
+const hasStockFav = () => favs.some((f) => f.t === 's');
+function toggleFav(f) {
+  favs = isFav(f) ? favs.filter((x) => favKey(x) !== favKey(f)) : [...favs, f];
+  store.set('favs', favs);
+}
+/** Taille du classement d'entreprises à charger : 100 si une entreprise est en favori (pour la retrouver). */
+const stocksToLoad = () => (hasStockFav() ? 100 : prefs.nStocks);
+
 const state = {
+  fx: store.get('fx'),
   tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'crypto',
   crypto: store.get('crypto'),
   indices: store.get('indices'),
   stocks: store.get('stocks'),
-  offline: { crypto: false, indices: false, stocks: false },
+  offline: { crypto: false, indices: false, stocks: false, fx: false },
   loading: false,
   lastFetch: 0,
   prevPrices: new Map(),
@@ -50,21 +69,45 @@ function fmtSigned(v) {
   return `${v > 0 ? '+' : v < 0 ? '−' : ''}${NF2.format(Math.abs(v))}`;
 }
 function fmtLevel(v) { return isNum(v) ? NF2.format(v) : ND; }
-function fmtPrice(v) {
-  if (!isNum(v)) return ND;
+/* Devise : les montants des sources sont en dollars ; en euros, on les convertit au taux EUR/USD
+   de /api/fx. Sans taux disponible, on reste en dollars (jamais de taux inventé). */
+const eurRate = () => (prefs.cur === 'EUR' && isNum(state.fx?.eurusd) && state.fx.eurusd > 0 ? state.fx.eurusd : null);
+const curSym = () => (eurRate() ? '€' : '$');
+const toCur = (usd) => { const r = eurRate(); return r ? usd / r : usd; };
+function fmtPrice(usd) {
+  if (!isNum(usd)) return ND;
+  const v = toCur(usd);
   const a = Math.abs(v);
   const f = a >= 1000 ? NF0 : a >= 1 ? NF2 : a >= 0.01 ? nf(4) : nf(2, 8);
-  return getLang() === 'fr' ? `${f.format(v)}\u00a0$` : `$${f.format(v)}`;
+  return getLang() === 'fr' ? `${f.format(v)}\u00a0${curSym()}` : `${curSym()}${f.format(v)}`;
 }
-function fmtCap(v) {
-  if (!isNum(v)) return ND;
+function fmtCap(usd) {
+  if (!isNum(usd)) return ND;
+  const v = toCur(usd);
   if (getLang() === 'zh') { // 亿 = 10^8, 万亿 = 10^12
-    return v >= 1e12 ? `${NF2.format(v / 1e12)}万亿美元` : `${(v / 1e8 >= 100 ? NF0 : NF1).format(v / 1e8)}亿美元`;
+    const unit = eurRate() ? '欧元' : '美元';
+    return v >= 1e12 ? `${NF2.format(v / 1e12)}万亿${unit}` : `${(v / 1e8 >= 100 ? NF0 : NF1).format(v / 1e8)}亿${unit}`;
   }
   const md = v / 1e9;
   const f = md >= 100 ? NF0 : md >= 10 ? NF1 : NF2;
-  return getLang() === 'fr' ? `${f.format(md)}\u00a0Md$` : `$${f.format(md)}B`;
+  return getLang() === 'fr' ? `${f.format(md)}\u00a0Md${curSym()}` : `${curSym()}${f.format(md)}B`;
 }
+/** Mention de la devise (image téléchargeable, notes). */
+function curNote(key = 'cur.eur') {
+  const r = eurRate();
+  return r ? t(key, { r: nf(4).format(r), src: state.fx.source || ND }) : t('cur.usd');
+}
+
+/* Période des variations crypto. */
+const PERIOD_FIELD = { '1h': 'change1h', '24h': 'changePct', '7d': 'change7d' };
+const PERIOD_MAX = { '1h': 2, '24h': 8, '7d': 20 }; // variation donnant la couleur la plus vive
+const periodLabel = () => t(`p.${prefs.period}`);
+/** Cryptos affichées : top N choisi, variation de la période choisie (n/d si la source ne la fournit pas). */
+function cryptoItems(data) {
+  return (data?.coins || []).slice(0, prefs.nCrypto)
+    .map((c) => ({ ...c, label: c.symbol, changePct: isNum(c[PERIOD_FIELD[prefs.period]]) ? c[PERIOD_FIELD[prefs.period]] : null }));
+}
+const stockItems = (data) => (data?.companies || []).slice(0, prefs.nStocks);
 function fmtTime(ms, withSec = false) { return isNum(ms) ? (withSec ? timeSecFmt : timeFmt).format(ms) : ND; }
 function fmtDay(ms, tz) {
   if (!isNum(ms)) return ND;
@@ -171,7 +214,7 @@ function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize }) 
     .map((c) => ({ ...c, value: c.marketCap }));
   if (resize) sorted = resize(sorted);
   const rects = squarify(sorted, 0, 0, width, height);
-  const total = sorted.reduce((s, c) => s + c.value, 0);
+  const total = sorted.reduce((s, c) => s + c.marketCap, 0); // parts calculées sur la vraie capitalisation
 
   map.innerHTML = rects.map((r) => {
     const base = Math.sqrt(r.w * r.h);
@@ -212,11 +255,12 @@ function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize }) 
   map.onclick = (e) => {
     const btn = e.target.closest('.tile');
     const i = btn ? sorted.findIndex((x) => x.id === btn.dataset.id) : -1;
-    if (i >= 0) onOpen(sorted[i], i + 1, total);
+    if (i >= 0) onOpen(sorted[i], i + 1, total, sorted.length);
   };
 }
 
 function heatmapPlaceholder(statsEl, map) {
+  renderTools(map.id === 'treemap' ? 'crypto' : 'stocks');
   statsEl.innerHTML = Array.from({ length: 4 }, () => '<div class="stat skeleton" style="height:58px"></div>').join('');
   map.style.height = '420px';
   map.innerHTML = state.loading ? '<div class="skeleton" style="position:absolute;inset:0"></div>'
@@ -236,7 +280,7 @@ function upDown(list) {
   const down = list.filter((c) => isNum(c.changePct) && c.changePct < 0).length;
   const na = list.filter((c) => !isNum(c.changePct)).length;
   return { label: t('upDown'), value: [{ text: `▲ ${up}`, cls: 'pos' }, { text: ' · ' }, { text: `▼ ${down}`, cls: 'neg' }],
-    sub: `${t('inTop25')}${na ? ` · ${na} ${ND}` : ''}` };
+    sub: `${t('inTop25', { n: list.length })}${na ? ` · ${na} ${ND}` : ''}` };
 }
 const updated = (data) => ({ label: t('updated'), value: fmtTime(data.fetchedAt, true), sub: `${data.source || ND}${data.stale ? ` · ${t('stale')}` : ''}` });
 
@@ -245,7 +289,7 @@ function cryptoStats(data) {
   return [
     { label: t('totalCap'), value: fmtCap(g.totalMarketCap), sub: `${fmtPct(g.totalChangePct)} ${t('over24h')}`, cls: signClass(g.totalChangePct) },
     { label: t('btcDom'), value: isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}${pctSign()}` : ND, sub: t('ofCap') },
-    upDown(data.coins),
+    upDown(cryptoItems(data)),
     updated(data),
   ];
 }
@@ -254,9 +298,10 @@ function renderCrypto() {
   const data = state.crypto;
   const statsEl = $('#crypto-stats'), map = $('#treemap');
   if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
+  renderTools('crypto');
   statsEl.innerHTML = cryptoStats(data).map(statHTML).join('');
-  renderTiles(map, data.coins.map((c) => ({ ...c, label: c.symbol })), {
-    maxAbs: 8, period: t('period24h'), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
+  renderTiles(map, cryptoItems(data), {
+    maxAbs: PERIOD_MAX[prefs.period], period: t('period24h', { p: periodLabel() }), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
   });
 }
 
@@ -268,12 +313,12 @@ function fmtStockPrice(v, cur) {
 }
 
 function stocksStats(data) {
-  const list = data.companies;
+  const list = stockItems(data);
   const total = list.reduce((s, c) => s + (isNum(c.marketCap) ? c.marketCap : 0), 0);
   const us = list.find((c) => /^(NASDAQ|NYSE):/.test(c.tv?.link || ''));
   const usState = us ? statusOf(us) : null;
   return [
-    { label: t('top25cap'), value: fmtCap(total), sub: t('hourly') },
+    { label: t('top25cap', { n: list.length }), value: fmtCap(total), sub: t('hourly') },
     { label: t('wallStreet'), value: usState ? usState.chip : ND, sub: usState ? usState.foot : '' },
     upDown(list),
     updated(data),
@@ -284,28 +329,210 @@ function renderStocks() {
   const data = state.stocks;
   const statsEl = $('#stocks-stats'), map = $('#treemap-stocks');
   if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
+  renderTools('stocks');
   statsEl.innerHTML = stocksStats(data).map(statHTML).join('');
-  renderTiles(map, data.companies, {
+  renderTiles(map, stockItems(data), {
     maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
   });
 }
+
+/* ---------- Alertes de prix (notifications push) ----------
+ * Le site relaie les demandes vers le service d'alertes (/api/alerts). L'appareil est identifié par un jeton
+ * aléatoire gardé dans son stockage local ; aucune requête n'est faite tant que l'utilisateur n'a pas créé d'alerte. */
+const ALERT_TOKEN = 'alertsToken';
+let alertsCache = null;
+let vapidKey = null;
+let alertAsset = null;
+
+/** Montant dans la devise de la source (les seuils d'alerte ne sont pas convertis en euros). */
+function fmtNative(v, cur) {
+  if (!isNum(v)) return ND;
+  if (!cur) return `${NF2.format(v)}\u00a0${t('alert.points')}`;
+  const a = Math.abs(v);
+  const f = a >= 1000 ? NF0 : a >= 1 ? NF2 : a >= 0.01 ? nf(4) : nf(2, 8);
+  if (cur === 'USD') return getLang() === 'fr' ? `${f.format(v)}\u00a0$` : `$${f.format(v)}`;
+  return `${f.format(v)}\u00a0${esc(cur)}`;
+}
+/** Nombre saisi : accepte « 70 000 », « 70000,5 », « 70,000.5 »… */
+function parseAmount(raw) {
+  let s = String(raw).trim().replace(/[\s\u00a0\u202f'’$€]/g, '');
+  const c = s.lastIndexOf(','), d = s.lastIndexOf('.');
+  if (c >= 0 && d >= 0) s = (c > d ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, ''));
+  else if (c >= 0) s = getLang() !== 'fr' && /^\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, '') : s.replace(',', '.');
+  else if (d >= 0 && getLang() === 'fr' && /^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  return /^\d*\.?\d+$/.test(s) ? Number(s) : NaN;
+}
+async function alertsApi(action, extra = {}) {
+  const res = await fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...extra }) });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status });
+  return body;
+}
+const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (ch) => ch.charCodeAt(0));
+function newToken() {
+  const b = crypto.getRandomValues(new Uint8Array(32));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function pushSupport() {
+  if ('serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window) return 'ok';
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  return ios ? 'ios' : 'unsupported';
+}
+async function loadAlerts(force = false) {
+  const token = store.get(ALERT_TOKEN);
+  if (!token) return (alertsCache = { alerts: [], at: Date.now() });
+  if (alertsCache && !force && Date.now() - alertsCache.at < 30_000) return alertsCache;
+  try {
+    const r = await alertsApi('list', { token });
+    alertsCache = { alerts: r.alerts || [], at: Date.now() };
+  } catch {
+    alertsCache = { alerts: alertsCache?.alerts || [], at: Date.now(), error: true };
+  }
+  return alertsCache;
+}
+/** Abonnement push du navigateur + enregistrement de l'appareil (après accord pour les notifications). */
+async function ensureDevice() {
+  if (!vapidKey) vapidKey = (await alertsApi('config')).publicKey;
+  const key = fromB64url(vapidKey);
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  const old = sub?.options?.applicationServerKey;
+  if (sub && old && new Uint8Array(old).join() !== key.join()) { await sub.unsubscribe(); sub = null; }
+  if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key });
+  let token = store.get(ALERT_TOKEN);
+  if (!token) { token = newToken(); store.set(ALERT_TOKEN, token); }
+  await alertsApi('register', { token, sub: sub.toJSON(), lang: getLang() });
+  return token;
+}
+
+function alertLine(a) {
+  const cond = `${esc(a.label)} ${a.direction === 'above' ? '≥' : '≤'} ${fmtNative(a.target, a.currency)}`;
+  const st = a.triggeredAt
+    ? t('alert.fired', { d: fmtDay(Date.parse(a.triggeredAt)), p: fmtNative(a.triggeredPrice, a.currency) })
+    : t('alert.active');
+  return `<li class="${a.triggeredAt ? 'fired' : ''}"><span class="alert-cond">${cond}</span><span class="alert-state">${st}</span>
+    <button type="button" class="alert-del" data-del="${esc(a.id)}" aria-label="${esc(t('alert.delete'))} : ${esc(a.label)}">✕</button></li>`;
+}
+function bindDeletes(root, after) {
+  root.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try { await alertsApi('delete', { token: store.get(ALERT_TOKEN), id: b.dataset.del }); } catch { b.disabled = false; return; }
+    await loadAlerts(true);
+    after();
+  }));
+}
+function renderAlertList() {
+  const box = $('#alert-list');
+  const mine = (alertsCache?.alerts || []).filter((a) => alertAsset && a.kind === alertAsset.kind && a.assetId === alertAsset.assetId);
+  box.innerHTML = mine.length ? `<h3>${t('alert.forAsset')}</h3><ul class="alert-items">${mine.map(alertLine).join('')}</ul>` : '';
+  bindDeletes(box, () => { renderAlertList(); if (state.tab === 'favoris') renderFavAlerts(); });
+}
+async function renderFavAlerts() {
+  const box = $('#fav-alerts');
+  if (!store.get(ALERT_TOKEN)) { box.innerHTML = ''; return; }
+  const { alerts, error } = await loadAlerts();
+  box.innerHTML = `<h2>${t('alert.mine')}</h2>
+    ${error ? `<p class="alert-msg">${t('alert.error')}</p>` : ''}
+    ${alerts.length ? `<ul class="alert-items">${alerts.map(alertLine).join('')}</ul>` : `<p class="consent-small">${t('alert.none')}</p>`}
+    <button type="button" class="btn btn-sm" id="alerts-forget">${t('alert.forget')}</button>`;
+  bindDeletes(box, renderFavAlerts);
+  $('#alerts-forget').onclick = async () => {
+    if (!confirm(t('alert.forgetConfirm'))) return;
+    try { await alertsApi('forget', { token: store.get(ALERT_TOKEN) }); } catch { /* le serveur supprimera l'appareil inactif */ }
+    try { await (await (await navigator.serviceWorker.ready).pushManager.getSubscription())?.unsubscribe(); } catch { /* rien */ }
+    try { localStorage.removeItem(`marches:${ALERT_TOKEN}`); } catch { /* rien */ }
+    alertsCache = null;
+    renderFavAlerts();
+  };
+}
+
+function alertMsg(key, vars) {
+  const m = $('#alert-msg');
+  m.innerHTML = key ? t(key, vars) : '';
+  m.hidden = !key;
+}
+function updateAlertDir() {
+  const a = alertAsset;
+  const v = parseAmount($('#alert-target').value);
+  const out = $('#alert-dir');
+  if (!isNum(v) || !isNum(a?.price) || v === a.price) { out.textContent = ''; return; }
+  out.textContent = t(v > a.price ? 'alert.above' : 'alert.below', { t: fmtNative(v, a.currency) });
+}
+async function openAlert(a) {
+  alertAsset = a;
+  $('#alert-title').textContent = t('alert.title', { l: a.label });
+  $('#alert-now').textContent = t('alert.now', { p: fmtNative(a.price, a.currency) });
+  $('#alert-unit').textContent = a.currency === 'USD' ? '$' : a.currency || t('alert.points');
+  $('#alert-note').textContent = a.currency === 'USD' && eurRate() ? t('alert.usdNote') : '';
+  const input = $('#alert-target');
+  input.value = '';
+  input.placeholder = isNum(a.price) ? NF2.format(a.price) : '';
+  $('#alert-dir').textContent = '';
+  alertMsg(isNum(a.price) ? null : 'alert.noPrice');
+  $('#alert-submit').disabled = !isNum(a.price);
+  $('#alert-info').innerHTML = t('alert.info', { link: `<a href="${legalPrefix()}/confidentialite.html#alertes">${t('alert.privacy')}</a>` });
+  $('#alert-list').innerHTML = '';
+  $('#alert').hidden = false;
+  input.focus();
+  if (store.get(ALERT_TOKEN)) { await loadAlerts(); renderAlertList(); }
+}
+function closeAlert() {
+  $('#alert').hidden = true;
+  alertAsset = null;
+}
+$('#alert-close').addEventListener('click', closeAlert);
+$('#alert').addEventListener('click', (e) => { if (e.target.id === 'alert') closeAlert(); });
+$('#alert-target').addEventListener('input', updateAlertDir);
+$('#alert-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const a = alertAsset;
+  const target = parseAmount($('#alert-target').value);
+  if (!a || !isNum(a.price)) return alertMsg('alert.noPrice');
+  if (!isNum(target) || target <= 0) return alertMsg('alert.invalid');
+  if (target === a.price) return alertMsg('alert.same');
+  const sup = pushSupport();
+  if (sup !== 'ok') return alertMsg(sup === 'ios' ? 'alert.ios' : 'alert.unsupported');
+  if (!navigator.onLine) return alertMsg('alert.offline');
+  // Demande d'autorisation dans le geste de l'utilisateur (obligatoire sur iPhone).
+  const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+  if (perm !== 'granted') return alertMsg('alert.denied');
+  const btn = $('#alert-submit');
+  btn.disabled = true;
+  btn.textContent = t('alert.creating');
+  try {
+    const token = await ensureDevice();
+    await alertsApi('create', { token, alert: { kind: a.kind, assetId: a.assetId, label: a.label, direction: target > a.price ? 'above' : 'below', target, currency: a.currency } });
+    $('#alert-target').value = '';
+    $('#alert-dir').textContent = '';
+    alertMsg('alert.created');
+    await loadAlerts(true);
+    if (alertAsset === a) renderAlertList();
+    if (state.tab === 'favoris') renderFavAlerts();
+  } catch (err) {
+    alertMsg(err.status === 409 ? 'alert.limit' : 'alert.error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('alert.create');
+  }
+});
 
 /* ---------- Image téléchargeable des heatmaps ---------- */
 let snapURL = null;
 async function openSnapshot(kind) {
   const crypto = kind === 'crypto';
   const data = crypto ? state.crypto : state.stocks;
-  const items = crypto ? data?.coins?.map((c) => ({ ...c, label: c.symbol })) : data?.companies;
+  const items = crypto ? cryptoItems(data) : stockItems(data);
   const btn = document.querySelector(`[data-snap="${kind}"]`);
   if (!items?.length || btn.disabled) return;
   btn.disabled = true;
   btn.querySelector('span').textContent = t('snap.making');
   try {
-    const maxAbs = crypto ? 8 : 4;
+    const maxAbs = crypto ? PERIOD_MAX[prefs.period] : 4;
+    const vars = { n: items.length, p: periodLabel() };
     const old = state.offline[crypto ? 'crypto' : 'stocks'] || data.stale;
     const blob = await makeSnapshot({
       title: t('appName'),
-      subtitle: t(crypto ? 'title.crypto' : 'title.actions'),
+      subtitle: t(crypto ? 'title.crypto' : 'title.actions', vars),
       when: `${isNum(data.fetchedAt) ? dateTimeFmt.format(data.fetchedAt) : ND}${old ? ` · ${t('stale')}` : ''}`,
       stats: crypto ? cryptoStats(data) : stocksStats(data),
       items,
@@ -315,18 +542,19 @@ async function openSnapshot(kind) {
       fmtPct: (r) => fmtPct(r.changePct),
       priceText: crypto ? (c) => fmtPrice(c.price) : (c) => fmtStockPrice(c.price, c.currency),
       legend: [
-        { color: '#b42323', text: t(crypto ? 'legend.down24' : 'legend.down') },
+        { color: '#b42323', text: t(crypto ? 'legend.down24' : 'legend.down', vars) },
         { color: '#2b333d', text: t('legend.flat') },
-        { color: '#15803d', text: t(crypto ? 'legend.up24' : 'legend.upSession') },
+        { color: '#15803d', text: t(crypto ? 'legend.up24' : 'legend.upSession', vars) },
       ],
       note: t(crypto ? 'snap.noteCrypto' : 'snap.noteStocks'),
-      sources: crypto ? t('snap.srcCrypto', { s: data.source || ND }) : t('snap.srcStocks'),
+      sources: crypto ? t('snap.srcCrypto', { s: data.source || ND, cur: curNote() })
+        : t('snap.srcStocks', { cur: eurRate() ? ` · ${curNote('cur.eurStocks')}` : '' }),
       disclaimer: t('disclaimer'),
       site: location.host,
     });
     const stamp = isNum(data.fetchedAt) ? new Date(data.fetchedAt) : new Date();
     const pad = (n) => String(n).padStart(2, '0');
-    const name = `marches-${crypto ? 'crypto' : 'entreprises'}-${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.png`;
+    const name = `marches-${crypto ? `crypto-top${items.length}-${prefs.period}` : `entreprises-top${items.length}`}-${stamp.getFullYear()}-${pad(stamp.getMonth() + 1)}-${pad(stamp.getDate())}-${pad(stamp.getHours())}${pad(stamp.getMinutes())}.png`;
     showSnapshot(blob, name);
   } catch {
     btn.querySelector('span').textContent = t('snap.failed');
@@ -399,8 +627,24 @@ const stat = (label, value, cls = '') =>
  * Ouvre l'écran graphique. `tv` est un objet ou une promesse :
  * { tv: 'EXCHANGE:SYMBOL', interval?, link?, note? } | { tv: null, error? }.
  */
-async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
+function renderFavBtn(fav) {
+  const b = $('#chart-fav');
+  const on = isFav(fav);
+  b.setAttribute('aria-pressed', String(on));
+  b.setAttribute('aria-label', t(on ? 'fav.remove' : 'fav.add'));
+  b.title = t(on ? 'fav.remove' : 'fav.add');
+}
+async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav, alert }) {
   const token = ++chartToken;
+  $('#chart-alert').onclick = () => openAlert(alert);
+  const favBtn = $('#chart-fav');
+  renderFavBtn(fav);
+  favBtn.onclick = () => {
+    toggleFav(fav);
+    renderFavBtn(fav);
+    if (fav.t === 's' && (state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks();
+    if (state.tab === 'favoris') renderFavs();
+  };
   const box = $('#chart'), frame = $('#chart-frame'), link = $('#chart-link'), note = $('#chart-note');
   $('#chart-title').innerHTML = titleHTML;
   $('#chart-sub').textContent = sub;
@@ -468,28 +712,32 @@ function renderTVFrame(res, label, token) {
   }));
 }
 
-function openChart(c, rank, totalTop) {
+function openChart(c, rank, totalTop, count) {
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
-    sub: `${c.name} · ${t('rank', { n: rank })} · ${t('change24')}`,
+    sub: `${c.name} · ${t('rank', { n: rank })} · ${t('change24', { p: periodLabel() })}`,
     statsHTML: stat(t('price'), fmtPrice(c.price)) + stat(t('cap'), fmtCap(c.marketCap))
-      + stat(t('share'), isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)}${pctSign()}` : ND),
+      + stat(t('share', { n: count }), isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)}${pctSign()}` : ND),
     tv: resolveTV(c),
     label: c.symbol,
     missingMsg: t('missCrypto', { s: esc(c.symbol) }),
+    fav: { t: 'c', id: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
+    alert: { kind: 'c', assetId: c.id, label: c.symbol, price: c.price, currency: 'USD' },
   });
 }
 
-function openStockChart(c, rank, total) {
+function openStockChart(c, rank, total, count) {
   const st = statusOf(c);
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.label)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
     sub: `${c.name} · ${t('rank', { n: rank })}${c.country ? ` · ${country(c.country)}` : ''} · ${st.chip}`,
     statsHTML: stat(t('quote'), fmtStockPrice(c.price, c.currency)) + stat(t('cap'), fmtCap(c.marketCap))
-      + stat(t('share'), isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}${pctSign()}` : ND),
+      + stat(t('share', { n: count }), isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}${pctSign()}` : ND),
     tv: c.tv || { tv: null },
     label: c.label,
     missingMsg: t('missStock', { s: esc(c.name) }),
+    fav: { t: 's', id: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
+    alert: { kind: 's', assetId: c.id, label: c.label, price: c.price, currency: c.currency || null },
   });
 }
 
@@ -562,6 +810,8 @@ function openIndexChart(ix) {
     tv: INDEX_TV[ix.id] || { tv: null },
     label: indexName(ix),
     missingMsg: t('missIndex', { s: esc(indexName(ix)) }),
+    fav: { t: 'i', id: ix.id, label: ix.name, name: ix.name, logo: ix.logo, logoSmall: ix.logoSmall },
+    alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null },
   });
 }
 
@@ -611,6 +861,89 @@ function statusOf(ix) {
   }
 }
 
+function indexCardHTML(ix, dataId = ix.id) {
+  const st = statusOf(ix);
+  return `<article class="idx" data-id="${esc(dataId)}" tabindex="0" role="button" aria-label="${esc(`${indexName(ix)}, ${country(ix.country)} : ${fmtLevel(ix.price)}, ${fmtPct(ix.changePct)}. ${t('openChart')}`)}" style="background-color:${heat(ix.changePct, 2.5)}">
+      <div class="idx-country">${logoImg(ix, 20, 'idx-logo')}<span>${esc(country(ix.country))}</span></div>
+      <div class="idx-top"><h3>${esc(indexName(ix))}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
+      <div class="idx-level">${fmtLevel(ix.price)}</div>
+      <div class="idx-chg">${fmtPct(ix.changePct)} <span>(${fmtSigned(ix.change)})</span></div>
+      ${sparkSVG(ix.spark, ix.prevClose)}
+      <div class="idx-foot">${st.foot}</div>
+    </article>`;
+}
+
+/** Carte d'un favori crypto ou entreprise (même présentation que les indices). */
+function assetCardHTML({ key, kicker, f, title, chip, price, pct, maxAbs, foot }) {
+  return `<article class="idx" data-id="${esc(key)}" tabindex="0" role="button" aria-label="${esc(`${f.name} (${title}) : ${price}, ${fmtPct(pct)}. ${t('openChart')}`)}" style="background-color:${heat(pct, maxAbs)}">
+      <div class="idx-country">${logoImg(f, 20, 'idx-logo')}<span>${esc(kicker)}</span></div>
+      <div class="idx-top"><h3>${esc(title)}</h3>${chip ? `<span class="chip ${chip.cls}">${chip.chip}</span>` : ''}</div>
+      <div class="idx-name">${esc(f.name)}</div>
+      <div class="idx-level">${price}</div>
+      <div class="idx-chg">${fmtPct(pct)}</div>
+      <div class="idx-foot">${foot}</div>
+    </article>`;
+}
+
+/* ---------- Favoris ---------- */
+function findCoin(f) {
+  const coins = state.crypto?.coins || [];
+  const i = coins.findIndex((c) => c.id === f.id);
+  return i >= 0 ? i : coins.findIndex((c) => c.symbol === f.label); // id différent selon la source (CoinGecko / CoinPaprika)
+}
+function renderFavs() {
+  renderFavAlerts();
+  const grid = $('#grid-favoris');
+  if (!favs.length) {
+    grid.innerHTML = `<div class="empty fav-empty">${t('fav.empty')}</div>`;
+    grid.onclick = null;
+    return;
+  }
+  const field = PERIOD_FIELD[prefs.period];
+  const actions = new Map();
+  grid.innerHTML = favs.map((f) => {
+    const key = favKey(f);
+    if (f.t === 'i') {
+      const ix = state.indices?.indices?.find((x) => x.id === f.id);
+      if (ix) { actions.set(key, () => openIndexChart(ix)); return indexCardHTML(ix, key); }
+      return assetCardHTML({ key, kicker: t('fav.index'), f: { ...f, name: f.name }, title: f.label, price: ND, pct: null, maxAbs: 2.5, foot: state.loading ? t('loading') : t('noData') });
+    }
+    if (f.t === 'c') {
+      const i = findCoin(f);
+      const c = i >= 0 ? state.crypto.coins[i] : null;
+      if (!c) return assetCardHTML({ key, kicker: t('fav.crypto'), f, title: f.label, price: ND, pct: null, maxAbs: 8, foot: state.loading ? t('loading') : t('fav.missing') });
+      const item = { ...c, label: c.symbol, changePct: isNum(c[field]) ? c[field] : null };
+      const top = cryptoItems(state.crypto);
+      const inTop = i < top.length;
+      const total = top.reduce((s, x) => s + (isNum(x.marketCap) ? x.marketCap : 0), 0);
+      actions.set(key, () => openChart(item, i + 1, inTop ? total : null, top.length));
+      return assetCardHTML({ key, kicker: `${t('fav.crypto')} · ${t('rank', { n: i + 1 })}`, f: c, title: c.symbol, price: fmtPrice(c.price),
+        pct: item.changePct, maxAbs: PERIOD_MAX[prefs.period], foot: `${t('change24', { p: periodLabel() })} · ${fmtCap(c.marketCap)}` });
+    }
+    const list = state.stocks?.companies || [];
+    const i = list.findIndex((c) => c.id === f.id);
+    const c = i >= 0 ? list[i] : null;
+    if (!c) return assetCardHTML({ key, kicker: t('fav.stock'), f, title: f.label, price: ND, pct: null, maxAbs: 4, foot: state.loading ? t('loading') : t('fav.missingStock') });
+    const top = stockItems(state.stocks);
+    const total = top.reduce((s, x) => s + (isNum(x.marketCap) ? x.marketCap : 0), 0);
+    actions.set(key, () => openStockChart(c, i + 1, i < top.length ? total : null, top.length));
+    const st = statusOf(c);
+    return assetCardHTML({ key, kicker: `${c.country ? country(c.country) : t('fav.stock')} · ${t('rank', { n: i + 1 })}`, f: c, title: c.label, chip: st,
+      price: fmtStockPrice(c.price, c.currency), pct: c.changePct, maxAbs: 4, foot: st.foot });
+  }).join('');
+  grid.onclick = (e) => {
+    const card = e.target.closest('.idx');
+    actions.get(card?.dataset.id)?.();
+  };
+  grid.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.idx');
+    if (!card) return;
+    e.preventDefault();
+    card.click();
+  };
+}
+
 function renderIndices(region) {
   const grid = $(`#grid-${region}`);
   const list = state.indices?.indices?.filter((i) => i.region === region);
@@ -619,17 +952,7 @@ function renderIndices(region) {
       : `<div class="empty" style="grid-column:1/-1">${t('noData')}</div>`;
     return;
   }
-  grid.innerHTML = list.map((ix) => {
-    const st = statusOf(ix);
-    return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" role="button" aria-label="${esc(`${indexName(ix)}, ${country(ix.country)} : ${fmtLevel(ix.price)}, ${fmtPct(ix.changePct)}. ${t('openChart')}`)}" style="background-color:${heat(ix.changePct, 2.5)}">
-      <div class="idx-country">${logoImg(ix, 20, 'idx-logo')}<span>${esc(country(ix.country))}</span></div>
-      <div class="idx-top"><h3>${esc(indexName(ix))}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
-      <div class="idx-level">${fmtLevel(ix.price)}</div>
-      <div class="idx-chg">${fmtPct(ix.changePct)} <span>(${fmtSigned(ix.change)})</span></div>
-      ${sparkSVG(ix.spark, ix.prevClose)}
-      <div class="idx-foot">${st.foot}</div>
-    </article>`;
-  }).join('');
+  grid.innerHTML = list.map((ix) => indexCardHTML(ix)).join('');
   grid.onclick = (e) => {
     const card = e.target.closest('.idx');
     const ix = card && list.find((i) => i.id === card.dataset.id);
@@ -646,10 +969,11 @@ function renderIndices(region) {
 
 /* ---------- En-tête, bannière ---------- */
 function renderChrome() {
-  const key = state.tab === 'crypto' ? 'crypto' : state.tab === 'actions' ? 'stocks' : 'indices';
+  const key = state.tab === 'actions' ? 'stocks' : ['crypto', 'favoris'].includes(state.tab) ? 'crypto' : 'indices';
   const data = state[key];
-  const when = data?.fetchedAt && key === 'indices' ? ` · ${t('updatedShort')} ${fmtTime(data.fetchedAt)}` : '';
-  $('#subtitle').textContent = `${t(`title.${state.tab}`)}${when}`;
+  const when = data?.fetchedAt && (key === 'indices' || state.tab === 'favoris') ? ` · ${t('updatedShort')} ${fmtTime(data.fetchedAt)}` : '';
+  const n = state.tab === 'crypto' ? cryptoItems(state.crypto).length || prefs.nCrypto : stockItems(state.stocks).length || prefs.nStocks;
+  $('#subtitle').textContent = `${t(`title.${state.tab}`, { n, p: periodLabel() })}${when}`;
 
   const banner = $('#banner');
   let msg = '';
@@ -681,6 +1005,7 @@ function render() {
   renderChrome();
   if (state.tab === 'crypto') renderCrypto();
   else if (state.tab === 'actions') renderStocks();
+  else if (state.tab === 'favoris') renderFavs();
   else renderIndices(state.tab);
 }
 
@@ -689,7 +1014,8 @@ function applyStatic() {
   const l = getLang();
   document.documentElement.lang = HTML_LANG[l];
   document.title = t('appName');
-  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  const vars = { p: periodLabel(), n: prefs.nCrypto };
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n, vars);
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
   for (const el of document.querySelectorAll('[data-i18n-alt]')) el.alt = t(el.dataset.i18nAlt);
   for (const el of document.querySelectorAll('[data-legal]')) el.href = `${legalPrefix(l)}/${el.dataset.legal}.html`;
@@ -718,8 +1044,10 @@ async function refresh() {
   state.loading = true;
   $('#refresh').classList.add('spinning');
   if (!state.crypto || !state.indices || !state.stocks) render();
-  const [c, i, st] = await Promise.allSettled([getJSON('/api/crypto'), getJSON('/api/indices'), getJSON('/api/stocks')]);
-  for (const [key, r] of [['crypto', c], ['indices', i], ['stocks', st]]) {
+  const [c, i, st, fx] = await Promise.allSettled([
+    getJSON('/api/crypto'), getJSON('/api/indices'), getJSON(`/api/stocks?n=${stocksToLoad()}`), getJSON('/api/fx'),
+  ]);
+  for (const [key, r] of [['crypto', c], ['indices', i], ['stocks', st], ['fx', fx]]) {
     if (r.status === 'fulfilled' && !r.value.body.error) {
       state[key] = r.value.body;
       state.offline[key] = r.value.fromCache;
@@ -733,6 +1061,65 @@ async function refresh() {
   $('#refresh').classList.remove('spinning');
   render();
 }
+
+/** Recharge seulement les entreprises (changement du top 25 / 50 / 100). */
+async function loadStocks() {
+  const n = stocksToLoad();
+  try {
+    const r = await getJSON(`/api/stocks?n=${n}`);
+    if (r.body.error || stocksToLoad() !== n) return;
+    state.stocks = r.body;
+    state.offline.stocks = r.fromCache;
+    if (!r.fromCache) store.set('stocks', r.body);
+  } catch {
+    state.offline.stocks = true;
+  }
+  render();
+}
+async function loadFx() {
+  try {
+    const r = await getJSON('/api/fx');
+    if (r.body.error) return;
+    state.fx = r.body;
+    if (!r.fromCache) store.set('fx', r.body);
+  } catch { /* on reste en dollars */ }
+  render();
+}
+
+/* ---------- Réglages des heatmaps : période, top N, devise ---------- */
+function segHTML(pref, options, label, prefix = '') {
+  return `<div class="seg" role="group" aria-label="${esc(label)}">${prefix}${options.map(([v, text]) =>
+    `<button type="button" data-pref="${pref}" data-v="${v}" aria-pressed="${String(prefs[pref] === v)}">${esc(text)}</button>`).join('')}</div>`;
+}
+function renderTools(kind) {
+  const el = $(`#${kind}-tools`);
+  if (!el) return;
+  const parts = [];
+  if (kind === 'crypto') parts.push(segHTML('period', [['1h', t('p.1h')], ['24h', t('p.24h')], ['7d', t('p.7d')]], t('tools.period')));
+  parts.push(segHTML(kind === 'crypto' ? 'nCrypto' : 'nStocks', [[25, '25'], [50, '50'], [100, '100']], t('tools.top'),
+    `<span class="seg-label" aria-hidden="true">${t('tools.top')}</span>`));
+  parts.push(segHTML('cur', [['USD', '$'], ['EUR', '€']], t('tools.cur')));
+  el.innerHTML = parts.join('');
+  const note = $(`#${kind}-fx`);
+  const fx = state.fx;
+  note.hidden = prefs.cur !== 'EUR';
+  note.textContent = eurRate()
+    ? t('fx.note', { r: nf(4).format(fx.eurusd), src: fx.source || ND, t: fx.source === 'BCE' ? fmtDay(fx.time) : fmtTime(fx.time) })
+    : t('fx.na');
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('button[data-pref]');
+  if (!b) return;
+  const k = b.dataset.pref;
+  const v = k.startsWith('n') ? Number(b.dataset.v) : b.dataset.v;
+  if (!PREF_VALUES[k]?.includes(v) || prefs[k] === v) return;
+  prefs[k] = v;
+  store.set('prefs', prefs);
+  applyStatic();
+  render();
+  if (k === 'nStocks' && (state.stocks?.companies?.length ?? 0) < v) loadStocks();
+  if (k === 'cur' && v === 'EUR' && !state.fx) loadFx();
+});
 
 /* ---------- Navigation ---------- */
 function setTab(tab) {
@@ -751,7 +1138,8 @@ $('#refresh').addEventListener('click', refresh);
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('#snap').hidden) closeSnapshot();
+  if (!$('#alert').hidden) closeAlert();
+  else if (!$('#snap').hidden) closeSnapshot();
   else if (!$('#chart').hidden) $('#chart-close').click();
 });
 

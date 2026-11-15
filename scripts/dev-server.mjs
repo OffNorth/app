@@ -35,7 +35,12 @@ createServer(async (req, res) => {
     if (url.pathname.startsWith('/api/')) {
       const name = url.pathname.slice(5).replace(/[^a-z0-9-]/gi, '');
       const mod = await import(pathToFileURL(join(ROOT, 'api', `${name}.js`)).href);
-      const response = await mod.GET(new Request(url));
+      const handler = mod[req.method];
+      if (!handler) { res.writeHead(405); res.end(); return; }
+      const chunks = [];
+      for await (const c of req) chunks.push(c);
+      const init = req.method === 'GET' || req.method === 'HEAD' ? {} : { method: req.method, body: Buffer.concat(chunks), headers: { 'Content-Type': req.headers['content-type'] || 'application/json' } };
+      const response = await handler(new Request(url, init));
       res.writeHead(response.status, { ...extraHeaders(url.pathname), ...Object.fromEntries(response.headers) });
       res.end(Buffer.from(await response.arrayBuffer()));
       return;
