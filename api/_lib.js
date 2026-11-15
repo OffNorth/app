@@ -53,8 +53,8 @@ export function json(data, status = 200, cdnMaxAge = 45) {
     status,
     headers: {
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'public, max-age=0, must-revalidate',
-      'Vercel-CDN-Cache-Control': status === 200 ? `max-age=${cdnMaxAge}, stale-while-revalidate=30` : 'no-store',
+      'Cache-Control': cdnMaxAge > 0 ? 'public, max-age=0, must-revalidate' : 'no-store',
+      'Vercel-CDN-Cache-Control': status === 200 && cdnMaxAge > 0 ? `max-age=${cdnMaxAge}, stale-while-revalidate=30` : 'no-store',
       // Pas d'en-tête CORS : l'API ne sert que l'app elle-même (même origine), pas des sites tiers.
     },
   });

@@ -38,15 +38,20 @@
   <div id="ptr" class="ptr" aria-hidden="true"><div class="ptr-spinner"></div></div>
 
   <main id="main">
+    <section id="view-favoris" class="view" data-tab="favoris" aria-label="Favoris" hidden><div class="grid" id="grid-favoris"></div><div class="fav-alerts" id="fav-alerts"></div><p class="legend" data-i18n="legend.favs">Touchez une carte pour ouvrir son graphique. L’étoile de l’écran graphique ajoute ou retire un favori.</p></section>
     <section id="view-crypto" class="view" data-tab="crypto" aria-label="Crypto">
+      <div class="tools" id="crypto-tools" role="toolbar" aria-label="Réglages de la heatmap" data-i18n-aria="tools.label"></div>
+      <p class="fx-note" id="crypto-fx" hidden></p>
       <div class="stats" id="crypto-stats"></div>
-      <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
+      <div class="treemap" id="treemap" role="list" aria-label="Heatmap des cryptos"></div>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down24">Baisse 24 h</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.up24">Hausse 24 h</span> <span data-i18n="legend.cryptoTail">· taille = capitalisation (BTC réduit) · hors stablecoins · touchez une tuile pour son graphique</span></p>
       <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="crypto"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
     <section id="view-actions" class="view" data-tab="actions" aria-label="Entreprises" hidden>
+      <div class="tools" id="stocks-tools" role="toolbar" aria-label="Réglages de la heatmap" data-i18n-aria="tools.label"></div>
+      <p class="fx-note" id="stocks-fx" hidden></p>
       <div class="stats" id="stocks-stats"></div>
-      <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des 25 plus grosses entreprises cotées"></div>
+      <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des entreprises cotées"></div>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
       <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="stocks"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
@@ -70,6 +75,10 @@
   </main>
 
   <nav class="tabbar" aria-label="Sections">
+    <button type="button" data-tab="favoris">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>
+      <span data-i18n="tab.favoris">Favoris</span>
+    </button>
     <button type="button" data-tab="crypto">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="2"/><rect x="15" y="3" width="6" height="6" rx="1.5"/><rect x="15" y="11" width="6" height="3" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="11" y="16" width="10" height="5" rx="1.5"/></svg>
       <span data-i18n="tab.crypto">Crypto</span>
@@ -93,6 +102,12 @@
         <h2 id="chart-title"></h2>
         <p id="chart-sub"></p>
       </div>
+      <button id="chart-alert" class="icon-btn" type="button" aria-label="Créer une alerte de prix" data-i18n-aria="alert.btn">
+        <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15zM10 20.5a2 2 0 0 0 4 0"/></svg>
+      </button>
+      <button id="chart-fav" class="icon-btn fav-btn" type="button" aria-pressed="false" aria-label="Ajouter aux favoris">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 2.8l2.8 5.9 6.4.8-4.7 4.4 1.2 6.4L12 17.2l-5.7 3.1 1.2-6.4-4.7-4.4 6.4-.8z"/></svg>
+      </button>
     </div>
     <div class="chart-stats" id="chart-stats"></div>
     <div class="chart-frame" id="chart-frame"></div>
@@ -110,6 +125,26 @@
         <button type="button" class="btn" id="snap-share" data-i18n="snap.share" hidden>Partager</button>
         <a class="btn btn-primary" id="snap-save" href="#" download data-i18n="snap.save">Télécharger</a>
       </div>
+    </div>
+  </div>
+
+  <div id="alert" class="snap" role="dialog" aria-modal="true" aria-labelledby="alert-title" hidden>
+    <div class="snap-card alert-card">
+      <h2 id="alert-title"></h2>
+      <p class="alert-now" id="alert-now"></p>
+      <form id="alert-form" novalidate>
+        <label for="alert-target" data-i18n="alert.target">Me prévenir quand le cours atteint</label>
+        <div class="alert-input"><input id="alert-target" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done"><span id="alert-unit"></span></div>
+        <p class="alert-note" id="alert-note"></p>
+        <p class="alert-dir" id="alert-dir" aria-live="polite"></p>
+        <p class="alert-msg" id="alert-msg" role="status" hidden></p>
+        <div class="snap-actions">
+          <button type="button" class="btn" id="alert-close" data-i18n="snap.close">Fermer</button>
+          <button type="submit" class="btn btn-primary" id="alert-submit" data-i18n="alert.create">Créer l’alerte</button>
+        </div>
+      </form>
+      <div id="alert-list"></div>
+      <p class="snap-hint" id="alert-info"></p>
     </div>
   </div>
 

@@ -1,11 +1,12 @@
-// GET /api/crypto — top 25 cryptos par capitalisation, HORS stablecoins, + données globales.
+// GET /api/crypto — top 100 cryptos par capitalisation, HORS stablecoins et jetons « wrappés »,
+// variations 1 h / 24 h / 7 j, + données globales. Le client affiche le top 25, 50 ou 100.
 // Source principale : CoinGecko (gratuit, sans clé ; clé "Demo" optionnelle via COINGECKO_API_KEY).
 // Repli : CoinPaprika (gratuit, sans clé).
 import { cached, fetchWithTimeout, json, num } from './_lib.js';
 
 const TTL = 45_000;
-const LIMIT = 25;
-const FETCH = 60; // marge : on retire les stablecoins puis on garde les 25 premiers
+const LIMIT = 100;
+const FETCH = 150; // marge : on retire les stablecoins et dérivés puis on garde les 100 premiers
 const GECKO = 'https://api.coingecko.com/api/v3';
 
 // Filet de sécurité si la catégorie CoinGecko est indisponible (et pour le repli CoinPaprika).
@@ -15,8 +16,7 @@ const STABLE_SYMBOLS = new Set([
   'SUSD', 'USDB', 'USDX', 'USDGO', 'OUSD', 'AUSD', 'PUSD', 'USDO', 'EURS', 'EURT', 'XSGD',
   'SUSDS', 'SUSDE', 'SDAI', 'SFRAX', 'SYRUPUSDC', 'SYRUPUSDT', 'STUSDT', 'USDY', 'USYC',
 ]);
-// Repli CoinPaprika uniquement : jetons « wrappés » ou stakés, absents de la liste CoinGecko
-// (doublons de BTC/ETH/SOL qui encombreraient la heatmap).
+// Jetons « wrappés » ou stakés : doublons de BTC/ETH/SOL qui encombreraient la heatmap.
 const DERIVATIVE_SYMBOLS = new Set([
   'WBTC', 'WETH', 'STETH', 'WSTETH', 'WBETH', 'WEETH', 'EETH', 'CBBTC', 'CBETH', 'RETH', 'METH',
   'EZETH', 'RSETH', 'LBTC', 'BTCB', 'SOLVBTC', 'JITOSOL', 'MSOL', 'BNSOL', 'JUPSOL', 'TBTC',
@@ -58,14 +58,17 @@ async function stablecoinIds() {
 async function fromCoinGecko() {
   const [markets, global, stableIds] = await Promise.all([
     fetchWithTimeout(
-      `${GECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH}&page=1&sparkline=false&price_change_percentage=24h`,
+      `${GECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${FETCH}&page=1&sparkline=false&price_change_percentage=1h,24h,7d`,
       { headers: geckoHeaders() }
     ),
     fetchWithTimeout(`${GECKO}/global`, { headers: geckoHeaders() }).catch(() => null),
     stablecoinIds(),
   ]);
   if (!Array.isArray(markets) || markets.length === 0) throw new Error('CoinGecko: réponse vide');
-  const isStable = (c) => stableIds.has(c.id) || STABLE_SYMBOLS.has(String(c.symbol || '').toUpperCase());
+  const isStable = (c) => {
+    const s = String(c.symbol || '').toUpperCase();
+    return stableIds.has(c.id) || STABLE_SYMBOLS.has(s) || DERIVATIVE_SYMBOLS.has(s);
+  };
   const coins = markets.filter((c) => !isStable(c)).slice(0, LIMIT).map((c) => {
     const logo = safeLogo(c.image); // 250 px ; la variante /small/ fait 50 px
     return {
@@ -75,6 +78,8 @@ async function fromCoinGecko() {
       price: num(c.current_price),
       marketCap: num(c.market_cap),
       changePct: num(c.price_change_percentage_24h_in_currency ?? c.price_change_percentage_24h),
+      change1h: num(c.price_change_percentage_1h_in_currency),
+      change7d: num(c.price_change_percentage_7d_in_currency),
       logo,
       logoSmall: logo && logo.includes('/large/') ? logo.replace('/large/', '/small/') : logo,
     };
@@ -106,7 +111,7 @@ async function paprikaGlobal() {
 
 async function fromCoinPaprika() {
   const [tickers, global] = await Promise.all([
-    fetchWithTimeout('https://api.coinpaprika.com/v1/tickers?quotes=USD&limit=80'),
+    fetchWithTimeout('https://api.coinpaprika.com/v1/tickers?quotes=USD&limit=200'),
     paprikaGlobal().catch(() => null),
   ]);
   if (!Array.isArray(tickers) || tickers.length === 0) throw new Error('CoinPaprika: réponse vide');
@@ -124,6 +129,8 @@ async function fromCoinPaprika() {
       price: num(t.quotes.USD.price),
       marketCap: num(t.quotes.USD.market_cap),
       changePct: num(t.quotes.USD.percent_change_24h),
+      change1h: num(t.quotes.USD.percent_change_1h),
+      change7d: num(t.quotes.USD.percent_change_7d),
       logo: safeLogo(`https://static.coinpaprika.com/coin/${encodeURIComponent(t.id)}/logo.png`),
       logoSmall: safeLogo(`https://static.coinpaprika.com/coin/${encodeURIComponent(t.id)}/logo.png`),
     }));

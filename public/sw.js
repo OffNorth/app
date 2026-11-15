@@ -1,5 +1,5 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v10';
+const VERSION = 'v11';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
@@ -89,5 +89,34 @@ self.addEventListener('fetch', (e) => {
     const net = fetch(req).then((res) => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => null);
     e.waitUntil(net);
     return hit || (await net) || new Response('', { status: 504 });
+  })());
+});
+
+// Alertes de prix : notification reçue (contenu chiffré de bout en bout, déchiffré par le navigateur).
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : '' }; }
+  e.waitUntil(self.registration.showNotification(d.title || 'Marchés', {
+    body: d.body || '',
+    tag: typeof d.tag === 'string' ? d.tag : undefined,
+    icon: '/icons/icon-192.png',
+    data: { url: typeof d.url === 'string' ? d.url : '/' },
+  }));
+});
+
+// Toucher la notification : ouvre (ou ramène au premier plan) l'app, uniquement sur une page du site.
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = new URL(e.notification.data?.url || '/', self.location.origin);
+  if (url.origin !== self.location.origin) return;
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const win = wins.find((w) => new URL(w.url).origin === self.location.origin);
+    if (win) {
+      await win.focus();
+      if ('navigate' in win) await win.navigate(url.href).catch(() => {});
+      return;
+    }
+    await self.clients.openWindow(url.href);
   })());
 });
