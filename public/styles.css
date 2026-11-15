@@ -132,6 +132,7 @@ main {
 .idx:active { transform: scale(.98); }
 .idx-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .idx h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.2; }
+.idx-country { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-bottom: 1px; }
 .chip {
   flex: none; display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 650; padding: 3px 7px; border-radius: 99px;
@@ -173,8 +174,8 @@ main {
 /* ---------- Barre d'onglets ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(4, 1fr);
-  padding: 6px 8px calc(var(--safe-bottom) + 6px);
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  padding: 6px 6px calc(var(--safe-bottom) + 6px);
   background: color-mix(in srgb, var(--bg) 90%, transparent);
   -webkit-backdrop-filter: saturate(140%) blur(14px);
   backdrop-filter: saturate(140%) blur(14px);
@@ -183,7 +184,7 @@ main {
 .tabbar button {
   min-height: 52px; border: 0; background: transparent; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-  color: var(--muted); font-size: 12px; font-weight: 600; border-radius: 12px;
+  color: var(--muted); font-size: 11.5px; font-weight: 600; border-radius: 12px; padding: 0 2px; min-width: 0;
   transition: color .15s ease, background .15s ease;
 }
 .tabbar button svg { fill: currentColor; }

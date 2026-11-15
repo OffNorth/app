@@ -1,29 +1,64 @@
-// GET /api/indices — 13 indices boursiers (Chine, USA, Europe) avec sparkline de séance.
-// Source principale : endpoint "chart" de Yahoo Finance (query1, puis query2 en repli).
-// Dernier recours : Stooq (niveau seulement, sans sparkline).
+// GET /api/indices — principaux indices boursiers du monde, groupés par région et par pays,
+// avec la courbe de la séance.
+// Source : Yahoo Finance. Appels groupés (« spark » v7 pour le statut + v8 pour la courbe,
+// 20 symboles par appel), puis repli indice par indice (endpoint « chart »), puis Stooq.
 // Toute valeur introuvable est renvoyée à null → affichée "n/d" côté client.
 import { cached, fetchWithTimeout, json, num } from './_lib.js';
 
 const TTL = 45_000;
 
 export const INDICES = [
-  { id: 'sse', region: 'chine', name: 'Shanghai Composite', yahoo: '000001.SS', stooq: '^shc' },
-  { id: 'szse', region: 'chine', name: 'Shenzhen Component', yahoo: '399001.SZ' },
-  { id: 'csi300', region: 'chine', name: 'CSI 300', yahoo: '000300.SS' },
-  { id: 'hsi', region: 'chine', name: 'Hang Seng', yahoo: '^HSI', stooq: '^hsi' },
-  { id: 'spx', region: 'usa', name: 'S&P 500', yahoo: '^GSPC', stooq: '^spx' },
-  { id: 'ixic', region: 'usa', name: 'Nasdaq Composite', yahoo: '^IXIC', stooq: '^ndq' },
-  { id: 'dji', region: 'usa', name: 'Dow Jones', yahoo: '^DJI', stooq: '^dji' },
-  { id: 'rut', region: 'usa', name: 'Russell 2000', yahoo: '^RUT' },
-  { id: 'cac', region: 'europe', name: 'CAC 40', yahoo: '^FCHI', stooq: '^cac' },
-  { id: 'dax', region: 'europe', name: 'DAX', yahoo: '^GDAXI', stooq: '^dax' },
-  { id: 'ftse', region: 'europe', name: 'FTSE 100', yahoo: '^FTSE', stooq: '^ukx' },
-  { id: 'sx5e', region: 'europe', name: 'Euro Stoxx 50', yahoo: '^STOXX50E' },
-  { id: 'ibex', region: 'europe', name: 'IBEX 35', yahoo: '^IBEX' },
+  // Amériques
+  { id: 'spx', region: 'ameriques', country: 'États-Unis', name: 'S&P 500', yahoo: '^GSPC', stooq: '^spx' },
+  { id: 'ixic', region: 'ameriques', country: 'États-Unis', name: 'Nasdaq Composite', yahoo: '^IXIC', stooq: '^ndq' },
+  { id: 'dji', region: 'ameriques', country: 'États-Unis', name: 'Dow Jones', yahoo: '^DJI', stooq: '^dji' },
+  { id: 'rut', region: 'ameriques', country: 'États-Unis', name: 'Russell 2000', yahoo: '^RUT' },
+  { id: 'tsx', region: 'ameriques', country: 'Canada', name: 'S&P/TSX Composite', yahoo: '^GSPTSE' },
+  { id: 'ibov', region: 'ameriques', country: 'Brésil', name: 'Ibovespa', yahoo: '^BVSP' },
+  { id: 'ipc', region: 'ameriques', country: 'Mexique', name: 'S&P/BMV IPC', yahoo: '^MXX' },
+  { id: 'merval', region: 'ameriques', country: 'Argentine', name: 'S&P Merval', yahoo: '^MERV' },
+  // Europe
+  { id: 'sx5e', region: 'europe', country: 'Zone euro', name: 'Euro Stoxx 50', yahoo: '^STOXX50E' },
+  { id: 'cac', region: 'europe', country: 'France', name: 'CAC 40', yahoo: '^FCHI', stooq: '^cac' },
+  { id: 'dax', region: 'europe', country: 'Allemagne', name: 'DAX', yahoo: '^GDAXI', stooq: '^dax' },
+  { id: 'ftse', region: 'europe', country: 'Royaume-Uni', name: 'FTSE 100', yahoo: '^FTSE', stooq: '^ukx' },
+  { id: 'ibex', region: 'europe', country: 'Espagne', name: 'IBEX 35', yahoo: '^IBEX' },
+  { id: 'ftsemib', region: 'europe', country: 'Italie', name: 'FTSE MIB', yahoo: 'FTSEMIB.MI' },
+  { id: 'aex', region: 'europe', country: 'Pays-Bas', name: 'AEX', yahoo: '^AEX' },
+  { id: 'smi', region: 'europe', country: 'Suisse', name: 'SMI', yahoo: '^SSMI' },
+  { id: 'bel20', region: 'europe', country: 'Belgique', name: 'BEL 20', yahoo: '^BFX' },
+  { id: 'psi', region: 'europe', country: 'Portugal', name: 'PSI', yahoo: 'PSI20.LS' },
+  { id: 'atx', region: 'europe', country: 'Autriche', name: 'ATX', yahoo: '^ATX' },
+  { id: 'omx', region: 'europe', country: 'Suède', name: 'OMX Stockholm 30', yahoo: '^OMX' },
+  { id: 'osebx', region: 'europe', country: 'Norvège', name: 'Oslo Børs (OSEBX)', yahoo: 'OSEBX.OL' },
+  { id: 'wig20', region: 'europe', country: 'Pologne', name: 'WIG20', yahoo: 'WIG20.WA' },
+  { id: 'xu100', region: 'europe', country: 'Turquie', name: 'BIST 100', yahoo: 'XU100.IS' },
+  // Asie-Pacifique
+  { id: 'sse', region: 'asie', country: 'Chine', name: 'Shanghai Composite', yahoo: '000001.SS', stooq: '^shc' },
+  { id: 'szse', region: 'asie', country: 'Chine', name: 'Shenzhen Component', yahoo: '399001.SZ' },
+  { id: 'csi300', region: 'asie', country: 'Chine', name: 'CSI 300', yahoo: '000300.SS' },
+  { id: 'hsi', region: 'asie', country: 'Hong Kong', name: 'Hang Seng', yahoo: '^HSI', stooq: '^hsi' },
+  { id: 'n225', region: 'asie', country: 'Japon', name: 'Nikkei 225', yahoo: '^N225' },
+  { id: 'kospi', region: 'asie', country: 'Corée du Sud', name: 'KOSPI', yahoo: '^KS11' },
+  { id: 'taiex', region: 'asie', country: 'Taïwan', name: 'TAIEX', yahoo: '^TWII' },
+  { id: 'nifty', region: 'asie', country: 'Inde', name: 'Nifty 50', yahoo: '^NSEI' },
+  { id: 'sensex', region: 'asie', country: 'Inde', name: 'Sensex', yahoo: '^BSESN' },
+  { id: 'sti', region: 'asie', country: 'Singapour', name: 'Straits Times (STI)', yahoo: '^STI' },
+  { id: 'jkse', region: 'asie', country: 'Indonésie', name: 'IDX Composite', yahoo: '^JKSE' },
+  { id: 'klci', region: 'asie', country: 'Malaisie', name: 'FBM KLCI', yahoo: '^KLSE' },
+  { id: 'set', region: 'asie', country: 'Thaïlande', name: 'SET', yahoo: '^SET.BK' },
+  { id: 'asx200', region: 'asie', country: 'Australie', name: 'S&P/ASX 200', yahoo: '^AXJO' },
+  { id: 'nz50', region: 'asie', country: 'Nouvelle-Zélande', name: 'S&P/NZX 50', yahoo: '^NZ50' },
+  // Afrique & Moyen-Orient
+  { id: 'tasi', region: 'afrique', country: 'Arabie saoudite', name: 'Tadawul (TASI)', yahoo: '^TASI.SR' },
+  { id: 'ta125', region: 'afrique', country: 'Israël', name: 'TA-125', yahoo: '^TA125.TA' },
+  { id: 'jse40', region: 'afrique', country: 'Afrique du Sud', name: 'JSE Top 40', yahoo: '^J200.JO' },
+  { id: 'egx30', region: 'afrique', country: 'Égypte', name: 'EGX 30', yahoo: '^CASE30' },
 ];
 
 const YAHOO_HOSTS = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com'];
 const MAX_POINTS = 90;
+const BATCH = 20;
 
 /** Date "AAAA-MM-JJ" d'un instant dans un fuseau donné. */
 function dayIn(tz, ms) {
@@ -76,18 +111,56 @@ function parseYahoo(def, payload) {
   const end = periods.length ? Math.max(...periods.map((p) => p.end)) : pts.at(-1)?.[0] ?? null;
 
   const nowSec = Math.floor(Date.now() / 1000);
+  const lastTime = num(m.regularMarketTime) ? m.regularMarketTime * 1000 : null;
+  // Données figées chez Yahoo (ex. Merval) : dernière cotation de plus de 7 jours.
+  const outdated = lastTime !== null && Date.now() - lastTime > 7 * 86400_000;
+  // Clôture précédente non fiable : identique au cours, sans séance ni « previousClose ».
+  const prevUnreliable = prev === price && !pts.length && num(m.previousClose) === null;
+  const okPrev = prev !== null && !outdated && !prevUnreliable;
   return {
     price,
-    prevClose: prev,
-    change: prev !== null ? price - prev : null,
-    changePct: prev ? ((price - prev) / prev) * 100 : null,
+    prevClose: okPrev ? prev : null,
+    change: okPrev ? price - prev : null,
+    changePct: okPrev && prev ? ((price - prev) / prev) * 100 : null,
     currency: m.currency || null,
-    lastTime: num(m.regularMarketTime) ? m.regularMarketTime * 1000 : null,
+    lastTime,
     timezone: m.exchangeTimezoneName || null,
-    state: marketState(m, nowSec),
+    outdated,
+    state: outdated ? 'closed' : marketState(m, nowSec),
     spark: pts.length >= 2 ? { start, end, points: downsample(pts, MAX_POINTS) } : null,
     source: 'Yahoo Finance',
   };
+}
+
+/**
+ * Lot de symboles → Map(symbole → payload au format « chart »).
+ * v7/spark donne les métadonnées (prix, statut, fuseau), v8/spark la courbe de séance.
+ */
+async function sparkBatch(symbols) {
+  const q = symbols.map(encodeURIComponent).join(',');
+  let lastErr;
+  for (const host of YAHOO_HOSTS) {
+    try {
+      const [v7, v8] = await Promise.all([
+        fetchWithTimeout(`https://${host}/v7/finance/spark?symbols=${q}&range=1d&interval=5m`, { timeout: 8000 }),
+        fetchWithTimeout(`https://${host}/v8/finance/spark?symbols=${q}&range=1d&interval=5m`, { timeout: 8000 }).catch(() => ({})),
+      ]);
+      const out = new Map();
+      for (const r of v7?.spark?.result || []) {
+        const meta = r?.response?.[0]?.meta;
+        if (!r?.symbol || !meta) continue;
+        const p = v8?.[r.symbol];
+        out.set(r.symbol, {
+          chart: { result: [{ meta, timestamp: p?.timestamp || [], indicators: { quote: [{ close: p?.close || [] }] } }] },
+        });
+      }
+      if (out.size) return out;
+      lastErr = new Error('Yahoo spark: réponse vide');
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 async function fromYahoo(def) {
@@ -138,21 +211,52 @@ async function fromStooq(def) {
   };
 }
 
+const baseOf = (def) => ({ id: def.id, region: def.region, country: def.country, name: def.name });
+
+/** Repli indice par indice : endpoint chart de Yahoo, puis Stooq. */
 async function loadOne(def) {
-  const base = { id: def.id, region: def.region, name: def.name };
   const errors = [];
   for (const provider of [fromYahoo, fromStooq]) {
     try {
-      return { ...base, ...(await provider(def)) };
+      return { ...baseOf(def), ...(await provider(def)) };
     } catch (err) {
       errors.push(String(err.message || err));
     }
   }
-  return { ...base, price: null, changePct: null, state: 'unknown', spark: null, source: null, errors };
+  return { ...baseOf(def), price: null, changePct: null, state: 'unknown', spark: null, source: null, errors };
+}
+
+/** map() avec au plus `limit` traitements simultanés (ménage les API gratuites). */
+async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
 
 async function load() {
-  const indices = await Promise.all(INDICES.map(loadOne));
+  const chunks = [];
+  for (let i = 0; i < INDICES.length; i += BATCH) chunks.push(INDICES.slice(i, i + BATCH).map((d) => d.yahoo));
+  const maps = await Promise.all(chunks.map((c) => sparkBatch(c).catch(() => new Map())));
+  const batch = new Map(maps.flatMap((m) => [...m]));
+
+  const indices = await mapLimit(INDICES, 6, async (def) => {
+    const payload = batch.get(def.yahoo);
+    if (payload) {
+      try {
+        return { ...baseOf(def), ...parseYahoo(def, payload) };
+      } catch {
+        /* données du lot inexploitables → repli */
+      }
+    }
+    return loadOne(def);
+  });
   if (indices.every((i) => i.price === null)) throw new Error('Aucune source d’indices disponible');
   return { indices, fetchedAt: Date.now() };
 }

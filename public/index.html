@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Marchés</title>
-  <meta name="description" content="Heatmap crypto et indices boursiers Chine, USA, Europe.">
+  <meta name="description" content="Heatmap crypto et indices boursiers du monde entier.">
   <meta name="theme-color" content="#0b0f14">
   <meta name="color-scheme" content="dark">
   <!-- PWA / iOS -->
@@ -40,9 +40,10 @@
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
       <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</p>
     </section>
-    <section id="view-chine" class="view" data-tab="chine" aria-label="Chine" hidden><div class="grid" id="grid-chine"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-usa" class="view" data-tab="usa" aria-label="USA" hidden><div class="grid" id="grid-usa"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-ameriques" class="view" data-tab="ameriques" aria-label="Amériques" hidden><div class="grid" id="grid-ameriques"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
     <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-asie" class="view" data-tab="asie" aria-label="Asie-Pacifique" hidden><div class="grid" id="grid-asie"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-afrique" class="view" data-tab="afrique" aria-label="Afrique et Moyen-Orient" hidden><div class="grid" id="grid-afrique"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
 
     <div id="install" class="install" hidden></div>
 
@@ -57,9 +58,10 @@
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="2"/><rect x="15" y="3" width="6" height="6" rx="1.5"/><rect x="15" y="11" width="6" height="3" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="11" y="16" width="10" height="5" rx="1.5"/></svg>
       <span>Crypto</span>
     </button>
-    <button type="button" data-tab="chine"><span class="flag" aria-hidden="true">CN</span><span>Chine</span></button>
-    <button type="button" data-tab="usa"><span class="flag" aria-hidden="true">US</span><span>USA</span></button>
+    <button type="button" data-tab="ameriques"><span class="flag" aria-hidden="true">AM</span><span>Amériques</span></button>
     <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span>Europe</span></button>
+    <button type="button" data-tab="asie"><span class="flag" aria-hidden="true">AS</span><span>Asie</span></button>
+    <button type="button" data-tab="afrique"><span class="flag" aria-hidden="true">AF</span><span>Afrique</span></button>
   </nav>
 
   <div id="chart" class="chart" role="dialog" aria-modal="true" aria-labelledby="chart-title" hidden>
