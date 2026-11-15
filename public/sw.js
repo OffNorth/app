@@ -1,11 +1,11 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v6';
+const VERSION = 'v7';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
-const IMG = 'marches-logos'; // logos des cryptos, conservés d'une version à l'autre
-const LOGO_HOSTS = ['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com', 'companiesmarketcap.com'];
+const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
 const ASSETS = [
-  '/', '/index.html', '/styles.css', '/app.js', '/manifest.webmanifest',
+  '/', '/index.html', '/styles.css', '/app.js', '/consent.js', '/manifest.webmanifest',
+  '/mentions-legales.html', '/confidentialite.html', '/cookies.html', '/cgu.html', '/cookies-page.js',
   '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png', '/icons/favicon-32.png',
 ];
 
@@ -33,19 +33,20 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   const url = new URL(req.url);
 
-  // Logos des cryptos et des entreprises (autre domaine) : cache d'abord, réseau sinon.
-  if (LOGO_HOSTS.includes(url.hostname)) {
+  if (url.origin !== location.origin) return; // aucun traitement des requêtes vers d'autres domaines
+
+  // Logos (relais du site) : cache d'abord, réseau sinon.
+  if (url.pathname === '/api/logo') {
     e.respondWith((async () => {
       const cache = await caches.open(IMG);
       const hit = await cache.match(req);
       if (hit) return hit;
       const res = await fetch(req);
-      if (res.ok || res.type === 'opaque') cache.put(req, res.clone());
+      if (res.ok) cache.put(req, res.clone());
       return res;
     })());
     return;
   }
-  if (url.origin !== location.origin) return;
 
   // API : réseau d'abord, repli sur la dernière réponse valide.
   if (url.pathname.startsWith('/api/')) {
@@ -66,11 +67,15 @@ self.addEventListener('fetch', (e) => {
 
   // Navigation : réseau d'abord (pour récupérer les mises à jour), sinon coquille en cache.
   if (req.mode === 'navigate') {
+    // Chaque page est mise en cache sous sa propre adresse (et non à la place de l'accueil).
+    const key = url.pathname === '/' ? '/index.html' : url.pathname;
     e.respondWith(fetch(req).then((res) => {
-      const copy = res.clone();
-      caches.open(SHELL).then((c) => c.put('/index.html', copy));
+      if (res.ok) {
+        const copy = res.clone();
+        e.waitUntil(caches.open(SHELL).then((c) => c.put(key, copy)));
+      }
       return res;
-    }).catch(() => caches.match('/index.html')));
+    }).catch(async () => (await caches.match(key)) || caches.match('/index.html')));
     return;
   }
 

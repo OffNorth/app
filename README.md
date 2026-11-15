@@ -26,6 +26,7 @@ api/               Fonctions serverless Vercel (proxy + cache)
   tv.js            Trouve le symbole TradingView d'une crypto (cache 24 h)
   stocks.js        Top 25 entreprises : companiesmarketcap.com (classement) + Yahoo (cours)
   _yahoo.js        Appels Yahoo partagés (spark groupé, chart, statut de marché)
+  logo.js          Relais des logos (protection de l'IP des visiteurs)
   indices.js       Yahoo Finance spark groupé (v7 + v8, 20 symboles/appel) → chart par indice → Stooq
   _lib.js          Cache mémoire + en-têtes CDN
 scripts/dev-server.mjs  Serveur local qui imite Vercel (statique + /api)
@@ -42,6 +43,13 @@ scripts/dev-server.mjs  Serveur local qui imite Vercel (statique + /api)
 | Indices + sparkline | Yahoo `query1…/v8/finance/chart` | Yahoo `query2…`, puis Stooq (niveau seul) | ✅ Yahoo sur les 13 symboles ; Stooq non joignable depuis l'environnement de test |
 
 Twelve Data et Finnhub n'ont pas été retenus : il leur faut une clé, et leurs offres gratuites couvrent mal les indices.
+
+## Conformité (RGPD, cookies, LCEN)
+
+- Pages : `mentions-legales.html`, `confidentialite.html`, `cookies.html` (gestion des choix), `cgu.html` — liées dans le pied de page.
+- Aucun cookie ; stockage local strictement nécessaire (exempté) ; le widget TradingView n'est chargé qu'après consentement (`public/consent.js`, choix conservé 6 mois, retirable).
+- Logos relayés par `api/logo.js` (aucune IP de visiteur envoyée aux CDN tiers) ; en-têtes de sécurité (CSP, etc.) dans `vercel.json`.
+- Rapport d'audit et informations restant à fournir : [`docs/AUDIT-CONFORMITE.md`](docs/AUDIT-CONFORMITE.md).
 
 ## Développement local
 

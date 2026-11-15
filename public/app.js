@@ -1,4 +1,5 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
+import { getConsent, setConsent, SERVICES } from './consent.js';
 const REFRESH_MS = 60_000;
 const TABS = ['crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
 const TAB_TITLES = {
@@ -115,8 +116,9 @@ function squarify(items, x, y, w, h) {
 /* ---------- Rendu crypto ---------- */
 /** Logo d'une crypto : version 50 px pour les petites tailles, 250 px sinon. */
 function logoImg(c, size, cls = 'logo') {
-  const src = size <= 22 ? c.logoSmall || c.logo : c.logo || c.logoSmall;
-  if (!src) return '';
+  const raw = size <= 22 ? c.logoSmall || c.logo : c.logo || c.logoSmall;
+  if (!raw) return '';
+  const src = `/api/logo?u=${encodeURIComponent(raw)}`; // relais du site : l'IP du visiteur n'est pas transmise au CDN tiers
   return `<img class="${cls}" src="${esc(src)}" width="${size}" height="${size}" alt="" decoding="async" referrerpolicy="no-referrer">`;
 }
 // Logo introuvable → on le retire simplement (le symbole reste affiché).
@@ -302,10 +304,10 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
   const res = await tv;
   if (token !== chartToken || box.hidden) return; // fermé ou autre tuile ouverte entre-temps
   if (res?.tv) {
-    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen></iframe>`;
     link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link || res.tv)}`;
     link.hidden = false;
     if (res.note) { note.textContent = res.note; note.hidden = false; }
+    renderTVFrame(res, label, token);
   } else if (res?.error) {
     frame.innerHTML = `<div class="msg">Graphique indisponible pour le moment${navigator.onLine ? '' : ' (hors ligne)'}.<br>Réessayez dans un instant.</div>`;
   } else {
@@ -315,6 +317,41 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
       link.hidden = false;
     }
   }
+}
+
+/**
+ * Affiche le widget TradingView seulement si l'utilisateur l'a accepté.
+ * Sans choix : panneau de consentement (Accepter / Refuser, même poids visuel).
+ * Refus : aucune requête vers TradingView ; le lien « Ouvrir dans TradingView » reste disponible.
+ */
+function renderTVFrame(res, label, token) {
+  if (token !== chartToken || $('#chart').hidden) return;
+  const frame = $('#chart-frame');
+  const consent = getConsent('tradingview');
+  if (consent === true) {
+    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    return;
+  }
+  const s = SERVICES.tradingview;
+  frame.innerHTML = consent === false
+    ? `<div class="msg consent-box">
+        <p>Graphique désactivé : vous avez refusé le service <strong>TradingView</strong>.</p>
+        <div class="consent-actions"><button type="button" class="btn" data-consent="accept">Autoriser TradingView</button></div>
+        <p class="consent-small"><a href="/cookies.html">Gérer mes choix</a></p>
+      </div>`
+    : `<div class="msg consent-box" role="group" aria-labelledby="consent-title">
+        <p id="consent-title"><strong>Ce graphique est fourni par TradingView.</strong></p>
+        <p>S’il est affiché, TradingView recevra votre adresse IP et des informations techniques sur votre appareil, pourra mesurer votre utilisation du graphique et enregistrer des données sur votre appareil (traceurs).</p>
+        <div class="consent-actions">
+          <button type="button" class="btn" data-consent="refuse">Refuser</button>
+          <button type="button" class="btn" data-consent="accept">Accepter</button>
+        </div>
+        <p class="consent-small">Choix conservé 6 mois, modifiable à tout moment dans <a href="/cookies.html">Gestion des cookies</a>. <a href="${esc(s.policy)}" target="_blank" rel="noopener">Politique de TradingView</a> · <a href="/confidentialite.html">Notre politique de confidentialité</a></p>
+      </div>`;
+  frame.querySelectorAll('[data-consent]').forEach((b) => b.addEventListener('click', () => {
+    setConsent('tradingview', b.dataset.consent === 'accept');
+    renderTVFrame(res, label, token);
+  }));
 }
 
 function openChart(c, rank, totalTop) {
@@ -469,7 +506,7 @@ function renderIndices(region) {
   }
   grid.innerHTML = list.map((ix) => {
     const st = statusOf(ix);
-    return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" style="background-color:${heat(ix.changePct, 2.5)}">
+    return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" role="button" aria-label="${esc(`${ix.name}, ${ix.country || ''} : ${fmtLevel(ix.price)}, ${fmtPct(ix.changePct)}. Ouvrir le graphique`)}" style="background-color:${heat(ix.changePct, 2.5)}">
       ${ix.country ? `<div class="idx-country">${esc(ix.country)}</div>` : ''}
       <div class="idx-top"><h3>${esc(ix.name)}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
       <div class="idx-level">${fmtLevel(ix.price)}</div>
@@ -482,6 +519,13 @@ function renderIndices(region) {
     const card = e.target.closest('.idx');
     const ix = card && list.find((i) => i.id === card.dataset.id);
     if (ix) openIndexChart(ix);
+  };
+  grid.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.idx');
+    if (!card) return;
+    e.preventDefault();
+    card.click();
   };
 }
 
@@ -500,13 +544,17 @@ function renderChrome() {
   banner.textContent = msg;
   banner.hidden = !msg;
 
-  const src = [];
-  src.push(`Crypto : ${state.crypto?.source || 'CoinGecko'}${state.crypto?.source === 'CoinPaprika' ? ' (repli)' : ''}`);
+  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+  const crypto = state.crypto?.source === 'CoinPaprika'
+    ? `${a('https://coinpaprika.com/', 'CoinPaprika')} (repli)` : `Powered by ${a('https://www.coingecko.com/', 'CoinGecko')}`;
   const idxSources = [...new Set((state.indices?.indices || []).map((i) => i.source).filter(Boolean))];
-  src.push(`Indices : ${idxSources.length ? idxSources.join(', ') : 'Yahoo Finance'} (cours différés)`);
-  src.push('Entreprises : classement companiesmarketcap.com, cours Yahoo Finance');
-  src.push('Graphiques : TradingView');
-  $('#sources').textContent = `Sources — ${src.join(' · ')}.`;
+  const src = [
+    `Crypto : ${crypto}`,
+    `Indices : ${esc(idxSources.length ? idxSources.join(', ') : 'Yahoo Finance')} (cours différés)`,
+    `Entreprises : classement ${a('https://companiesmarketcap.com/', 'companiesmarketcap.com')}, cours Yahoo Finance`,
+    `Graphiques : ${a('https://www.tradingview.com/', 'TradingView')}`,
+  ];
+  $('#sources').innerHTML = `Sources — ${src.join(' · ')}.`;
 }
 
 function render() {

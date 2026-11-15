@@ -170,6 +170,28 @@ main {
 .footer { margin-top: 20px; font-size: 12px; color: var(--muted); text-align: center; line-height: 1.5; }
 .footer p { margin: 2px 0; }
 .footer strong { color: var(--text); font-weight: 600; }
+.footer a { color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.legal-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin-top: 10px; }
+.legal-links a { color: var(--text); padding: 6px 2px; }
+
+/* Focus clavier visible (accessibilité) */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tile:focus-visible, .idx:focus-visible { outline-offset: -3px; }
+
+/* Consentement TradingView : « Refuser » et « Accepter » ont exactement le même poids visuel */
+.consent-box { max-width: 420px; text-align: left; font-size: 14px; line-height: 1.5; color: var(--text); }
+.consent-box p { margin: 0 0 10px; }
+.consent-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 14px 0 10px; }
+.consent-actions .btn:only-child { grid-column: 1 / -1; }
+.btn {
+  min-height: 44px; padding: 10px 14px; border-radius: 10px; cursor: pointer;
+  background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+  font-weight: 700; font-size: 15px;
+}
+.btn:active { background: var(--border); }
+.consent-small { font-size: 12.5px; color: var(--muted); }
+.consent-small a, .consent-box a { color: var(--accent); }
+
 
 /* ---------- Barre d'onglets ---------- */
 .tabbar {
@@ -233,3 +255,29 @@ main {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
 }
+
+/* ---------- Pages juridiques ---------- */
+.doc main { max-width: 760px; padding-bottom: calc(var(--safe-bottom) + 40px); line-height: 1.6; font-size: 15.5px; }
+.doc .topbar a.back { color: var(--text); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; font-weight: 650; }
+.doc h1 { font-size: 26px; line-height: 1.2; margin: 18px 0 6px; letter-spacing: -0.01em; }
+.doc h2 { font-size: 18px; margin: 28px 0 8px; padding-top: 14px; border-top: 1px solid var(--border); }
+.doc h3 { font-size: 15.5px; margin: 18px 0 6px; }
+.doc p, .doc li { color: var(--text); }
+.doc .lead, .doc .updated { color: var(--muted); font-size: 14px; }
+.doc a { color: var(--accent); }
+.doc ul { padding-left: 20px; }
+.doc dl { display: grid; grid-template-columns: minmax(120px, 34%) 1fr; gap: 6px 14px; margin: 8px 0; }
+.doc dt { color: var(--muted); }
+.doc dd { margin: 0; overflow-wrap: anywhere; }
+.doc .table-wrap { overflow-x: auto; margin: 10px 0; border: 1px solid var(--border); border-radius: 12px; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+.doc th, .doc td { text-align: left; vertical-align: top; padding: 9px 11px; border-bottom: 1px solid var(--border); }
+.doc th { color: var(--muted); font-weight: 650; background: var(--surface); }
+.doc tr:last-child td { border-bottom: 0; }
+.doc .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+mark.todo { background: #f5b84a; color: #1a1205; padding: 1px 5px; border-radius: 4px; font-weight: 650; }
+.doc .legal-links { justify-content: flex-start; margin: 30px 0 0; padding-top: 14px; border-top: 1px solid var(--border); font-size: 14px; }
+.doc .legal-links a[aria-current="page"] { color: var(--muted); text-decoration: none; }
+.switch-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.status { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); }
+.status.on { color: var(--up); } .status.off { color: var(--down); }
