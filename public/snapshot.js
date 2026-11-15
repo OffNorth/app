@@ -159,9 +159,10 @@ export async function makeSnapshot(opts) {
 
   // Heatmap
   const tx = P, ty = sy + sh + 22, tw = W - 2 * P, th = H - ty - 156;
-  const sorted = opts.items.filter((c) => Number.isFinite(c.marketCap) && c.marketCap > 0)
+  let sorted = opts.items.filter((c) => Number.isFinite(c.marketCap) && c.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
     .map((c) => ({ ...c, value: c.marketCap }));
+  if (opts.resize) sorted = opts.resize(sorted);
   const rects = opts.layout(sorted, tx, ty, tw, th);
   const imgs = await Promise.all(rects.map((r) => {
     const raw = r.logo || r.logoSmall;

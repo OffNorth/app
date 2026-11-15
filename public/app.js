@@ -149,11 +149,27 @@ function sizeTreemap(map) {
  * Heatmap « treemap » générique (cryptos, entreprises).
  * items : { id, label, name, price, changePct, marketCap, logo?, logoSmall? }
  */
-function renderTiles(map, items, { maxAbs, priceText, period, onOpen }) {
+/**
+ * Taille d'affichage des cryptos : le BTC (et lui seul) est plafonné à BTC_SHARE de la surface,
+ * pour laisser plus de place aux autres. Il reste la plus grande tuile ; les autres restent proportionnelles.
+ */
+const BTC_SHARE = 0.35;
+function shrinkBTC(list) {
+  const i = list.findIndex((c) => c.id === 'bitcoin' || c.id === 'btc-bitcoin' || c.symbol === 'BTC');
+  if (i < 0) return list;
+  const others = list.reduce((s, c, j) => (j === i ? s : s + c.value), 0);
+  const second = Math.max(0, ...list.filter((_, j) => j !== i).map((c) => c.value));
+  const cap = Math.max(second, (others * BTC_SHARE) / (1 - BTC_SHARE));
+  if (list[i].value > cap) list[i] = { ...list[i], value: cap, reduced: true };
+  return list;
+}
+
+function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize }) {
   const { width, height } = sizeTreemap(map);
-  const sorted = items.filter((c) => isNum(c.marketCap) && c.marketCap > 0)
+  let sorted = items.filter((c) => isNum(c.marketCap) && c.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
     .map((c) => ({ ...c, value: c.marketCap }));
+  if (resize) sorted = resize(sorted);
   const rects = squarify(sorted, 0, 0, width, height);
   const total = sorted.reduce((s, c) => s + c.value, 0);
 
@@ -240,7 +256,7 @@ function renderCrypto() {
   if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
   statsEl.innerHTML = cryptoStats(data).map(statHTML).join('');
   renderTiles(map, data.coins.map((c) => ({ ...c, label: c.symbol })), {
-    maxAbs: 8, period: t('period24h'), priceText: (c) => fmtPrice(c.price), onOpen: openChart,
+    maxAbs: 8, period: t('period24h'), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
   });
 }
 
@@ -294,6 +310,7 @@ async function openSnapshot(kind) {
       stats: crypto ? cryptoStats(data) : stocksStats(data),
       items,
       layout: squarify,
+      resize: crypto ? shrinkBTC : null,
       color: (p) => heat(p, maxAbs),
       fmtPct: (r) => fmtPct(r.changePct),
       priceText: crypto ? (c) => fmtPrice(c.price) : (c) => fmtStockPrice(c.price, c.currency),
