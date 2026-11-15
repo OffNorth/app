@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Marchés</title>
+  <meta name="description" content="Heatmap crypto et indices boursiers Chine, USA, Europe.">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <!-- PWA / iOS -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Marchés">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="format-detection" content="telephone=no">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <div class="brand">
+        <h1>Marchés</h1>
+        <p id="subtitle" class="subtitle">Chargement…</p>
+      </div>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Rafraîchir">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+      </button>
+    </div>
+    <div id="banner" class="banner" hidden></div>
+  </header>
+
+  <div id="ptr" class="ptr" aria-hidden="true"><div class="ptr-spinner"></div></div>
+
+  <main id="main">
+    <section id="view-crypto" class="view" data-tab="crypto" aria-label="Crypto">
+      <div class="stats" id="crypto-stats"></div>
+      <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
+      <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</p>
+    </section>
+    <section id="view-chine" class="view" data-tab="chine" aria-label="Chine" hidden><div class="grid" id="grid-chine"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-usa" class="view" data-tab="usa" aria-label="USA" hidden><div class="grid" id="grid-usa"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+
+    <div id="install" class="install" hidden></div>
+
+    <footer class="footer">
+      <p id="sources">Sources : CoinGecko (repli CoinPaprika) · Yahoo Finance, cours d’indices différés.</p>
+      <p><strong>Information, pas un conseil financier.</strong></p>
+    </footer>
+  </main>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button type="button" data-tab="crypto" aria-label="Crypto">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="2"/><rect x="15" y="3" width="6" height="6" rx="1.5"/><rect x="15" y="11" width="6" height="3" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="11" y="16" width="10" height="5" rx="1.5"/></svg>
+      <span>Crypto</span>
+    </button>
+    <button type="button" data-tab="chine"><span class="flag" aria-hidden="true">CN</span><span>Chine</span></button>
+    <button type="button" data-tab="usa"><span class="flag" aria-hidden="true">US</span><span>USA</span></button>
+    <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span>Europe</span></button>
+  </nav>
+
+  <div id="chart" class="chart" role="dialog" aria-modal="true" aria-labelledby="chart-title" hidden>
+    <div class="chart-head">
+      <button id="chart-close" class="icon-btn" type="button" aria-label="Retour">
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>
+      </button>
+      <div class="chart-title">
+        <h2 id="chart-title"></h2>
+        <p id="chart-sub"></p>
+      </div>
+    </div>
+    <div class="chart-stats" id="chart-stats"></div>
+    <div class="chart-frame" id="chart-frame"></div>
+    <p class="chart-note" id="chart-note" hidden></p>
+    <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans TradingView ↗</a>
+  </div>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>
