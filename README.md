@@ -4,6 +4,7 @@ PWA mobile-first, en français et en thème sombre : heatmap des 25 premières c
 Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 
 - **Crypto** : treemap du top 25 par capitalisation, hors stablecoins (USDT, USDC, USDS, USDe, DAI…). Un appui sur une tuile ouvre son graphique TradingView en plein écran, avec un lien « Ouvrir dans TradingView ». La taille d'une tuile suit la capitalisation ; la couleur va du vert au rouge selon la variation sur 24 h. En-tête : capitalisation totale et sa variation sur 24 h, dominance BTC, nombre de cryptos en hausse et en baisse, heure de mise à jour.
+- **Actions** : heatmap des 25 plus grosses entreprises cotées du monde (taille = capitalisation, couleur = variation de la séance), avec logos et graphique TradingView au toucher. Classement : CSV public de companiesmarketcap.com (cache 1 h) ; cours et variation : Yahoo Finance. Les places bloquées dans le widget TradingView (Séoul, Riyad, Hong Kong, Taïwan, Londres, Tokyo, NSE) n'ont que le lien « Ouvrir dans TradingView ».
 - **Indices du monde entier** (42 indices, 4 onglets) : Amériques (USA, Canada, Brésil, Mexique, Argentine), Europe (zone euro, France, Allemagne, Royaume-Uni, Espagne, Italie, Pays-Bas, Suisse, Belgique, Portugal, Autriche, Suède, Norvège, Pologne, Turquie), Asie-Pacifique (Chine, Hong Kong, Japon, Corée du Sud, Taïwan, Inde, Singapour, Indonésie, Malaisie, Thaïlande, Australie, Nouvelle-Zélande), Afrique & Moyen-Orient (Arabie saoudite, Israël, Afrique du Sud, Égypte). Chaque tuile : niveau, variation du jour, statut du marché, courbe de séance. Données figées chez la source (> 7 jours) : variation « n/d » et mention « Données anciennes ».
 - **Graphiques TradingView** : un appui sur une tuile ouvre le graphique. Quand l'indice officiel est bloqué dans le widget gratuit, on affiche un CFD ou un ETF qui le suit (mention à l'écran) ; BIST 100, SET, NZX 50 et TASI n'ont aucun équivalent intégrable : seul le lien « Ouvrir dans TradingView » est proposé.
 - Bouton rafraîchir, tirer-pour-rafraîchir, rafraîchissement automatique toutes les 60 s quand l'app est visible, balayage gauche/droite entre onglets.
@@ -23,6 +24,8 @@ public/            Front statique (HTML/CSS/JS vanilla, aucune dépendance)
 api/               Fonctions serverless Vercel (proxy + cache)
   crypto.js        CoinGecko → repli CoinPaprika (stablecoins exclus)
   tv.js            Trouve le symbole TradingView d'une crypto (cache 24 h)
+  stocks.js        Top 25 entreprises : companiesmarketcap.com (classement) + Yahoo (cours)
+  _yahoo.js        Appels Yahoo partagés (spark groupé, chart, statut de marché)
   indices.js       Yahoo Finance spark groupé (v7 + v8, 20 symboles/appel) → chart par indice → Stooq
   _lib.js          Cache mémoire + en-têtes CDN
 scripts/dev-server.mjs  Serveur local qui imite Vercel (statique + /api)

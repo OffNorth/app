@@ -1,8 +1,8 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
 const REFRESH_MS = 60_000;
-const TABS = ['crypto', 'ameriques', 'europe', 'asie', 'afrique'];
+const TABS = ['crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
 const TAB_TITLES = {
-  crypto: 'Top 25 cryptos hors stablecoins · 24 h', ameriques: 'Indices Amériques', europe: 'Indices Europe',
+  crypto: 'Top 25 cryptos hors stablecoins · 24 h', actions: 'Top 25 entreprises mondiales · séance', ameriques: 'Indices Amériques', europe: 'Indices Europe',
   asie: 'Indices Asie-Pacifique', afrique: 'Indices Afrique & Moyen-Orient',
 };
 const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
@@ -19,7 +19,8 @@ const state = {
   tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'crypto',
   crypto: store.get('crypto'),
   indices: store.get('indices'),
-  offline: { crypto: false, indices: false },
+  stocks: store.get('stocks'),
+  offline: { crypto: false, indices: false, stocks: false },
   loading: false,
   lastFetch: 0,
   prevPrices: new Map(),
@@ -123,90 +124,131 @@ document.addEventListener('error', (e) => {
   if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo')) e.target.remove();
 }, true);
 
-function renderCrypto() {
-  const data = state.crypto;
-  const statsEl = $('#crypto-stats');
-  const map = $('#treemap');
-  if (!data?.coins?.length) {
-    statsEl.innerHTML = Array.from({ length: 4 }, () => '<div class="stat skeleton" style="height:58px"></div>').join('');
-    map.style.height = '420px';
-    map.innerHTML = state.loading ? '<div class="skeleton" style="position:absolute;inset:0"></div>'
-      : `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">Données crypto ${ND}</div>`;
-    return;
-  }
-  const coins = data.coins;
-  const g = data.global || {};
-  const up = coins.filter((c) => isNum(c.changePct) && c.changePct > 0).length;
-  const down = coins.filter((c) => isNum(c.changePct) && c.changePct < 0).length;
-  const na = coins.filter((c) => !isNum(c.changePct)).length;
-
-  statsEl.innerHTML = `
-    <div class="stat"><div class="stat-label">Capitalisation totale</div>
-      <div class="stat-value">${fmtCap(g.totalMarketCap)}</div><div class="stat-sub ${signClass(g.totalChangePct)}">${fmtPct(g.totalChangePct)} sur 24 h</div></div>
-    <div class="stat"><div class="stat-label">Dominance BTC</div>
-      <div class="stat-value">${isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)} %` : ND}</div><div class="stat-sub">de la capitalisation</div></div>
-    <div class="stat"><div class="stat-label">Hausse / baisse</div>
-      <div class="stat-value"><span class="pos">▲ ${up}</span> · <span class="neg">▼ ${down}</span></div><div class="stat-sub">sur le top 25${na ? ` · ${na} ${ND}` : ''}</div></div>
-    <div class="stat"><div class="stat-label">Mise à jour</div>
-      <div class="stat-value">${fmtTime(data.fetchedAt, true)}</div><div class="stat-sub">${esc(data.source || ND)}${data.stale ? ' · ancien' : ''}</div></div>`;
-
-  // Dimensions : remplit l'écran restant, sans être trop plat ni trop haut.
+/** Hauteur de la heatmap : remplit l'écran restant, sans être trop plate ni trop haute. */
+function sizeTreemap(map) {
   const width = map.clientWidth;
   const top = map.getBoundingClientRect().top + window.scrollY;
   const tabbar = $('.tabbar').offsetHeight;
   const avail = window.innerHeight - top - tabbar - 44;
-  let height = width > 600 ? Math.max(420, Math.min(avail, width * 0.7)) : Math.min(Math.max(avail, 380, width), width * 1.9);
-  height = Math.round(height);
+  const height = Math.round(width > 600 ? Math.max(420, Math.min(avail, width * 0.7)) : Math.min(Math.max(avail, 380, width), width * 1.9));
   map.style.height = `${height}px`;
+  return { width, height };
+}
 
-  const items = coins.filter((c) => isNum(c.marketCap) && c.marketCap > 0)
+/**
+ * Heatmap « treemap » générique (cryptos, entreprises).
+ * items : { id, label, name, price, changePct, marketCap, logo?, logoSmall? }
+ */
+function renderTiles(map, items, { maxAbs, priceText, period, onOpen }) {
+  const { width, height } = sizeTreemap(map);
+  const sorted = items.filter((c) => isNum(c.marketCap) && c.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
     .map((c) => ({ ...c, value: c.marketCap }));
-  const rects = squarify(items, 0, 0, width, height);
-  const totalTop = items.reduce((s, c) => s + c.value, 0);
+  const rects = squarify(sorted, 0, 0, width, height);
+  const total = sorted.reduce((s, c) => s + c.value, 0);
 
   map.innerHTML = rects.map((r) => {
     const base = Math.sqrt(r.w * r.h);
     let sym = Math.max(10, Math.min(30, base / 4.2));
-    sym = Math.min(sym, (r.w - 6) / (Math.max(r.symbol.length, 2) * 0.68));
+    sym = Math.min(sym, (r.w - 6) / (Math.max(r.label.length, 2) * 0.68));
     const pct = Math.max(9, Math.min(18, sym * 0.62));
     const px = Math.max(9, Math.min(14, sym * 0.5));
     const minSide = Math.min(r.w, r.h);
     let inner = '';
-    // Logo au-dessus du texte s'il y a la hauteur (réduit au besoin), sinon à gauche du symbole.
+    // Logo au-dessus du texte s'il y a la hauteur (réduit au besoin), sinon à gauche du libellé.
     const withLogo = (s, textH, maxLogo, minLogo) => {
       const room = Math.floor(r.h - textH - 12);
       if (room >= minLogo) return { top: logoImg(r, Math.min(maxLogo, room)), inline: '' };
-      const symW = r.symbol.length * 0.68 * s;
+      const symW = r.label.length * 0.68 * s;
       if (r.w >= symW + s + 14) return { top: '', inline: logoImg(r, Math.round(s * 0.95)) };
       return { top: '', inline: '' };
     };
     if (r.w >= 64 && r.h >= 58) {
       const L = withLogo(sym, (sym + pct + px) * 1.15, Math.round(Math.min(44, sym * 1.2, r.w * 0.4)), 16);
-      inner = `${L.top}<span class="sym" style="font-size:${sym}px">${L.inline}${esc(r.symbol)}</span><span class="pct" style="font-size:${pct}px">${fmtPct(r.changePct)}</span><span class="px" style="font-size:${px}px">${fmtPrice(r.price)}</span>`;
+      inner = `${L.top}<span class="sym" style="font-size:${sym}px">${L.inline}${esc(r.label)}</span><span class="pct" style="font-size:${pct}px">${fmtPct(r.changePct)}</span><span class="px" style="font-size:${px}px">${priceText(r)}</span>`;
     } else if (r.w >= 40 && r.h >= 34) {
       const s = Math.min(sym, 15), p = Math.min(pct, 11);
       const L = withLogo(s, (s + p) * 1.15, Math.round(Math.min(18, r.w * 0.3)), 12);
-      inner = `${L.top}<span class="sym" style="font-size:${s}px">${L.inline}${esc(r.symbol)}</span><span class="pct" style="font-size:${p}px">${fmtPct(r.changePct, 1)}</span>`;
+      inner = `${L.top}<span class="sym" style="font-size:${s}px">${L.inline}${esc(r.label)}</span><span class="pct" style="font-size:${p}px">${fmtPct(r.changePct, 1)}</span>`;
     } else if (r.logo && minSide >= 14) {
       inner = logoImg(r, Math.round(Math.min(minSide * 0.62, 26))); // trop petit pour le texte : logo seul
     } else if (r.w >= 24 && r.h >= 15) {
-      inner = `<span class="sym" style="font-size:${Math.max(8, Math.min(sym, 11))}px">${esc(r.symbol)}</span>`;
+      inner = `<span class="sym" style="font-size:${Math.max(8, Math.min(sym, 11))}px">${esc(r.label)}</span>`;
     }
     const prev = state.prevPrices.get(r.id);
     const flash = isNum(prev) && isNum(r.price) && prev !== r.price ? ' flash' : '';
-    const label = `${r.name} (${r.symbol}) : ${fmtPct(r.changePct)} sur 24 h, prix ${fmtPrice(r.price)}`;
-    return `<button class="tile${flash}" role="listitem" data-id="${esc(r.id)}" aria-label="${esc(label)}"
-      style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background-color:${heat(r.changePct, 8)}">${inner}</button>`;
+    const aria = `${r.name} (${r.label}) : ${fmtPct(r.changePct)} ${period}, prix ${priceText(r)}`;
+    return `<button class="tile${flash}" role="listitem" data-id="${esc(r.id)}" aria-label="${esc(aria)}"
+      style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background-color:${heat(r.changePct, maxAbs)}">${inner}</button>`;
   }).join('');
-  for (const c of coins) state.prevPrices.set(c.id, c.price);
+  for (const c of items) state.prevPrices.set(c.id, c.price);
 
   map.onclick = (e) => {
     const btn = e.target.closest('.tile');
-    if (!btn) return;
-    const c = coins.find((x) => x.id === btn.dataset.id);
-    if (c) openChart(c, coins.indexOf(c) + 1, totalTop);
+    const i = btn ? sorted.findIndex((x) => x.id === btn.dataset.id) : -1;
+    if (i >= 0) onOpen(sorted[i], i + 1, total);
   };
+}
+
+function heatmapPlaceholder(statsEl, map, what) {
+  statsEl.innerHTML = Array.from({ length: 4 }, () => '<div class="stat skeleton" style="height:58px"></div>').join('');
+  map.style.height = '420px';
+  map.innerHTML = state.loading ? '<div class="skeleton" style="position:absolute;inset:0"></div>'
+    : `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">Données ${what} ${ND}</div>`;
+}
+
+const upDown = (list) => {
+  const up = list.filter((c) => isNum(c.changePct) && c.changePct > 0).length;
+  const down = list.filter((c) => isNum(c.changePct) && c.changePct < 0).length;
+  const na = list.filter((c) => !isNum(c.changePct)).length;
+  return `<div class="stat"><div class="stat-label">Hausse / baisse</div>
+      <div class="stat-value"><span class="pos">▲ ${up}</span> · <span class="neg">▼ ${down}</span></div><div class="stat-sub">sur le top 25${na ? ` · ${na} ${ND}` : ''}</div></div>`;
+};
+const updated = (data) => `<div class="stat"><div class="stat-label">Mise à jour</div>
+      <div class="stat-value">${fmtTime(data.fetchedAt, true)}</div><div class="stat-sub">${esc(data.source || ND)}${data.stale ? ' · ancien' : ''}</div></div>`;
+
+function renderCrypto() {
+  const data = state.crypto;
+  const statsEl = $('#crypto-stats'), map = $('#treemap');
+  if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map, 'crypto');
+  const g = data.global || {};
+  statsEl.innerHTML = `
+    <div class="stat"><div class="stat-label">Capitalisation totale</div>
+      <div class="stat-value">${fmtCap(g.totalMarketCap)}</div><div class="stat-sub ${signClass(g.totalChangePct)}">${fmtPct(g.totalChangePct)} sur 24 h</div></div>
+    <div class="stat"><div class="stat-label">Dominance BTC</div>
+      <div class="stat-value">${isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}\u202f%` : ND}</div><div class="stat-sub">de la capitalisation</div></div>
+    ${upDown(data.coins)}
+    ${updated(data)}`;
+  renderTiles(map, data.coins.map((c) => ({ ...c, label: c.symbol })), {
+    maxAbs: 8, period: 'sur 24 h', priceText: (c) => fmtPrice(c.price), onOpen: openChart,
+  });
+}
+
+/** Cours d'une action dans sa devise (symbole $ pour l'USD). */
+function fmtStockPrice(v, cur) {
+  if (!isNum(v)) return ND;
+  if (!cur || cur === 'USD') return fmtPrice(v);
+  return `${(Math.abs(v) >= 10000 ? NF0 : NF2).format(v)}\u00a0${esc(cur)}`;
+}
+
+function renderStocks() {
+  const data = state.stocks;
+  const statsEl = $('#stocks-stats'), map = $('#treemap-stocks');
+  if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map, 'entreprises');
+  const list = data.companies;
+  const total = list.reduce((s, c) => s + (isNum(c.marketCap) ? c.marketCap : 0), 0);
+  const us = list.find((c) => /^(NASDAQ|NYSE):/.test(c.tv?.link || ''));
+  const usState = us ? statusOf(us) : null;
+  statsEl.innerHTML = `
+    <div class="stat"><div class="stat-label">Capitalisation top 25</div>
+      <div class="stat-value">${fmtCap(total)}</div><div class="stat-sub">mise à jour horaire</div></div>
+    <div class="stat"><div class="stat-label">Wall Street</div>
+      <div class="stat-value">${usState ? esc(usState.chip) : ND}</div><div class="stat-sub">${usState ? esc(usState.foot) : ''}</div></div>
+    ${upDown(list)}
+    ${updated(data)}`;
+  renderTiles(map, list, {
+    maxAbs: 4, period: 'sur la séance', priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
+  });
 }
 
 /* ---------- Écran graphique TradingView ---------- */
@@ -284,6 +326,19 @@ function openChart(c, rank, totalTop) {
     tv: resolveTV(c),
     label: c.symbol,
     missingMsg: `Graphique TradingView ${ND} pour ${esc(c.symbol)} :<br>cette crypto n’y est pas cotée.`,
+  });
+}
+
+function openStockChart(c, rank, total) {
+  const st = statusOf(c);
+  showChart({
+    titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.label)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
+    sub: `${c.name} · rang ${rank}${c.country ? ` · ${c.country}` : ''} · ${st.chip}`,
+    statsHTML: stat('Cours', fmtStockPrice(c.price, c.currency)) + stat('Capitalisation', fmtCap(c.marketCap))
+      + stat('Part top 25', isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}\u202f%` : ND),
+    tv: c.tv || { tv: null },
+    label: c.label,
+    missingMsg: `Graphique ${ND} ici pour ${esc(c.name)} :<br>TradingView n’autorise pas cette place de cotation dans ce widget.<br>Il reste consultable sur leur site.`,
   });
 }
 
@@ -432,12 +487,11 @@ function renderIndices(region) {
 
 /* ---------- En-tête, bannière ---------- */
 function renderChrome() {
-  const isCrypto = state.tab === 'crypto';
-  const data = isCrypto ? state.crypto : state.indices;
-  const when = data?.fetchedAt ? ` · MAJ ${fmtTime(data.fetchedAt)}` : '';
-  $('#subtitle').textContent = `${TAB_TITLES[state.tab]}${isCrypto ? '' : when}`;
+  const key = state.tab === 'crypto' ? 'crypto' : state.tab === 'actions' ? 'stocks' : 'indices';
+  const data = state[key];
+  const when = data?.fetchedAt && key === 'indices' ? ` · MAJ ${fmtTime(data.fetchedAt)}` : '';
+  $('#subtitle').textContent = `${TAB_TITLES[state.tab]}${when}`;
 
-  const key = isCrypto ? 'crypto' : 'indices';
   const banner = $('#banner');
   let msg = '';
   if (state.offline[key] && data) msg = `Hors ligne ou source injoignable — dernières données du ${fmtDay(data.fetchedAt)} à ${fmtTime(data.fetchedAt)}.`;
@@ -450,6 +504,7 @@ function renderChrome() {
   src.push(`Crypto : ${state.crypto?.source || 'CoinGecko'}${state.crypto?.source === 'CoinPaprika' ? ' (repli)' : ''}`);
   const idxSources = [...new Set((state.indices?.indices || []).map((i) => i.source).filter(Boolean))];
   src.push(`Indices : ${idxSources.length ? idxSources.join(', ') : 'Yahoo Finance'} (cours différés)`);
+  src.push('Entreprises : classement companiesmarketcap.com, cours Yahoo Finance');
   src.push('Graphiques : TradingView');
   $('#sources').textContent = `Sources — ${src.join(' · ')}.`;
 }
@@ -461,6 +516,7 @@ function render() {
   }
   renderChrome();
   if (state.tab === 'crypto') renderCrypto();
+  else if (state.tab === 'actions') renderStocks();
   else renderIndices(state.tab);
 }
 
@@ -476,9 +532,9 @@ async function refresh() {
   if (state.loading) return;
   state.loading = true;
   $('#refresh').classList.add('spinning');
-  if (!state.crypto || !state.indices) render();
-  const [c, i] = await Promise.allSettled([getJSON('/api/crypto'), getJSON('/api/indices')]);
-  for (const [key, r] of [['crypto', c], ['indices', i]]) {
+  if (!state.crypto || !state.indices || !state.stocks) render();
+  const [c, i, st] = await Promise.allSettled([getJSON('/api/crypto'), getJSON('/api/indices'), getJSON('/api/stocks')]);
+  for (const [key, r] of [['crypto', c], ['indices', i], ['stocks', st]]) {
     if (r.status === 'fulfilled' && !r.value.body.error) {
       state[key] = r.value.body;
       state.offline[key] = r.value.fromCache;
@@ -567,7 +623,7 @@ window.addEventListener('online', refresh);
 let resizeTimer;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (state.tab === 'crypto') renderCrypto(); }, 120);
+  resizeTimer = setTimeout(() => { if (state.tab === 'crypto') renderCrypto(); else if (state.tab === 'actions') renderStocks(); }, 120);
 });
 
 /* ---------- Installation (astuce iOS + bouton Android/desktop) ---------- */
