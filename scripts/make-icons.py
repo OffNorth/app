@@ -28,7 +28,8 @@ def render(size, safe, radius_frac):
         d.rounded_rectangle(
             [pad + x0 * span, pad + y0 * span, pad + x1 * span, pad + y1 * span],
             radius=r, fill=col)
-    return img.resize((size, size), Image.LANCZOS)
+    # Palette réduite : fichiers PNG plus légers, rendu identique (aplats + anticrénelage).
+    return img.resize((size, size), Image.LANCZOS).quantize(colors=48, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE)
 
 render(512, 0.74, 0.05).save(OUT / "icon-512.png", optimize=True)
 render(192, 0.74, 0.05).save(OUT / "icon-192.png", optimize=True)
