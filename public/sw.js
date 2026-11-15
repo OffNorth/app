@@ -1,11 +1,11 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v8';
+const VERSION = 'v10';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
 const ASSETS = [
   '/', '/index.html', '/styles.css', '/app.js', '/consent.js', '/manifest.webmanifest',
-  '/i18n.js', '/legal.js', '/cookies-page.js',
+  '/i18n.js', '/snapshot.js', '/legal.js', '/cookies-page.js',
   '/mentions-legales.html', '/confidentialite.html', '/cookies.html', '/cgu.html',
   '/en/mentions-legales.html', '/en/confidentialite.html', '/en/cookies.html', '/en/cgu.html',
   '/zh/mentions-legales.html', '/zh/confidentialite.html', '/zh/cookies.html', '/zh/cgu.html',

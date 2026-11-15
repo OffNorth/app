@@ -41,12 +41,14 @@
     <section id="view-crypto" class="view" data-tab="crypto" aria-label="Crypto">
       <div class="stats" id="crypto-stats"></div>
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
-      <p class="legend"><span class="sw down"></span><span data-i18n="legend.down24">Baisse 24 h</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.up24">Hausse 24 h</span> <span data-i18n="legend.cryptoTail">· taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</span></p>
+      <p class="legend"><span class="sw down"></span><span data-i18n="legend.down24">Baisse 24 h</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.up24">Hausse 24 h</span> <span data-i18n="legend.cryptoTail">· taille = capitalisation (BTC réduit) · hors stablecoins · touchez une tuile pour son graphique</span></p>
+      <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="crypto"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
     <section id="view-actions" class="view" data-tab="actions" aria-label="Entreprises" hidden>
       <div class="stats" id="stocks-stats"></div>
       <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des 25 plus grosses entreprises cotées"></div>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
+      <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="stocks"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
     <section id="view-ameriques" class="view" data-tab="ameriques" aria-label="Amériques" hidden><div class="grid" id="grid-ameriques"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
     <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
@@ -96,6 +98,19 @@
     <div class="chart-frame" id="chart-frame"></div>
     <p class="chart-note" id="chart-note" hidden></p>
     <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>
+  </div>
+
+  <div id="snap" class="snap" role="dialog" aria-modal="true" aria-labelledby="snap-title" hidden>
+    <div class="snap-card">
+      <h2 id="snap-title" data-i18n="snap.title">Image de la heatmap</h2>
+      <img id="snap-img" alt="" data-i18n-alt="snap.title">
+      <p class="snap-hint" data-i18n="snap.hint">Sur téléphone, vous pouvez aussi appuyer longuement sur l’image pour l’enregistrer.</p>
+      <div class="snap-actions">
+        <button type="button" class="btn" id="snap-close" data-i18n="snap.close">Fermer</button>
+        <button type="button" class="btn" id="snap-share" data-i18n="snap.share" hidden>Partager</button>
+        <a class="btn btn-primary" id="snap-save" href="#" download data-i18n="snap.save">Télécharger</a>
+      </div>
+    </div>
   </div>
 
   <script src="/app.js" type="module"></script>
