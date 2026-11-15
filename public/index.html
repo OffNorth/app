@@ -22,12 +22,15 @@
   <header class="topbar">
     <div class="topbar-row">
       <div class="brand">
-        <h1>Marchés</h1>
-        <p id="subtitle" class="subtitle">Chargement…</p>
+        <h1 data-i18n="appName">Marchés</h1>
+        <p id="subtitle" class="subtitle" data-i18n="loading">Chargement…</p>
       </div>
-      <button id="refresh" class="icon-btn" type="button" aria-label="Rafraîchir">
+      <div class="top-actions">
+      <select id="lang" class="lang-select" aria-label="Langue" data-i18n-aria="language"></select>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Rafraîchir" data-i18n-aria="refresh">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
       </button>
+      </div>
     </div>
     <div id="banner" class="banner" hidden></div>
   </header>
@@ -38,50 +41,50 @@
     <section id="view-crypto" class="view" data-tab="crypto" aria-label="Crypto">
       <div class="stats" id="crypto-stats"></div>
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des 25 premières cryptos"></div>
-      <p class="legend"><span class="sw down"></span>Baisse 24 h<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse 24 h · taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</p>
+      <p class="legend"><span class="sw down"></span><span data-i18n="legend.down24">Baisse 24 h</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.up24">Hausse 24 h</span> <span data-i18n="legend.cryptoTail">· taille = capitalisation · hors stablecoins · touchez une tuile pour son graphique</span></p>
     </section>
     <section id="view-actions" class="view" data-tab="actions" aria-label="Entreprises" hidden>
       <div class="stats" id="stocks-stats"></div>
       <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des 25 plus grosses entreprises cotées"></div>
-      <p class="legend"><span class="sw down"></span>Baisse<span class="sw flat"></span>Stable<span class="sw up"></span>Hausse sur la séance · taille = capitalisation · touchez une tuile pour son graphique</p>
+      <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
     </section>
-    <section id="view-ameriques" class="view" data-tab="ameriques" aria-label="Amériques" hidden><div class="grid" id="grid-ameriques"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-asie" class="view" data-tab="asie" aria-label="Asie-Pacifique" hidden><div class="grid" id="grid-asie"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-afrique" class="view" data-tab="afrique" aria-label="Afrique et Moyen-Orient" hidden><div class="grid" id="grid-afrique"></div><p class="legend">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-ameriques" class="view" data-tab="ameriques" aria-label="Amériques" hidden><div class="grid" id="grid-ameriques"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-asie" class="view" data-tab="asie" aria-label="Asie-Pacifique" hidden><div class="grid" id="grid-asie"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-afrique" class="view" data-tab="afrique" aria-label="Afrique et Moyen-Orient" hidden><div class="grid" id="grid-afrique"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
 
     <div id="install" class="install" hidden></div>
 
     <footer class="footer">
       <p id="sources">Sources : CoinGecko (repli CoinPaprika) · Yahoo Finance, cours d’indices différés.</p>
-      <p><strong>Information, pas un conseil financier.</strong></p>
-      <nav class="legal-links" aria-label="Informations légales">
-        <a href="/mentions-legales.html">Mentions légales</a>
-        <a href="/confidentialite.html">Confidentialité</a>
-        <a href="/cookies.html">Gestion des cookies</a>
-        <a href="/cgu.html">CGU</a>
+      <p><strong data-i18n="disclaimer">Information, pas un conseil financier.</strong></p>
+      <nav class="legal-links" aria-label="Informations légales" data-i18n-aria="legal.nav">
+        <a href="/mentions-legales.html" data-legal="mentions-legales" data-i18n="legal.mentions">Mentions légales</a>
+        <a href="/confidentialite.html" data-legal="confidentialite" data-i18n="legal.privacy">Confidentialité</a>
+        <a href="/cookies.html" data-legal="cookies" data-i18n="legal.cookies">Gestion des cookies</a>
+        <a href="/cgu.html" data-legal="cgu" data-i18n="legal.terms">CGU</a>
       </nav>
     </footer>
   </main>
 
   <nav class="tabbar" aria-label="Sections">
-    <button type="button" data-tab="crypto" aria-label="Crypto">
+    <button type="button" data-tab="crypto">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="3" width="10" height="11" rx="2"/><rect x="15" y="3" width="6" height="6" rx="1.5"/><rect x="15" y="11" width="6" height="3" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1.5"/><rect x="11" y="16" width="10" height="5" rx="1.5"/></svg>
-      <span>Crypto</span>
+      <span data-i18n="tab.crypto">Crypto</span>
     </button>
-    <button type="button" data-tab="actions" aria-label="Entreprises">
+    <button type="button" data-tab="actions">
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
-      <span>Actions</span>
+      <span data-i18n="tab.actions">Actions</span>
     </button>
-    <button type="button" data-tab="ameriques"><span class="flag" aria-hidden="true">AM</span><span>Amériques</span></button>
-    <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span>Europe</span></button>
-    <button type="button" data-tab="asie"><span class="flag" aria-hidden="true">AS</span><span>Asie</span></button>
-    <button type="button" data-tab="afrique"><span class="flag" aria-hidden="true">AF</span><span>Afrique</span></button>
+    <button type="button" data-tab="ameriques"><span class="flag" aria-hidden="true">AM</span><span data-i18n="tab.ameriques">Amériques</span></button>
+    <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span data-i18n="tab.europe">Europe</span></button>
+    <button type="button" data-tab="asie"><span class="flag" aria-hidden="true">AS</span><span data-i18n="tab.asie">Asie</span></button>
+    <button type="button" data-tab="afrique"><span class="flag" aria-hidden="true">AF</span><span data-i18n="tab.afrique">Afrique</span></button>
   </nav>
 
   <div id="chart" class="chart" role="dialog" aria-modal="true" aria-labelledby="chart-title" hidden>
     <div class="chart-head">
-      <button id="chart-close" class="icon-btn" type="button" aria-label="Retour">
+      <button id="chart-close" class="icon-btn" type="button" aria-label="Retour" data-i18n-aria="back">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7"/></svg>
       </button>
       <div class="chart-title">
@@ -92,7 +95,7 @@
     <div class="chart-stats" id="chart-stats"></div>
     <div class="chart-frame" id="chart-frame"></div>
     <p class="chart-note" id="chart-note" hidden></p>
-    <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden>Ouvrir dans TradingView ↗</a>
+    <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>
   </div>
 
   <script src="/app.js" type="module"></script>

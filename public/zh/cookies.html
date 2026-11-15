@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cookie 与跟踪器 — 市场行情</title>
+  <meta name="description" content="市场行情网站的 Cookie、跟踪器及您的选择管理。">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" hreflang="fr" href="/cookies.html">
+  <link rel="alternate" hreflang="en" href="/en/cookies.html">
+  <link rel="alternate" hreflang="zh-CN" href="/zh/cookies.html">
+</head>
+<body class="doc">
+  <header class="topbar"><div class="topbar-row"><a class="back" href="/">← 返回市场行情</a><nav class="lang-switch" aria-label="Langue / Language / 语言"><a href="/cookies.html" hreflang="fr" data-setlang="fr">FR</a> · <a href="/en/cookies.html" hreflang="en" data-setlang="en">EN</a> · <a href="/zh/cookies.html" hreflang="zh-CN" data-setlang="zh" aria-current="true">中文</a></nav></div></header>
+  <main id="main">
+    <h1>Cookie 与跟踪器</h1>
+    <p class="lead">依据法国《信息与自由法》第82条及 CNIL 关于 Cookie 和其他跟踪器的指南与建议。</p>
+    <p class="updated">最后更新: 2026年11月15日</p>
+
+    <h2>您的选择</h2>
+    <div class="card">
+      <h3 style="margin-top:0">TradingView 图表</h3>
+      <p id="tv-purpose" style="margin:0"></p>
+      <span id="tv-status" class="status" aria-live="polite">…</span>
+      <div class="consent-actions">
+        <button type="button" class="btn" id="tv-refuse">拒绝</button>
+        <button type="button" class="btn" id="tv-accept">接受</button>
+      </div>
+      <p class="consent-small" id="tv-record"></p>
+      <p class="consent-small"><button type="button" class="btn" id="consent-reset" style="min-height:36px;font-size:13px">清除我的选择（将再次询问）</button></p>
+    </div>
+    <p>在您作出选择之前，不会加载任何 TradingView 图表。无论接受还是拒绝，您的选择都会在设备上保留 6 个月，之后将再次询问。单纯浏览本网站绝不视为同意。</p>
+
+    <h2>本网站存储的内容</h2>
+    <p><strong>本网站不设置任何 Cookie。</strong>它仅使用浏览器的本地存储，用于您所请求服务严格必需的用途，这些用途无需征得同意：</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>名称</th><th>用途</th><th>期限</th></tr></thead>
+      <tbody>
+          <tr><td><code>marches:crypto</code>、<code>marches:indices</code>、<code>marches:stocks</code></td><td>最新市场数据，用于即时和离线显示</td><td>直至下次更新或删除</td></tr>
+          <tr><td><code>marches:tab</code>、<code>marches:lang</code></td><td>记住所显示的标签页和语言</td><td>直至删除</td></tr>
+          <tr><td><code>marches:installDismissed</code></td><td>不再显示应用安装提示</td><td>直至删除</td></tr>
+          <tr><td><code>marches:consent</code></td><td>记住您对 TradingView 的选择（日期、版本、选择），同时作为该选择的证明</td><td>6 个月</td></tr>
+          <tr><td>Service worker 缓存（<code>marches-*</code>）</td><td>已安装应用及离线模式的运行（页面、样式、标志、最新数据）</td><td>直至应用下一版本或删除</td></tr>
+          </tbody>
+    </table></div>
+
+    <h2>需征得您同意的第三方跟踪器</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>服务</th><th>用途</th><th>数据与跟踪器</th><th>政策</th></tr></thead>
+      <tbody><tr><td>TradingView（图表）</td><td>显示交互式图表；TradingView 表示其会通过小组件收集分析信息</td><td>IP 地址、设备和浏览器信息、交互；写入本地存储（观察到“tradingview-widget.*”键）</td><td><a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">隐私</a> · <a href="https://www.tradingview.com/cookies-policy/" target="_blank" rel="noopener">Cookie</a></td></tr></tbody>
+    </table></div>
+    <p>本网站不使用任何广告跟踪器或访问统计工具。</p>
+
+    <h2>删除您设备上的数据</h2>
+    <p>撤回同意后将不再加载 TradingView。TradingView 或本网站已存储在您设备上的数据，可通过浏览器设置删除：例如 Chrome（Android）中的“清除浏览数据”，或 iPhone 上的 设置 → Safari → 高级 → 网站数据。</p>
+    <p class="lead">本译文仅供参考。如有歧义，以法文版本为准。</p>
+
+    <nav class="legal-links" aria-label="法律信息">
+      <a href="/zh/mentions-legales.html">法律声明</a>
+      <a href="/zh/confidentialite.html">隐私政策</a>
+      <a href="/zh/cookies.html" aria-current="page">Cookie 设置</a>
+      <a href="/zh/cgu.html">使用条款</a>
+    </nav>
+  </main>
+  <script src="/legal.js" type="module"></script>
+  <script src="/cookies-page.js" type="module"></script>
+</body>
+</html>

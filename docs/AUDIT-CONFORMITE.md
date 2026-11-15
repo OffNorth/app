@@ -82,6 +82,12 @@ Navigateur Chromium, iPhone émulé, profil vierge. Testé en local puis en prod
 | RGAA | Loi 2005-102 art. 47 | Non applicable (organismes publics, et entreprises à partir de 250 M€ de chiffre d'affaires) |
 | Mineurs | Loi IL art. 45 | Pas de collecte ; mention de l'âge de 15 ans pour le consentement à TradingView |
 
+## 5 bis. Mise à jour du 15/11/2026 (soir)
+
+- À la demande de l'éditeur, **les champs « [À COMPLÉTER] » ont été retirés** des pages publiées. Les mentions légales n'affichent donc plus que les informations vérifiées : hébergeur, nature du service, sources, propriété intellectuelle. **L'identification de l'éditeur, du directeur de la publication et d'un moyen de contact reste manquante** (voir §6) : tant qu'elle n'est pas ajoutée, l'obligation de la LCEN (art. 1-1) n'est pas remplie, sauf si l'éditeur est un particulier ayant communiqué son identité à Vercel. Un commentaire HTML dans `mentions-legales.html` indique où ajouter ces informations.
+- **Langues** : l'application et les 4 pages juridiques sont disponibles en français, en anglais et en chinois simplifié (`/en/…`, `/zh/…`), avec un sélecteur de langue. Le choix est mémorisé dans le stockage local (`marches:lang`), une préférence exemptée de consentement et documentée sur la page Cookies. Les traductions précisent que **la version française fait foi**. Les pages sont générées par `scripts/legal-pages.py`.
+- **Logos des indices** : fichiers SVG publics de TradingView, servis via le relais `/api/logo`. Le visiteur ne contacte toujours aucun tiers.
+
 ## 6. Informations à fournir par l'éditeur
 
 1. Statut : **particulier (non professionnel)** ou **professionnel** (micro-entreprise, société, association).

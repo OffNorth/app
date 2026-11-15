@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cookies and trackers — Markets</title>
+  <meta name="description" content="Cookies, trackers and management of your choices on the Markets website.">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" hreflang="fr" href="/cookies.html">
+  <link rel="alternate" hreflang="en" href="/en/cookies.html">
+  <link rel="alternate" hreflang="zh-CN" href="/zh/cookies.html">
+</head>
+<body class="doc">
+  <header class="topbar"><div class="topbar-row"><a class="back" href="/">← Back to Markets</a><nav class="lang-switch" aria-label="Langue / Language / 语言"><a href="/cookies.html" hreflang="fr" data-setlang="fr">FR</a> · <a href="/en/cookies.html" hreflang="en" data-setlang="en" aria-current="true">EN</a> · <a href="/zh/cookies.html" hreflang="zh-CN" data-setlang="zh">中文</a></nav></div></header>
+  <main id="main">
+    <h1>Cookies and trackers</h1>
+    <p class="lead">In accordance with Article 82 of the French Data Protection Act and the CNIL guidelines and recommendations on cookies and other trackers.</p>
+    <p class="updated">Last updated: 15 November 2026</p>
+
+    <h2>Your choices</h2>
+    <div class="card">
+      <h3 style="margin-top:0">TradingView charts</h3>
+      <p id="tv-purpose" style="margin:0"></p>
+      <span id="tv-status" class="status" aria-live="polite">…</span>
+      <div class="consent-actions">
+        <button type="button" class="btn" id="tv-refuse">Decline</button>
+        <button type="button" class="btn" id="tv-accept">Accept</button>
+      </div>
+      <p class="consent-small" id="tv-record"></p>
+      <p class="consent-small"><button type="button" class="btn" id="consent-reset" style="min-height:36px;font-size:13px">Clear my choices (you will be asked again)</button></p>
+    </div>
+    <p>Without a choice from you, no TradingView chart is loaded. Your choice, whether acceptance or refusal, is kept for 6 months on your device and you will then be asked again. Simply browsing the website never counts as consent.</p>
+
+    <h2>What the website stores</h2>
+    <p><strong>The website sets no cookies.</strong> It only uses your browser’s local storage, for purposes strictly necessary for the service you request. These uses are exempt from consent:</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Purpose</th><th>Duration</th></tr></thead>
+      <tbody>
+          <tr><td><code>marches:crypto</code>, <code>marches:indices</code>, <code>marches:stocks</code></td><td>Latest market data, for instant and offline display</td><td>Until the next update or deletion</td></tr>
+          <tr><td><code>marches:tab</code>, <code>marches:lang</code></td><td>Remember the tab and language displayed</td><td>Until deletion</td></tr>
+          <tr><td><code>marches:installDismissed</code></td><td>Stop showing the app install hint</td><td>Until deletion</td></tr>
+          <tr><td><code>marches:consent</code></td><td>Remember your TradingView choice (date, version, choice), which also serves as proof of that choice</td><td>6 months</td></tr>
+          <tr><td>Service worker cache (<code>marches-*</code>)</td><td>Operation of the installed app and offline mode (pages, styles, logos, latest data)</td><td>Until the next app version or deletion</td></tr>
+          </tbody>
+    </table></div>
+
+    <h2>Third-party trackers requiring your consent</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Service</th><th>Purpose</th><th>Data and trackers</th><th>Policy</th></tr></thead>
+      <tbody><tr><td>TradingView (charts)</td><td>Display interactive charts; TradingView states that it collects analytics information through its widgets</td><td>IP address, device and browser information, interactions; writes to local storage (“tradingview-widget.*” keys observed)</td><td><a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">Privacy</a> · <a href="https://www.tradingview.com/cookies-policy/" target="_blank" rel="noopener">Cookies</a></td></tr></tbody>
+    </table></div>
+    <p>No advertising tracker or audience measurement tool is used on this website.</p>
+
+    <h2>Delete data from your device</h2>
+    <p>Withdrawing your consent prevents any further loading of TradingView. Data already stored on your device by TradingView or by the website can be deleted from your browser settings: for example, “Clear browsing data” in Chrome (Android), or Settings → Safari → Advanced → Website Data on iPhone.</p>
+    <p class="lead">This translation is provided for convenience. In case of discrepancy, the French version prevails.</p>
+
+    <nav class="legal-links" aria-label="Legal information">
+      <a href="/en/mentions-legales.html">Legal notice</a>
+      <a href="/en/confidentialite.html">Privacy</a>
+      <a href="/en/cookies.html" aria-current="page">Cookie settings</a>
+      <a href="/en/cgu.html">Terms of use</a>
+    </nav>
+  </main>
+  <script src="/legal.js" type="module"></script>
+  <script src="/cookies-page.js" type="module"></script>
+</body>
+</html>

@@ -46,7 +46,8 @@ Twelve Data et Finnhub n'ont pas été retenus : il leur faut une clé, et leurs
 
 ## Conformité (RGPD, cookies, LCEN)
 
-- Pages : `mentions-legales.html`, `confidentialite.html`, `cookies.html` (gestion des choix), `cgu.html` — liées dans le pied de page.
+- Pages : `mentions-legales.html`, `confidentialite.html`, `cookies.html` (gestion des choix), `cgu.html` — en français, anglais (`/en/`) et chinois (`/zh/`), générées par `scripts/legal-pages.py`, liées dans le pied de page.
+- Langues de l'app : français, anglais, chinois simplifié (`public/i18n.js`, sélecteur en haut à droite).
 - Aucun cookie ; stockage local strictement nécessaire (exempté) ; le widget TradingView n'est chargé qu'après consentement (`public/consent.js`, choix conservé 6 mois, retirable).
 - Logos relayés par `api/logo.js` (aucune IP de visiteur envoyée aux CDN tiers) ; en-têtes de sécurité (CSP, etc.) dans `vercel.json`.
 - Rapport d'audit et informations restant à fournir : [`docs/AUDIT-CONFORMITE.md`](docs/AUDIT-CONFORMITE.md).

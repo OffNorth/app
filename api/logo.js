@@ -3,7 +3,7 @@
 // (son adresse IP ne leur est pas transmise) ; seul ce serveur le fait.
 // Sécurité : https uniquement, liste blanche de domaines, pas de redirection suivie,
 // type image obligatoire, taille limitée (évite tout usage comme proxy ouvert / SSRF).
-const HOSTS = new Set(['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com', 'companiesmarketcap.com']);
+const HOSTS = new Set(['coin-images.coingecko.com', 'assets.coingecko.com', 'static.coinpaprika.com', 'companiesmarketcap.com', 's3-symbol-logo.tradingview.com']);
 const MAX_BYTES = 300 * 1024;
 
 const fail = (status) => new Response(null, { status, headers: { 'Cache-Control': 'no-store' } });

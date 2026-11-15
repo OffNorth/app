@@ -132,7 +132,8 @@ main {
 .idx:active { transform: scale(.98); }
 .idx-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .idx h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.2; }
-.idx-country { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-bottom: 1px; }
+.idx-country { display: flex; align-items: center; gap: 6px; min-height: 20px; font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 4px; }
+.idx-country span { opacity: .75; }
 .chip {
   flex: none; display: inline-flex; align-items: center; gap: 5px;
   font-size: 11px; font-weight: 650; padding: 3px 7px; border-radius: 99px;
@@ -281,3 +282,17 @@ mark.todo { background: #f5b84a; color: #1a1205; padding: 1px 5px; border-radius
 .switch-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .status { display: inline-block; margin-top: 6px; font-size: 13px; font-weight: 700; padding: 3px 9px; border-radius: 99px; background: var(--surface-2); }
 .status.on { color: var(--up); } .status.off { color: var(--down); }
+
+/* Sélecteur de langue */
+.top-actions { display: flex; align-items: center; gap: 8px; }
+.lang-select {
+  height: 44px; padding: 0 10px; border-radius: 22px; border: 1px solid var(--border);
+  background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+}
+/* Logo d'indice */
+.idx-logo { flex: none; width: 20px; height: 20px; border-radius: 50%; }
+/* Pages juridiques : sélecteur de langue */
+.doc .topbar-row { gap: 10px; }
+.lang-switch { display: flex; gap: 4px; align-items: center; font-size: 14px; font-weight: 700; color: var(--muted); }
+.lang-switch a { color: var(--muted); text-decoration: none; padding: 10px 6px; }
+.lang-switch a[aria-current="true"] { color: var(--text); text-decoration: underline; text-underline-offset: 4px; }
