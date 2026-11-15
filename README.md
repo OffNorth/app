@@ -20,7 +20,7 @@ public/            Front statique (HTML/CSS/JS vanilla, aucune dépendance)
   styles.css
   sw.js            Service worker (coquille en cache, API network-first)
   manifest.webmanifest
-  icons/           192/512, maskable, apple-touch-icon (générés par scripts/make-icons.py)
+  icons/           192/512, maskable, apple-touch-icon (générés par scripts/make-icons.mjs)
 api/               Fonctions serverless Vercel (proxy + cache)
   crypto.js        CoinGecko → repli CoinPaprika
   indices.js       Yahoo Finance chart (query1 → query2) → repli Stooq
@@ -44,7 +44,7 @@ Twelve Data et Finnhub n'ont pas été retenus : il leur faut une clé, et leurs
 
 ```bash
 npm run dev          # http://localhost:5173  (Node ≥ 20, aucune installation requise)
-npm run icons        # régénère les icônes (Python + Pillow)
+npm run icons        # régénère les icônes (Node, sans dépendance ; aussi lancé au build Vercel)
 ```
 
 ## Variables d'environnement (facultatif)
