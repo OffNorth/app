@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cookies et traceurs — Marchés</title>
+  <meta name="description" content="Cookies, traceurs et gestion de vos choix sur le site Marchés.">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="alternate" hreflang="fr" href="/cookies.html">
+  <link rel="alternate" hreflang="en" href="/en/cookies.html">
+  <link rel="alternate" hreflang="zh-CN" href="/zh/cookies.html">
+</head>
+<body class="doc">
+  <header class="topbar"><div class="topbar-row"><a class="back" href="/">← Retour à Marchés</a><nav class="lang-switch" aria-label="Langue / Language / 语言"><a href="/cookies.html" hreflang="fr" data-setlang="fr" aria-current="true">FR</a> · <a href="/en/cookies.html" hreflang="en" data-setlang="en">EN</a> · <a href="/zh/cookies.html" hreflang="zh-CN" data-setlang="zh">中文</a></nav></div></header>
+  <main id="main">
+    <h1>Cookies et traceurs</h1>
+    <p class="lead">Conformément à l’article 82 de la loi « Informatique et Libertés » et aux lignes directrices et recommandations de la CNIL sur les cookies et autres traceurs.</p>
+    <p class="updated">Dernière mise à jour : 15 novembre 2026</p>
+
+    <h2>Vos choix</h2>
+    <div class="card">
+      <h3 style="margin-top:0">Graphiques TradingView</h3>
+      <p id="tv-purpose" style="margin:0"></p>
+      <span id="tv-status" class="status" aria-live="polite">…</span>
+      <div class="consent-actions">
+        <button type="button" class="btn" id="tv-refuse">Refuser</button>
+        <button type="button" class="btn" id="tv-accept">Accepter</button>
+      </div>
+      <p class="consent-small" id="tv-record"></p>
+      <p class="consent-small"><button type="button" class="btn" id="consent-reset" style="min-height:36px;font-size:13px">Effacer mes choix (ils seront redemandés)</button></p>
+    </div>
+    <p>Sans choix de votre part, aucun graphique TradingView n’est chargé. Votre choix, accord comme refus, est conservé 6 mois sur votre appareil, puis vous sera redemandé. La simple navigation sur le site ne vaut jamais accord.</p>
+
+    <h2>Ce que dépose le site</h2>
+    <p><strong>Le site ne dépose aucun cookie.</strong> Il utilise uniquement le stockage local de votre navigateur, pour des usages strictement nécessaires au service que vous demandez. Ces usages sont exemptés de consentement :</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Nom</th><th>Finalité</th><th>Durée</th></tr></thead>
+      <tbody>
+          <tr><td><code>marches:crypto</code>, <code>marches:indices</code>, <code>marches:stocks</code></td><td>Dernières données de marché, pour un affichage immédiat et hors connexion</td><td>Jusqu’à la prochaine mise à jour ou effacement</td></tr>
+          <tr><td><code>marches:tab</code>, <code>marches:lang</code></td><td>Mémoriser l’onglet et la langue affichés</td><td>Jusqu’à effacement</td></tr>
+          <tr><td><code>marches:installDismissed</code></td><td>Ne plus afficher l’aide à l’installation de l’application</td><td>Jusqu’à effacement</td></tr>
+          <tr><td><code>marches:consent</code></td><td>Mémoriser votre choix relatif à TradingView (date, version, choix), qui sert aussi de preuve de ce choix</td><td>6 mois</td></tr>
+          <tr><td>Cache du service worker (<code>marches-*</code>)</td><td>Fonctionnement de l’application installée et hors connexion (pages, styles, logos, dernières données)</td><td>Jusqu’à la prochaine version de l’application ou effacement</td></tr>
+          </tbody>
+    </table></div>
+
+    <h2>Traceurs tiers soumis à votre accord</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Service</th><th>Finalité</th><th>Données et traceurs</th><th>Politique</th></tr></thead>
+      <tbody><tr><td>TradingView (graphiques)</td><td>Afficher les graphiques interactifs ; TradingView indique collecter des informations analytiques via ses widgets</td><td>Adresse IP, informations sur l’appareil et le navigateur, interactions ; écriture dans le stockage local (clés « tradingview-widget.* » observées)</td><td><a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">Confidentialité</a> · <a href="https://www.tradingview.com/cookies-policy/" target="_blank" rel="noopener">Cookies</a></td></tr></tbody>
+    </table></div>
+    <p>Aucun traceur publicitaire ni outil de mesure d’audience n’est utilisé sur ce site.</p>
+
+    <h2>Effacer les données de votre appareil</h2>
+    <p>Retirer votre accord empêche tout nouveau chargement de TradingView. Les données déjà enregistrées par TradingView ou par le site sur votre appareil s’effacent depuis les réglages de votre navigateur : par exemple, « Effacer les données de navigation » sur Chrome (Android), ou Réglages → Safari → Avancé → Données de sites web sur iPhone.</p>
+
+    <nav class="legal-links" aria-label="Informations légales">
+      <a href="/mentions-legales.html">Mentions légales</a>
+      <a href="/confidentialite.html">Confidentialité</a>
+      <a href="/cookies.html" aria-current="page">Gestion des cookies</a>
+      <a href="/cgu.html">CGU</a>
+    </nav>
+  </main>
+  <script src="/legal.js" type="module"></script>
+  <script src="/cookies-page.js" type="module"></script>
+</body>
+</html>

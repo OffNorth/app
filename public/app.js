@@ -1,10 +1,8 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
+import { getConsent, setConsent, SERVICES } from './consent.js';
+import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix, LOCALES, setLang, t, TV_LOCALE } from './i18n.js';
 const REFRESH_MS = 60_000;
 const TABS = ['crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
-const TAB_TITLES = {
-  crypto: 'Top 25 cryptos hors stablecoins · 24 h', actions: 'Top 25 entreprises mondiales · séance', ameriques: 'Indices Amériques', europe: 'Indices Europe',
-  asie: 'Indices Asie-Pacifique', afrique: 'Indices Afrique & Moyen-Orient',
-};
 const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
 const initialTab = (t) => (TABS.includes(t) ? t : LEGACY_TABS[t]);
 const ND = 'n/d';
@@ -27,15 +25,23 @@ const state = {
 };
 
 /* ---------- Formatage ---------- */
-const nf = (min, max = min) => new Intl.NumberFormat('fr-FR', { minimumFractionDigits: min, maximumFractionDigits: max });
-const NF0 = nf(0), NF1 = nf(1), NF2 = nf(2);
+const loc = () => LOCALES[getLang()];
+const nf = (min, max = min) => new Intl.NumberFormat(loc(), { minimumFractionDigits: min, maximumFractionDigits: max });
+let NF0, NF1, NF2, timeFmt, timeSecFmt;
+function initFormats() {
+  NF0 = nf(0); NF1 = nf(1); NF2 = nf(2);
+  timeFmt = new Intl.DateTimeFormat(loc(), { hour: '2-digit', minute: '2-digit' });
+  timeSecFmt = new Intl.DateTimeFormat(loc(), { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+initFormats();
+const pctSign = () => (getLang() === 'fr' ? '\u202f%' : '%');
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 
 function fmtPct(v, digits = 2) {
   if (!isNum(v)) return ND;
   const s = (digits === 1 ? NF1 : NF2).format(Math.abs(v));
   const sign = v > 0.0049 ? '+' : v < -0.0049 ? '−' : '';
-  return `${sign}${s} %`;
+  return `${sign}${s}${pctSign()}`;
 }
 function fmtSigned(v) {
   if (!isNum(v)) return ND;
@@ -46,22 +52,23 @@ function fmtPrice(v) {
   if (!isNum(v)) return ND;
   const a = Math.abs(v);
   const f = a >= 1000 ? NF0 : a >= 1 ? NF2 : a >= 0.01 ? nf(4) : nf(2, 8);
-  return `${f.format(v)} $`;
+  return getLang() === 'fr' ? `${f.format(v)}\u00a0$` : `$${f.format(v)}`;
 }
 function fmtCap(v) {
   if (!isNum(v)) return ND;
+  if (getLang() === 'zh') { // 亿 = 10^8, 万亿 = 10^12
+    return v >= 1e12 ? `${NF2.format(v / 1e12)}万亿美元` : `${(v / 1e8 >= 100 ? NF0 : NF1).format(v / 1e8)}亿美元`;
+  }
   const md = v / 1e9;
   const f = md >= 100 ? NF0 : md >= 10 ? NF1 : NF2;
-  return `${f.format(md)} Md$`;
+  return getLang() === 'fr' ? `${f.format(md)}\u00a0Md$` : `$${f.format(md)}B`;
 }
-const timeFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit' });
-const timeSecFmt = new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 function fmtTime(ms, withSec = false) { return isNum(ms) ? (withSec ? timeSecFmt : timeFmt).format(ms) : ND; }
 function fmtDay(ms, tz) {
   if (!isNum(ms)) return ND;
   const opts = { weekday: 'short', day: 'numeric', month: 'short' };
-  try { return new Intl.DateTimeFormat('fr-FR', tz ? { ...opts, timeZone: tz } : opts).format(ms); }
-  catch { return new Intl.DateTimeFormat('fr-FR', opts).format(ms); }
+  try { return new Intl.DateTimeFormat(loc(), tz ? { ...opts, timeZone: tz } : opts).format(ms); }
+  catch { return new Intl.DateTimeFormat(loc(), opts).format(ms); }
 }
 function sameLocalDay(a, b) { return new Date(a).toDateString() === new Date(b).toDateString(); }
 const signClass = (v) => (!isNum(v) ? '' : v > 0 ? 'pos' : v < 0 ? 'neg' : '');
@@ -115,13 +122,14 @@ function squarify(items, x, y, w, h) {
 /* ---------- Rendu crypto ---------- */
 /** Logo d'une crypto : version 50 px pour les petites tailles, 250 px sinon. */
 function logoImg(c, size, cls = 'logo') {
-  const src = size <= 22 ? c.logoSmall || c.logo : c.logo || c.logoSmall;
-  if (!src) return '';
+  const raw = size <= 22 ? c.logoSmall || c.logo : c.logo || c.logoSmall;
+  if (!raw) return '';
+  const src = `/api/logo?u=${encodeURIComponent(raw)}`; // relais du site : l'IP du visiteur n'est pas transmise au CDN tiers
   return `<img class="${cls}" src="${esc(src)}" width="${size}" height="${size}" alt="" decoding="async" referrerpolicy="no-referrer">`;
 }
 // Logo introuvable → on le retire simplement (le symbole reste affiché).
 document.addEventListener('error', (e) => {
-  if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo')) e.target.remove();
+  if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo, .idx-logo')) e.target.remove();
 }, true);
 
 /** Hauteur de la heatmap : remplit l'écran restant, sans être trop plate ni trop haute. */
@@ -177,7 +185,7 @@ function renderTiles(map, items, { maxAbs, priceText, period, onOpen }) {
     }
     const prev = state.prevPrices.get(r.id);
     const flash = isNum(prev) && isNum(r.price) && prev !== r.price ? ' flash' : '';
-    const aria = `${r.name} (${r.label}) : ${fmtPct(r.changePct)} ${period}, prix ${priceText(r)}`;
+    const aria = `${r.name} (${r.label}) : ${fmtPct(r.changePct)} ${period}, ${t('priceWord')} ${priceText(r)}`;
     return `<button class="tile${flash}" role="listitem" data-id="${esc(r.id)}" aria-label="${esc(aria)}"
       style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background-color:${heat(r.changePct, maxAbs)}">${inner}</button>`;
   }).join('');
@@ -190,37 +198,37 @@ function renderTiles(map, items, { maxAbs, priceText, period, onOpen }) {
   };
 }
 
-function heatmapPlaceholder(statsEl, map, what) {
+function heatmapPlaceholder(statsEl, map) {
   statsEl.innerHTML = Array.from({ length: 4 }, () => '<div class="stat skeleton" style="height:58px"></div>').join('');
   map.style.height = '420px';
   map.innerHTML = state.loading ? '<div class="skeleton" style="position:absolute;inset:0"></div>'
-    : `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">Données ${what} ${ND}</div>`;
+    : `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">${t('noData')}</div>`;
 }
 
 const upDown = (list) => {
   const up = list.filter((c) => isNum(c.changePct) && c.changePct > 0).length;
   const down = list.filter((c) => isNum(c.changePct) && c.changePct < 0).length;
   const na = list.filter((c) => !isNum(c.changePct)).length;
-  return `<div class="stat"><div class="stat-label">Hausse / baisse</div>
-      <div class="stat-value"><span class="pos">▲ ${up}</span> · <span class="neg">▼ ${down}</span></div><div class="stat-sub">sur le top 25${na ? ` · ${na} ${ND}` : ''}</div></div>`;
+  return `<div class="stat"><div class="stat-label">${t('upDown')}</div>
+      <div class="stat-value"><span class="pos">▲ ${up}</span> · <span class="neg">▼ ${down}</span></div><div class="stat-sub">${t('inTop25')}${na ? ` · ${na} ${ND}` : ''}</div></div>`;
 };
-const updated = (data) => `<div class="stat"><div class="stat-label">Mise à jour</div>
-      <div class="stat-value">${fmtTime(data.fetchedAt, true)}</div><div class="stat-sub">${esc(data.source || ND)}${data.stale ? ' · ancien' : ''}</div></div>`;
+const updated = (data) => `<div class="stat"><div class="stat-label">${t('updated')}</div>
+      <div class="stat-value">${fmtTime(data.fetchedAt, true)}</div><div class="stat-sub">${esc(data.source || ND)}${data.stale ? ` · ${t('stale')}` : ''}</div></div>`;
 
 function renderCrypto() {
   const data = state.crypto;
   const statsEl = $('#crypto-stats'), map = $('#treemap');
-  if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map, 'crypto');
+  if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
   const g = data.global || {};
   statsEl.innerHTML = `
-    <div class="stat"><div class="stat-label">Capitalisation totale</div>
-      <div class="stat-value">${fmtCap(g.totalMarketCap)}</div><div class="stat-sub ${signClass(g.totalChangePct)}">${fmtPct(g.totalChangePct)} sur 24 h</div></div>
-    <div class="stat"><div class="stat-label">Dominance BTC</div>
-      <div class="stat-value">${isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}\u202f%` : ND}</div><div class="stat-sub">de la capitalisation</div></div>
+    <div class="stat"><div class="stat-label">${t('totalCap')}</div>
+      <div class="stat-value">${fmtCap(g.totalMarketCap)}</div><div class="stat-sub ${signClass(g.totalChangePct)}">${fmtPct(g.totalChangePct)} ${t('over24h')}</div></div>
+    <div class="stat"><div class="stat-label">${t('btcDom')}</div>
+      <div class="stat-value">${isNum(g.btcDominance) ? `${NF1.format(g.btcDominance)}${pctSign()}` : ND}</div><div class="stat-sub">${t('ofCap')}</div></div>
     ${upDown(data.coins)}
     ${updated(data)}`;
   renderTiles(map, data.coins.map((c) => ({ ...c, label: c.symbol })), {
-    maxAbs: 8, period: 'sur 24 h', priceText: (c) => fmtPrice(c.price), onOpen: openChart,
+    maxAbs: 8, period: t('period24h'), priceText: (c) => fmtPrice(c.price), onOpen: openChart,
   });
 }
 
@@ -234,20 +242,20 @@ function fmtStockPrice(v, cur) {
 function renderStocks() {
   const data = state.stocks;
   const statsEl = $('#stocks-stats'), map = $('#treemap-stocks');
-  if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map, 'entreprises');
+  if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
   const list = data.companies;
   const total = list.reduce((s, c) => s + (isNum(c.marketCap) ? c.marketCap : 0), 0);
   const us = list.find((c) => /^(NASDAQ|NYSE):/.test(c.tv?.link || ''));
   const usState = us ? statusOf(us) : null;
   statsEl.innerHTML = `
-    <div class="stat"><div class="stat-label">Capitalisation top 25</div>
-      <div class="stat-value">${fmtCap(total)}</div><div class="stat-sub">mise à jour horaire</div></div>
-    <div class="stat"><div class="stat-label">Wall Street</div>
+    <div class="stat"><div class="stat-label">${t('top25cap')}</div>
+      <div class="stat-value">${fmtCap(total)}</div><div class="stat-sub">${t('hourly')}</div></div>
+    <div class="stat"><div class="stat-label">${t('wallStreet')}</div>
       <div class="stat-value">${usState ? esc(usState.chip) : ND}</div><div class="stat-sub">${usState ? esc(usState.foot) : ''}</div></div>
     ${upDown(list)}
     ${updated(data)}`;
   renderTiles(map, list, {
-    maxAbs: 4, period: 'sur la séance', priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
+    maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
   });
 }
 
@@ -259,7 +267,7 @@ function tvWidgetURL(tvSymbol, interval = '60') {
   let tz = 'Etc/UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* défaut UTC */ }
   const p = new URLSearchParams({
-    symbol: tvSymbol, interval, theme: 'dark', style: '1', locale: 'fr', timezone: tz,
+    symbol: tvSymbol, interval, theme: 'dark', style: '1', locale: TV_LOCALE[getLang()], timezone: tz,
     toolbarbg: '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
     hideideas: '1', studies: '[]',
   });
@@ -290,7 +298,7 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
   $('#chart-title').innerHTML = titleHTML;
   $('#chart-sub').textContent = sub;
   $('#chart-stats').innerHTML = statsHTML;
-  frame.innerHTML = '<div class="msg">Chargement du graphique…</div>';
+  frame.innerHTML = `<div class="msg">${t('chartLoading')}</div>`;
   link.hidden = true;
   note.hidden = true;
   if (box.hidden) {
@@ -302,12 +310,12 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
   const res = await tv;
   if (token !== chartToken || box.hidden) return; // fermé ou autre tuile ouverte entre-temps
   if (res?.tv) {
-    frame.innerHTML = `<iframe title="Graphique TradingView ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen></iframe>`;
     link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link || res.tv)}`;
     link.hidden = false;
-    if (res.note) { note.textContent = res.note; note.hidden = false; }
+    if (res.note) { note.textContent = typeof res.note === 'function' ? res.note() : res.note; note.hidden = false; }
+    renderTVFrame(res, label, token);
   } else if (res?.error) {
-    frame.innerHTML = `<div class="msg">Graphique indisponible pour le moment${navigator.onLine ? '' : ' (hors ligne)'}.<br>Réessayez dans un instant.</div>`;
+    frame.innerHTML = `<div class="msg">${t('chartUnavailable', { off: navigator.onLine ? '' : t('offlineSuffix') })}</div>`;
   } else {
     frame.innerHTML = `<div class="msg">${missingMsg}</div>`;
     if (res?.link) { // pas de graphique intégrable, mais l'indice existe sur tradingview.com
@@ -317,15 +325,51 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg }) {
   }
 }
 
+/**
+ * Affiche le widget TradingView seulement si l'utilisateur l'a accepté.
+ * Sans choix : panneau de consentement (Accepter / Refuser, même poids visuel).
+ * Refus : aucune requête vers TradingView ; le lien « Ouvrir dans TradingView » reste disponible.
+ */
+function renderTVFrame(res, label, token) {
+  if (token !== chartToken || $('#chart').hidden) return;
+  const frame = $('#chart-frame');
+  const consent = getConsent('tradingview');
+  if (consent === true) {
+    frame.innerHTML = `<iframe title="TradingView — ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    return;
+  }
+  const s = SERVICES.tradingview;
+  const lp = legalPrefix();
+  frame.innerHTML = consent === false
+    ? `<div class="msg consent-box">
+        <p>${t('consent.refused')}</p>
+        <div class="consent-actions"><button type="button" class="btn" data-consent="accept">${t('consent.allow')}</button></div>
+        <p class="consent-small"><a href="${lp}/cookies.html">${t('consent.manage')}</a></p>
+      </div>`
+    : `<div class="msg consent-box" role="group" aria-labelledby="consent-title">
+        <p id="consent-title"><strong>${t('consent.title')}</strong></p>
+        <p>${t('consent.body')}</p>
+        <div class="consent-actions">
+          <button type="button" class="btn" data-consent="refuse">${t('consent.refuse')}</button>
+          <button type="button" class="btn" data-consent="accept">${t('consent.accept')}</button>
+        </div>
+        <p class="consent-small">${t('consent.small', { link: `<a href="${lp}/cookies.html">${t('legal.cookies')}</a>` })} <a href="${esc(s.policy)}" target="_blank" rel="noopener">${t('consent.tvPolicy')}</a> · <a href="${lp}/confidentialite.html">${t('consent.ourPolicy')}</a></p>
+      </div>`;
+  frame.querySelectorAll('[data-consent]').forEach((b) => b.addEventListener('click', () => {
+    setConsent('tradingview', b.dataset.consent === 'accept');
+    renderTVFrame(res, label, token);
+  }));
+}
+
 function openChart(c, rank, totalTop) {
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
-    sub: `${c.name} · rang ${rank} · variation 24 h`,
-    statsHTML: stat('Prix', fmtPrice(c.price)) + stat('Capitalisation', fmtCap(c.marketCap))
-      + stat('Part top 25', isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)} %` : ND),
+    sub: `${c.name} · ${t('rank', { n: rank })} · ${t('change24')}`,
+    statsHTML: stat(t('price'), fmtPrice(c.price)) + stat(t('cap'), fmtCap(c.marketCap))
+      + stat(t('share'), isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)}${pctSign()}` : ND),
     tv: resolveTV(c),
     label: c.symbol,
-    missingMsg: `Graphique TradingView ${ND} pour ${esc(c.symbol)} :<br>cette crypto n’y est pas cotée.`,
+    missingMsg: t('missCrypto', { s: esc(c.symbol) }),
   });
 }
 
@@ -333,12 +377,12 @@ function openStockChart(c, rank, total) {
   const st = statusOf(c);
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.label)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
-    sub: `${c.name} · rang ${rank}${c.country ? ` · ${c.country}` : ''} · ${st.chip}`,
-    statsHTML: stat('Cours', fmtStockPrice(c.price, c.currency)) + stat('Capitalisation', fmtCap(c.marketCap))
-      + stat('Part top 25', isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}\u202f%` : ND),
+    sub: `${c.name} · ${t('rank', { n: rank })}${c.country ? ` · ${country(c.country)}` : ''} · ${st.chip}`,
+    statsHTML: stat(t('quote'), fmtStockPrice(c.price, c.currency)) + stat(t('cap'), fmtCap(c.marketCap))
+      + stat(t('share'), isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}${pctSign()}` : ND),
     tv: c.tv || { tv: null },
     label: c.label,
-    missingMsg: `Graphique ${ND} ici pour ${esc(c.name)} :<br>TradingView n’autorise pas cette place de cotation dans ce widget.<br>Il reste consultable sur leur site.`,
+    missingMsg: t('missStock', { s: esc(c.name) }),
   });
 }
 
@@ -349,12 +393,13 @@ function openStockChart(c, rank, total) {
  * Plusieurs indices officiels n'y sont disponibles qu'en journalier (interval: 'D').
  * tv: null → aucun graphique intégrable : seul le lien vers tradingview.com est proposé.
  */
-const CFD = (name) => `Graphique : CFD qui suit le ${name} (l’indice officiel n’est pas disponible dans ce widget). Le niveau peut différer légèrement.`;
-const ETF = (what) => `Graphique : ${what} (l’indice officiel n’est pas disponible dans ce widget). Prix de l’ETF en $, pas le niveau de l’indice.`;
+// Les notes sont des fonctions : elles sont traduites au moment de l'affichage.
+const CFD = (name) => () => t('cfd', { name });
+const ETF = (key) => () => t('etf', { what: t(key) });
 const INDEX_TV = {
   // Amériques
   spx: { tv: 'CAPITALCOM:US500', link: 'SP:SPX', note: CFD('S&P 500') },
-  ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: ETF('ETF Fidelity ONEQ qui réplique le Nasdaq Composite') },
+  ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: ETF('etf.ixic') },
   dji: { tv: 'CAPITALCOM:US30', link: 'DJ:DJI', note: CFD('Dow Jones') },
   rut: { tv: 'CAPITALCOM:RTY', link: 'TVC:RUT', note: CFD('Russell 2000') },
   tsx: { tv: 'TSX:TSX' },
@@ -383,9 +428,9 @@ const INDEX_TV = {
   csi300: { tv: 'SSE:000300', interval: 'D' },
   hsi: { tv: 'HSI:HSI', interval: 'D' },
   n225: { tv: 'INDEX:NKY', interval: 'D', link: 'TVC:NI225' },
-  kospi: { tv: 'TSX:KORX', link: 'KRX:KOSPI', note: 'Graphique : ETF qui suit le KOSPI 200 (indice voisin du KOSPI, non disponible dans ce widget). Prix de l’ETF, pas le niveau de l’indice.' },
+  kospi: { tv: 'TSX:KORX', link: 'KRX:KOSPI', note: () => t('note.kospi') },
   taiex: { tv: 'INDEX:TAIEX', interval: 'D', link: 'TWSE:TAIEX' },
-  nifty: { tv: 'NASDAQ:INDY', link: 'NSE:NIFTY', note: ETF('ETF iShares India 50 qui réplique le Nifty 50') },
+  nifty: { tv: 'NASDAQ:INDY', link: 'NSE:NIFTY', note: ETF('etf.nifty') },
   sensex: { tv: 'INDEX:SENSEX', interval: 'D', link: 'BSE:SENSEX' },
   sti: { tv: 'INDEX:STI', interval: 'D', link: 'TVC:STI' },
   jkse: { tv: 'IDX:COMPOSITE', interval: 'D' },
@@ -403,13 +448,13 @@ const INDEX_TV = {
 function openIndexChart(ix) {
   const st = statusOf(ix);
   showChart({
-    titleHTML: `${esc(ix.name)} <span class="${signClass(ix.changePct)}">${fmtPct(ix.changePct)}</span>`,
-    sub: `${st.chip} · ${st.foot}`,
-    statsHTML: stat('Niveau', fmtLevel(ix.price)) + stat('Variation', fmtSigned(ix.change), signClass(ix.change))
-      + stat('Clôture préc.', fmtLevel(ix.prevClose)),
+    titleHTML: `${logoImg(ix, 28, 'chart-logo')}${esc(indexName(ix))} <span class="${signClass(ix.changePct)}">${fmtPct(ix.changePct)}</span>`,
+    sub: `${country(ix.country)} · ${st.chip} · ${st.foot}`,
+    statsHTML: stat(t('level'), fmtLevel(ix.price)) + stat(t('change'), fmtSigned(ix.change), signClass(ix.change))
+      + stat(t('prevClose'), fmtLevel(ix.prevClose)),
     tv: INDEX_TV[ix.id] || { tv: null },
-    label: ix.name,
-    missingMsg: `Graphique ${ND} ici pour ${esc(ix.name)} :<br>TradingView ne l’autorise pas dans ce widget.<br>Il reste consultable sur leur site.`,
+    label: indexName(ix),
+    missingMsg: t('missIndex', { s: esc(indexName(ix)) }),
   });
 }
 
@@ -430,7 +475,7 @@ window.addEventListener('popstate', closeChart);
 /* ---------- Rendu indices ---------- */
 function sparkSVG(spark, prev) {
   const pts = spark?.points;
-  if (!pts || pts.length < 2) return `<div class="spark-empty">Courbe de séance ${ND}</div>`;
+  if (!pts || pts.length < 2) return `<div class="spark-empty">${t('sparkNA')}</div>`;
   const t0 = isNum(spark.start) ? spark.start : pts[0][0];
   const t1 = isNum(spark.end) && spark.end > t0 ? spark.end : pts.at(-1)[0];
   const vals = pts.map((p) => p[1]);
@@ -450,12 +495,12 @@ function sparkSVG(spark, prev) {
 
 function statusOf(ix) {
   switch (ix.state) {
-    case 'open': return { chip: 'Ouvert', cls: 'open', foot: `Cours de ${fmtTime(ix.lastTime)} · différé` };
-    case 'break': return { chip: 'Pause', cls: 'break', foot: `Dernier cours ${sameLocalDay(ix.lastTime, Date.now()) ? fmtTime(ix.lastTime) : fmtDay(ix.lastTime, ix.timezone)}` };
+    case 'open': return { chip: t('st.open'), cls: 'open', foot: t('st.openFoot', { t: fmtTime(ix.lastTime) }) };
+    case 'break': return { chip: t('st.break'), cls: 'break', foot: t('st.breakFoot', { t: sameLocalDay(ix.lastTime, Date.now()) ? fmtTime(ix.lastTime) : fmtDay(ix.lastTime, ix.timezone) }) };
     case 'closed': return ix.outdated
-      ? { chip: 'Données anciennes', cls: 'break', foot: `Dernière donnée : ${fmtDay(ix.lastTime, ix.timezone)}` }
-      : { chip: 'Fermé', cls: 'closed', foot: `Clôture ${fmtDay(ix.lastTime, ix.timezone)}` };
-    default: return { chip: `Statut ${ND}`, cls: 'unknown', foot: isNum(ix.lastTime) ? `Cours du ${fmtDay(ix.lastTime, ix.timezone)}` : `Date ${ND}` };
+      ? { chip: t('st.outdated'), cls: 'break', foot: t('st.outdatedFoot', { d: fmtDay(ix.lastTime, ix.timezone) }) }
+      : { chip: t('st.closed'), cls: 'closed', foot: t('st.closedFoot', { d: fmtDay(ix.lastTime, ix.timezone) }) };
+    default: return { chip: t('st.unknown'), cls: 'unknown', foot: isNum(ix.lastTime) ? t('st.quoteOf', { d: fmtDay(ix.lastTime, ix.timezone) }) : t('st.dateNA') };
   }
 }
 
@@ -464,14 +509,14 @@ function renderIndices(region) {
   const list = state.indices?.indices?.filter((i) => i.region === region);
   if (!list?.length) {
     grid.innerHTML = state.loading ? Array.from({ length: 4 }, () => '<div class="idx skeleton"></div>').join('')
-      : `<div class="empty" style="grid-column:1/-1">Données ${ND}</div>`;
+      : `<div class="empty" style="grid-column:1/-1">${t('noData')}</div>`;
     return;
   }
   grid.innerHTML = list.map((ix) => {
     const st = statusOf(ix);
-    return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" style="background-color:${heat(ix.changePct, 2.5)}">
-      ${ix.country ? `<div class="idx-country">${esc(ix.country)}</div>` : ''}
-      <div class="idx-top"><h3>${esc(ix.name)}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
+    return `<article class="idx" data-id="${esc(ix.id)}" tabindex="0" role="button" aria-label="${esc(`${indexName(ix)}, ${country(ix.country)} : ${fmtLevel(ix.price)}, ${fmtPct(ix.changePct)}. ${t('openChart')}`)}" style="background-color:${heat(ix.changePct, 2.5)}">
+      <div class="idx-country">${logoImg(ix, 20, 'idx-logo')}<span>${esc(country(ix.country))}</span></div>
+      <div class="idx-top"><h3>${esc(indexName(ix))}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
       <div class="idx-level">${fmtLevel(ix.price)}</div>
       <div class="idx-chg">${fmtPct(ix.changePct)} <span>(${fmtSigned(ix.change)})</span></div>
       ${sparkSVG(ix.spark, ix.prevClose)}
@@ -483,30 +528,42 @@ function renderIndices(region) {
     const ix = card && list.find((i) => i.id === card.dataset.id);
     if (ix) openIndexChart(ix);
   };
+  grid.onkeydown = (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const card = e.target.closest('.idx');
+    if (!card) return;
+    e.preventDefault();
+    card.click();
+  };
 }
 
 /* ---------- En-tête, bannière ---------- */
 function renderChrome() {
   const key = state.tab === 'crypto' ? 'crypto' : state.tab === 'actions' ? 'stocks' : 'indices';
   const data = state[key];
-  const when = data?.fetchedAt && key === 'indices' ? ` · MAJ ${fmtTime(data.fetchedAt)}` : '';
-  $('#subtitle').textContent = `${TAB_TITLES[state.tab]}${when}`;
+  const when = data?.fetchedAt && key === 'indices' ? ` · ${t('updatedShort')} ${fmtTime(data.fetchedAt)}` : '';
+  $('#subtitle').textContent = `${t(`title.${state.tab}`)}${when}`;
 
   const banner = $('#banner');
   let msg = '';
-  if (state.offline[key] && data) msg = `Hors ligne ou source injoignable — dernières données du ${fmtDay(data.fetchedAt)} à ${fmtTime(data.fetchedAt)}.`;
-  else if (state.offline[key]) msg = 'Hors ligne — aucune donnée en cache pour le moment.';
-  else if (data?.stale) msg = `Source momentanément indisponible — données de ${fmtTime(data.fetchedAt)}.`;
+  if (state.offline[key] && data) msg = t('offlineData', { d: fmtDay(data.fetchedAt), t: fmtTime(data.fetchedAt) });
+  else if (state.offline[key]) msg = t('offlineNone');
+  else if (data?.stale) msg = t('staleBanner', { t: fmtTime(data.fetchedAt) });
   banner.textContent = msg;
   banner.hidden = !msg;
 
-  const src = [];
-  src.push(`Crypto : ${state.crypto?.source || 'CoinGecko'}${state.crypto?.source === 'CoinPaprika' ? ' (repli)' : ''}`);
+  const a = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+  const crypto = state.crypto?.source === 'CoinPaprika'
+    ? `${a('https://coinpaprika.com/', 'CoinPaprika')} ${t('fallback')}` : `Powered by ${a('https://www.coingecko.com/', 'CoinGecko')}`;
   const idxSources = [...new Set((state.indices?.indices || []).map((i) => i.source).filter(Boolean))];
-  src.push(`Indices : ${idxSources.length ? idxSources.join(', ') : 'Yahoo Finance'} (cours différés)`);
-  src.push('Entreprises : classement companiesmarketcap.com, cours Yahoo Finance');
-  src.push('Graphiques : TradingView');
-  $('#sources').textContent = `Sources — ${src.join(' · ')}.`;
+  const colon = getLang() === 'fr' ? ' : ' : getLang() === 'zh' ? '：' : ': ';
+  const src = [
+    `${t('src.crypto')}${colon}${crypto}`,
+    `${t('src.indices')}${colon}${esc(idxSources.length ? idxSources.join(', ') : 'Yahoo Finance')} ${t('delayed')}`,
+    t('src.companies', { a: a('https://companiesmarketcap.com/', 'companiesmarketcap.com') }),
+    `${t('src.charts')}${colon}${a('https://www.tradingview.com/', 'TradingView')}`,
+  ];
+  $('#sources').innerHTML = `${t('sources')} — ${src.join(' · ')}.`;
 }
 
 function render() {
@@ -519,6 +576,26 @@ function render() {
   else if (state.tab === 'actions') renderStocks();
   else renderIndices(state.tab);
 }
+
+/* ---------- Langue : textes statiques de la page ---------- */
+function applyStatic() {
+  const l = getLang();
+  document.documentElement.lang = HTML_LANG[l];
+  document.title = t('appName');
+  for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n);
+  for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
+  for (const el of document.querySelectorAll('[data-legal]')) el.href = `${legalPrefix(l)}/${el.dataset.legal}.html`;
+  const sel = $('#lang');
+  if (sel && !sel.options.length) sel.innerHTML = LANGS.map((x) => `<option value="${x}">${LANG_LABELS[x]}</option>`).join('');
+  if (sel) sel.value = l;
+}
+$('#lang')?.addEventListener('change', (e) => {
+  setLang(e.target.value);
+  initFormats();
+  applyStatic();
+  render();
+  if (!$('#chart').hidden) $('#chart-close').click(); // l'écran graphique se rouvrira dans la nouvelle langue
+});
 
 /* ---------- Données ---------- */
 async function getJSON(url) {
@@ -631,16 +708,16 @@ window.addEventListener('resize', () => {
   const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (standalone || store.get('installDismissed')) return;
   const box = $('#install');
-  const close = '<button class="close" type="button" aria-label="Masquer">✕</button>';
+  const close = `<button class="close" type="button" aria-label="${t('hide')}">✕</button>`;
   const bind = () => box.querySelector('.close').addEventListener('click', () => { box.hidden = true; store.set('installDismissed', true); });
   const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   if (isIOS) {
-    box.innerHTML = `<p>Installer l’app : touchez <strong>Partager</strong> puis <strong>« Sur l’écran d’accueil »</strong>.</p>${close}`;
+    box.innerHTML = `<p>${t('installIOS')}</p>${close}`;
     box.hidden = false; bind();
   }
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
-    box.innerHTML = `<p>Installez Marchés sur votre écran d’accueil.</p><button class="go" type="button">Installer</button>${close}`;
+    box.innerHTML = `<p>${t('installPrompt')}</p><button class="go" type="button">${t('installBtn')}</button>${close}`;
     box.hidden = false; bind();
     box.querySelector('.go').addEventListener('click', async () => { box.hidden = true; e.prompt(); await e.userChoice; });
   });
@@ -656,5 +733,6 @@ if ('serviceWorker' in navigator) {
     if (hadController && !reloaded) { reloaded = true; location.reload(); }
   });
 }
+applyStatic();
 render();
 refresh();

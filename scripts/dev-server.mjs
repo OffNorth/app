@@ -10,6 +10,14 @@ const ROOT = resolve(import.meta.dirname, '..');
 const PUBLIC = join(ROOT, 'public');
 const PORT = Number(process.env.PORT) || 5173;
 
+// Applique les en-têtes de vercel.json en local (CSP, etc.), pour tester comme en production.
+const VERCEL = JSON.parse(await readFile(join(ROOT, 'vercel.json'), 'utf8'));
+const HEADER_RULES = (VERCEL.headers || []).map((r) => ({
+  re: new RegExp(`^${r.source.replace(/\./g, '\\.').replace('(.*)', '.*')}$`),
+  headers: Object.fromEntries(r.headers.map((h) => [h.key, h.value])),
+}));
+const extraHeaders = (path) => Object.assign({}, ...HEADER_RULES.filter((r) => r.re.test(path)).map((r) => r.headers));
+
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -28,7 +36,7 @@ createServer(async (req, res) => {
       const name = url.pathname.slice(5).replace(/[^a-z0-9-]/gi, '');
       const mod = await import(pathToFileURL(join(ROOT, 'api', `${name}.js`)).href);
       const response = await mod.GET(new Request(url));
-      res.writeHead(response.status, Object.fromEntries(response.headers));
+      res.writeHead(response.status, { ...extraHeaders(url.pathname), ...Object.fromEntries(response.headers) });
       res.end(Buffer.from(await response.arrayBuffer()));
       return;
     }
@@ -36,7 +44,7 @@ createServer(async (req, res) => {
     if (!path.startsWith(PUBLIC)) throw Object.assign(new Error('forbidden'), { code: 'ENOENT' });
     if ((await stat(path).catch(() => null))?.isDirectory()) path = join(path, 'index.html');
     const body = await readFile(path);
-    res.writeHead(200, { 'Content-Type': TYPES[extname(path)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
+    res.writeHead(200, { ...extraHeaders(url.pathname), 'Content-Type': TYPES[extname(path)] || 'application/octet-stream', 'Cache-Control': 'no-cache' });
     res.end(body);
   } catch (err) {
     const code = err.code === 'ENOENT' || err.code === 'ERR_MODULE_NOT_FOUND' ? 404 : 500;

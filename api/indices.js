@@ -10,51 +10,51 @@ const TTL = 45_000;
 
 export const INDICES = [
   // Amériques
-  { id: 'spx', region: 'ameriques', country: 'États-Unis', name: 'S&P 500', yahoo: '^GSPC', stooq: '^spx' },
-  { id: 'ixic', region: 'ameriques', country: 'États-Unis', name: 'Nasdaq Composite', yahoo: '^IXIC', stooq: '^ndq' },
-  { id: 'dji', region: 'ameriques', country: 'États-Unis', name: 'Dow Jones', yahoo: '^DJI', stooq: '^dji' },
-  { id: 'rut', region: 'ameriques', country: 'États-Unis', name: 'Russell 2000', yahoo: '^RUT' },
-  { id: 'tsx', region: 'ameriques', country: 'Canada', name: 'S&P/TSX Composite', yahoo: '^GSPTSE' },
-  { id: 'ibov', region: 'ameriques', country: 'Brésil', name: 'Ibovespa', yahoo: '^BVSP' },
-  { id: 'ipc', region: 'ameriques', country: 'Mexique', name: 'S&P/BMV IPC', yahoo: '^MXX' },
-  { id: 'merval', region: 'ameriques', country: 'Argentine', name: 'S&P Merval', yahoo: '^MERV' },
+  { id: 'spx', region: 'ameriques', country: 'États-Unis', name: 'S&P 500', yahoo: '^GSPC', stooq: '^spx', logo: 'indices/s-and-p-500' },
+  { id: 'ixic', region: 'ameriques', country: 'États-Unis', name: 'Nasdaq Composite', yahoo: '^IXIC', stooq: '^ndq', logo: 'indices/nasdaq-composite' },
+  { id: 'dji', region: 'ameriques', country: 'États-Unis', name: 'Dow Jones', yahoo: '^DJI', stooq: '^dji', logo: 'indices/dow-30' },
+  { id: 'rut', region: 'ameriques', country: 'États-Unis', name: 'Russell 2000', yahoo: '^RUT', logo: 'indices/russell-2000' },
+  { id: 'tsx', region: 'ameriques', country: 'Canada', name: 'S&P/TSX Composite', yahoo: '^GSPTSE', logo: 'indices/s-and-p-tsx-composite-index' },
+  { id: 'ibov', region: 'ameriques', country: 'Brésil', name: 'Ibovespa', yahoo: '^BVSP', logo: 'indices/bovespa-index' },
+  { id: 'ipc', region: 'ameriques', country: 'Mexique', name: 'S&P/BMV IPC', yahoo: '^MXX', logo: 'indices/ipc-mexico-index' },
+  { id: 'merval', region: 'ameriques', country: 'Argentine', name: 'S&P Merval', yahoo: '^MERV', logo: 'indices/merval-index' },
   // Europe
-  { id: 'sx5e', region: 'europe', country: 'Zone euro', name: 'Euro Stoxx 50', yahoo: '^STOXX50E' },
-  { id: 'cac', region: 'europe', country: 'France', name: 'CAC 40', yahoo: '^FCHI', stooq: '^cac' },
-  { id: 'dax', region: 'europe', country: 'Allemagne', name: 'DAX', yahoo: '^GDAXI', stooq: '^dax' },
-  { id: 'ftse', region: 'europe', country: 'Royaume-Uni', name: 'FTSE 100', yahoo: '^FTSE', stooq: '^ukx' },
-  { id: 'ibex', region: 'europe', country: 'Espagne', name: 'IBEX 35', yahoo: '^IBEX' },
-  { id: 'ftsemib', region: 'europe', country: 'Italie', name: 'FTSE MIB', yahoo: 'FTSEMIB.MI' },
-  { id: 'aex', region: 'europe', country: 'Pays-Bas', name: 'AEX', yahoo: '^AEX' },
-  { id: 'smi', region: 'europe', country: 'Suisse', name: 'SMI', yahoo: '^SSMI' },
-  { id: 'bel20', region: 'europe', country: 'Belgique', name: 'BEL 20', yahoo: '^BFX' },
-  { id: 'psi', region: 'europe', country: 'Portugal', name: 'PSI', yahoo: 'PSI20.LS' },
-  { id: 'atx', region: 'europe', country: 'Autriche', name: 'ATX', yahoo: '^ATX' },
-  { id: 'omx', region: 'europe', country: 'Suède', name: 'OMX Stockholm 30', yahoo: '^OMX' },
-  { id: 'osebx', region: 'europe', country: 'Norvège', name: 'Oslo Børs (OSEBX)', yahoo: 'OSEBX.OL' },
-  { id: 'wig20', region: 'europe', country: 'Pologne', name: 'WIG20', yahoo: 'WIG20.WA' },
-  { id: 'xu100', region: 'europe', country: 'Turquie', name: 'BIST 100', yahoo: 'XU100.IS' },
+  { id: 'sx5e', region: 'europe', country: 'Zone euro', name: 'Euro Stoxx 50', yahoo: '^STOXX50E', logo: 'indices/euro-stoxx-50' },
+  { id: 'cac', region: 'europe', country: 'France', name: 'CAC 40', yahoo: '^FCHI', stooq: '^cac', logo: 'indices/cac-40' },
+  { id: 'dax', region: 'europe', country: 'Allemagne', name: 'DAX', yahoo: '^GDAXI', stooq: '^dax', logo: 'indices/dax' },
+  { id: 'ftse', region: 'europe', country: 'Royaume-Uni', name: 'FTSE 100', yahoo: '^FTSE', stooq: '^ukx', logo: 'indices/ftse-100-index' },
+  { id: 'ibex', region: 'europe', country: 'Espagne', name: 'IBEX 35', yahoo: '^IBEX', logo: 'indices/ibex-35' },
+  { id: 'ftsemib', region: 'europe', country: 'Italie', name: 'FTSE MIB', yahoo: 'FTSEMIB.MI', logo: 'indices/ftse-mib' },
+  { id: 'aex', region: 'europe', country: 'Pays-Bas', name: 'AEX', yahoo: '^AEX', logo: 'indices/aex-index' },
+  { id: 'smi', region: 'europe', country: 'Suisse', name: 'SMI', yahoo: '^SSMI', logo: 'indices/swiss-market-index' },
+  { id: 'bel20', region: 'europe', country: 'Belgique', name: 'BEL 20', yahoo: '^BFX', logo: 'indices/bel-20-index' },
+  { id: 'psi', region: 'europe', country: 'Portugal', name: 'PSI', yahoo: 'PSI20.LS', logo: 'indices/psi-index' },
+  { id: 'atx', region: 'europe', country: 'Autriche', name: 'ATX', yahoo: '^ATX', logo: 'indices/austrian-traded-index-in-eur' },
+  { id: 'omx', region: 'europe', country: 'Suède', name: 'OMX Stockholm 30', yahoo: '^OMX', logo: 'indices/omxs-30' },
+  { id: 'osebx', region: 'europe', country: 'Norvège', name: 'Oslo Børs (OSEBX)', yahoo: 'OSEBX.OL', logo: 'indices/oslo-b-rs-benchmark-gi-index' },
+  { id: 'wig20', region: 'europe', country: 'Pologne', name: 'WIG20', yahoo: 'WIG20.WA', logo: 'indices/wig-20' },
+  { id: 'xu100', region: 'europe', country: 'Turquie', name: 'BIST 100', yahoo: 'XU100.IS', logo: 'indices/bist-100' },
   // Asie-Pacifique
-  { id: 'sse', region: 'asie', country: 'Chine', name: 'Shanghai Composite', yahoo: '000001.SS', stooq: '^shc' },
-  { id: 'szse', region: 'asie', country: 'Chine', name: 'Shenzhen Component', yahoo: '399001.SZ' },
-  { id: 'csi300', region: 'asie', country: 'Chine', name: 'CSI 300', yahoo: '000300.SS' },
-  { id: 'hsi', region: 'asie', country: 'Hong Kong', name: 'Hang Seng', yahoo: '^HSI', stooq: '^hsi' },
-  { id: 'n225', region: 'asie', country: 'Japon', name: 'Nikkei 225', yahoo: '^N225' },
-  { id: 'kospi', region: 'asie', country: 'Corée du Sud', name: 'KOSPI', yahoo: '^KS11' },
-  { id: 'taiex', region: 'asie', country: 'Taïwan', name: 'TAIEX', yahoo: '^TWII' },
-  { id: 'nifty', region: 'asie', country: 'Inde', name: 'Nifty 50', yahoo: '^NSEI' },
-  { id: 'sensex', region: 'asie', country: 'Inde', name: 'Sensex', yahoo: '^BSESN' },
-  { id: 'sti', region: 'asie', country: 'Singapour', name: 'Straits Times (STI)', yahoo: '^STI' },
-  { id: 'jkse', region: 'asie', country: 'Indonésie', name: 'IDX Composite', yahoo: '^JKSE' },
-  { id: 'klci', region: 'asie', country: 'Malaisie', name: 'FBM KLCI', yahoo: '^KLSE' },
-  { id: 'set', region: 'asie', country: 'Thaïlande', name: 'SET', yahoo: '^SET.BK' },
-  { id: 'asx200', region: 'asie', country: 'Australie', name: 'S&P/ASX 200', yahoo: '^AXJO' },
-  { id: 'nz50', region: 'asie', country: 'Nouvelle-Zélande', name: 'S&P/NZX 50', yahoo: '^NZ50' },
+  { id: 'sse', region: 'asie', country: 'Chine', name: 'Shanghai Composite', yahoo: '000001.SS', stooq: '^shc', logo: 'indices/sse-composite' },
+  { id: 'szse', region: 'asie', country: 'Chine', name: 'Shenzhen Component', yahoo: '399001.SZ', logo: 'indices/szse-component-index' },
+  { id: 'csi300', region: 'asie', country: 'Chine', name: 'CSI 300', yahoo: '000300.SS', logo: 'indices/csi-300-index-futures' },
+  { id: 'hsi', region: 'asie', country: 'Hong Kong', name: 'Hang Seng', yahoo: '^HSI', stooq: '^hsi', logo: 'indices/hang-seng' },
+  { id: 'n225', region: 'asie', country: 'Japon', name: 'Nikkei 225', yahoo: '^N225', logo: 'indices/nikkei-225' },
+  { id: 'kospi', region: 'asie', country: 'Corée du Sud', name: 'KOSPI', yahoo: '^KS11', logo: 'indices/korea-composite-index' },
+  { id: 'taiex', region: 'asie', country: 'Taïwan', name: 'TAIEX', yahoo: '^TWII', logo: 'indices/taiex' },
+  { id: 'nifty', region: 'asie', country: 'Inde', name: 'Nifty 50', yahoo: '^NSEI', logo: 'indices/nifty-50' },
+  { id: 'sensex', region: 'asie', country: 'Inde', name: 'Sensex', yahoo: '^BSESN', logo: 'indices/bse-sensex' },
+  { id: 'sti', region: 'asie', country: 'Singapour', name: 'Straits Times (STI)', yahoo: '^STI', logo: 'indices/straits-times-index' },
+  { id: 'jkse', region: 'asie', country: 'Indonésie', name: 'IDX Composite', yahoo: '^JKSE', logo: 'indices/jakarta-composite-index' },
+  { id: 'klci', region: 'asie', country: 'Malaisie', name: 'FBM KLCI', yahoo: '^KLSE', logo: 'indices/ftse-bursa-malaysia' },
+  { id: 'set', region: 'asie', country: 'Thaïlande', name: 'SET', yahoo: '^SET.BK', logo: 'indices/set' },
+  { id: 'asx200', region: 'asie', country: 'Australie', name: 'S&P/ASX 200', yahoo: '^AXJO', logo: 'indices/asx-200' },
+  { id: 'nz50', region: 'asie', country: 'Nouvelle-Zélande', name: 'S&P/NZX 50', yahoo: '^NZ50', logo: 'indices/s-and-p-nzx-50-index-gross' },
   // Afrique & Moyen-Orient
-  { id: 'tasi', region: 'afrique', country: 'Arabie saoudite', name: 'Tadawul (TASI)', yahoo: '^TASI.SR' },
-  { id: 'ta125', region: 'afrique', country: 'Israël', name: 'TA-125', yahoo: '^TA125.TA' },
-  { id: 'jse40', region: 'afrique', country: 'Afrique du Sud', name: 'JSE Top 40', yahoo: '^J200.JO' },
-  { id: 'egx30', region: 'afrique', country: 'Égypte', name: 'EGX 30', yahoo: '^CASE30' },
+  { id: 'tasi', region: 'afrique', country: 'Arabie saoudite', name: 'Tadawul (TASI)', yahoo: '^TASI.SR', logo: 'indices/tadawul-all-shares-index' },
+  { id: 'ta125', region: 'afrique', country: 'Israël', name: 'TA-125', yahoo: '^TA125.TA', logo: 'indices/ta-125' },
+  { id: 'jse40', region: 'afrique', country: 'Afrique du Sud', name: 'JSE Top 40', yahoo: '^J200.JO', logo: 'indices/top-40-index' },
+  { id: 'egx30', region: 'afrique', country: 'Égypte', name: 'EGX 30', yahoo: '^CASE30', logo: 'indices/egx-30-index' },
 ];
 
 // Repli Stooq : CSV avec en-tête ; on ne lit que les colonnes identifiées par leur nom.
@@ -92,7 +92,9 @@ async function fromStooq(def) {
   };
 }
 
-const baseOf = (def) => ({ id: def.id, region: def.region, country: def.country, name: def.name });
+// Logos des indices : fichiers SVG publics de TradingView, servis au navigateur via /api/logo.
+const logoOf = (def) => (def.logo ? `https://s3-symbol-logo.tradingview.com/${def.logo}.svg` : null);
+const baseOf = (def) => ({ id: def.id, region: def.region, country: def.country, name: def.name, logo: logoOf(def), logoSmall: logoOf(def) });
 
 /** Repli indice par indice : endpoint chart de Yahoo, puis Stooq. */
 async function loadOne(def) {
