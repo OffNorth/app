@@ -17,9 +17,9 @@ export const INDICES = [
   { id: 'tsx', region: 'ameriques', country: 'Canada', name: 'S&P/TSX Composite', yahoo: '^GSPTSE', logo: 'indices/s-and-p-tsx-composite-index' },
   { id: 'ibov', region: 'ameriques', country: 'Brésil', name: 'Ibovespa', yahoo: '^BVSP', logo: 'indices/bovespa-index' },
   { id: 'ipc', region: 'ameriques', country: 'Mexique', name: 'S&P/BMV IPC', yahoo: '^MXX', logo: 'indices/ipc-mexico-index' },
-  { id: 'merval', region: 'ameriques', country: 'Argentine', name: 'S&P Merval', yahoo: '^MERV', logo: 'indices/merval-index' },
+  { id: 'merval', region: 'ameriques', country: 'Argentine', name: 'S&P Merval', yahoo: '^MERV', logo: 'indices/merval-index', ccy: 'ARS' },
   // Europe
-  { id: 'sx5e', region: 'europe', country: 'Zone euro', name: 'Euro Stoxx 50', yahoo: '^STOXX50E', logo: 'indices/euro-stoxx-50' },
+  { id: 'sx5e', region: 'europe', country: 'Zone euro', name: 'Euro Stoxx 50', yahoo: '^STOXX50E', logo: 'indices/euro-stoxx-50', ccy: 'EUR' },
   { id: 'cac', region: 'europe', country: 'France', name: 'CAC 40', yahoo: '^FCHI', stooq: '^cac', logo: 'indices/cac-40' },
   { id: 'dax', region: 'europe', country: 'Allemagne', name: 'DAX', yahoo: '^GDAXI', stooq: '^dax', logo: 'indices/dax' },
   { id: 'ftse', region: 'europe', country: 'Royaume-Uni', name: 'FTSE 100', yahoo: '^FTSE', stooq: '^ukx', logo: 'indices/ftse-100-index' },
@@ -94,14 +94,15 @@ async function fromStooq(def) {
 
 // Logos des indices : fichiers SVG publics de TradingView, servis au navigateur via /api/logo.
 const logoOf = (def) => (def.logo ? `https://s3-symbol-logo.tradingview.com/${def.logo}.svg` : null);
-const baseOf = (def) => ({ id: def.id, region: def.region, country: def.country, name: def.name, logo: logoOf(def), logoSmall: logoOf(def) });
+const baseOf = (def) => ({ id: def.id, region: def.region, country: def.country, name: def.name, symbol: def.yahoo, logo: logoOf(def), logoSmall: logoOf(def) });
 
 /** Repli indice par indice : endpoint chart de Yahoo, puis Stooq. */
 async function loadOne(def) {
   const errors = [];
   for (const provider of [(d) => yahooChart(d.yahoo), fromStooq]) {
     try {
-      return { ...baseOf(def), ...(await provider(def)) };
+      const q = await provider(def);
+      return { ...baseOf(def), ...q, currency: q.currency || def.ccy || null };
     } catch (err) {
       errors.push(String(err.message || err));
     }
@@ -119,7 +120,8 @@ async function load() {
     const payload = batch.get(def.yahoo);
     if (payload) {
       try {
-        return { ...baseOf(def), ...parseYahoo(payload) };
+        const q = parseYahoo(payload);
+        return { ...baseOf(def), ...q, currency: q.currency || def.ccy || null };
       } catch {
         /* données du lot inexploitables → repli */
       }

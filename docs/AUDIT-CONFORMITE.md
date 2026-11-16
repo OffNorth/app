@@ -110,6 +110,7 @@ Navigateur Chromium, iPhone émulé, profil vierge. Testé en local puis en prod
 
 - Il fonctionne **entièrement sur l'appareil** (`marches:paper`) : aucune donnée n'est envoyée au serveur. Ce stockage est strictement nécessaire au service demandé, donc exempté de consentement ; il est documenté sur la page Cookies (FR, EN, ZH).
 - **Argent fictif uniquement** : aucun ordre n'est transmis, aucun dépôt n'est possible. Un nouvel article 6 ter des CGU décrit les conditions de simulation (exécution au cours constaté, frais simulés, pas de spread ni de financement) et précise que les performances simulées ne préjugent pas de résultats réels. L'avertissement est aussi affiché dans l'onglet Compte et dans chaque ticket d'ordre.
+- **Mise à jour du 16/11 : toute la bourse.** Le simulateur couvre désormais les actions de toutes les places et les indices (convention CFD : 1 unité = 1 point). Les montants sont convertis en dollars au taux de change du moment, et un marché fermé entraîne une exécution au dernier cours connu, avec un avertissement à l'écran. Ces conditions sont décrites dans l'article 6 ter des CGU et dans l'avertissement de l'onglet.
 - **Point à faire valider** (§7) : la présentation d'un outil de simulation avec effet de levier et vente à découvert. Il n'y a pas de promotion d'un prestataire ni de lien vers un courtier, mais il faut vérifier l'absence de qualification de « recommandation » ou de « publicité » au sens de la réglementation AMF.
 
 ## 6. Informations à fournir par l'éditeur
