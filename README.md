@@ -26,6 +26,16 @@ Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 - **Alertes en %** : dans la fiche d'alerte, choix « Prix » ou « Variation en % » (24 h pour une crypto, séance sinon).
 - **Mode clair** : bouton en haut (automatique selon l'appareil → sombre → clair), `public/assets/theme.js`.
 - **Heatmap par secteurs** : réglage « Entreprises | Secteurs » dans Actions ; secteurs de Yahoo Finance dans `public/data/sectors.json` (`node scripts/sectors.mjs`), variation de secteur pondérée par la capitalisation.
+- **En bref** (onglet d'accueil) : indices clés, cryptos, or, pétrole et EUR/USD, places ouvertes, plus fortes variations, agenda, compte démo, favoris, outils (recherche, convertisseur, résumé quotidien).
+- **Plus fortes hausses / baisses** sous les heatmaps Crypto et Actions.
+- **Fiche détaillée** dans l'écran graphique (repliable) : plus haut / bas sur 52 semaines, performances 1 mois à 5 ans, RSI, position par rapport aux MM50 / MM200, volume, secteur, prochains résultats — calculés sur les bougies journalières réelles.
+- **Comparer deux actifs** sur le graphique de trading (échelle en %).
+- **Listes de favoris** (création, rangement, ordre, tri par variation ou par nom), mode « Organiser ».
+- **Alertes techniques** (RSI 14, croisement MM20 / MM50, volume), calculées par le serveur sur bougies journalières (`indicators.js`, copie identique dans `supabase/functions/alerts/`).
+- **Résumé quotidien** par notification, à l'heure choisie (favoris + compte démo synchronisé).
+- **Compte démo** : stop suiveur, ordres liés (OCO), plusieurs comptes (5 au plus), notes sur les trades, journal (pire baisse, résultats par actif et par heure), export CSV, simulateur d'achats programmés (DCA), défi mensuel dans les groupes.
+- **Tablette et ordinateur** : navigation latérale et contenu sur plusieurs colonnes à partir de 900 px.
+- **Raccourcis** sur l'icône de l'app (En bref, Crypto, Compte, Rechercher) et **convertisseur** devises / cryptos.
 - Bouton rafraîchir, tirer-pour-rafraîchir, rafraîchissement automatique toutes les 60 s quand l'app est visible, balayage gauche/droite entre onglets.
 - Hors ligne : la coquille de l'app et les dernières données restent en cache (service worker + localStorage), avec une bannière qui donne l'heure des données.
 - Une donnée indisponible s'affiche « n/d ». Aucune valeur n'est jamais inventée.

@@ -69,12 +69,21 @@ export function recordEquity(acct, quote, now = Date.now()) {
   return true;
 }
 
-export function openPosition(acct, asset, { side, qty, price, lev, tp, sl, fx = 1, ccy = 'USD' }) {
+/** Niveau du stop suiveur : `trail` % sous le meilleur cours atteint (achat) ou au-dessus (vente à découvert). */
+export const trailLevel = (side, peak, trail) => (side === 'long' ? peak * (1 - trail / 100) : peak * (1 + trail / 100));
+/** SL le plus protecteur des deux (le plus haut pour un achat, le plus bas pour une vente). */
+const tighter = (side, a, b) => (a == null ? b : b == null ? a : side === 'long' ? Math.max(a, b) : Math.min(a, b));
+export const MAX_TRAIL = 50;
+export const validTrail = (v) => isNum(v) && v >= 0.1 && v <= MAX_TRAIL;
+
+export function openPosition(acct, asset, { side, qty, price, lev, tp, sl, trail, fx = 1, ccy = 'USD' }) {
   const notional = qty * price * fx, margin = notional / lev, fee = notional * FEE;
   if (acct.positions.length >= MAX_OPEN) return { error: 'maxPos' };
   if (margin + fee > acct.cash + 1e-9) return { error: 'funds' };
   acct.cash -= margin + fee;
-  const p = { id: nextId(acct), ...assetOf(asset), ccy, fxOpen: fx, side, qty, entry: price, lev, margin, fees: fee, tp: tp ?? null, sl: sl ?? null, openedAt: Date.now() };
+  const tr = validTrail(trail) ? trail : null;
+  const p = { id: nextId(acct), ...assetOf(asset), ccy, fxOpen: fx, side, qty, entry: price, lev, margin, fees: fee, tp: tp ?? null,
+    sl: tr ? tighter(side, sl ?? null, trailLevel(side, price, tr)) : sl ?? null, trail: tr, peak: tr ? price : null, openedAt: Date.now() };
   acct.positions.push(p);
   return { position: p };
 }
@@ -94,7 +103,7 @@ export function closePosition(acct, p, price, fraction, reason, fx) {
   const h = {
     id: nextId(acct), ...assetOf(p), ccy: p.ccy, side: p.side, qty, entry: p.entry, exit: price, lev: p.lev,
     gross: pnl, fees: openFee + closeFee, net: pnl - openFee - closeFee,
-    reason: liquidated ? 'liq' : reason, openedAt: p.openedAt, closedAt: Date.now(),
+    reason: liquidated ? 'liq' : reason, openedAt: p.openedAt, closedAt: Date.now(), ...(p.note ? { note: p.note } : {}),
   };
   acct.history.unshift(h);
   if (acct.history.length > MAX_HISTORY) acct.history.length = MAX_HISTORY;
@@ -104,8 +113,9 @@ export function closePosition(acct, p, price, fraction, reason, fx) {
 }
 
 /**
- * Exécution : ordres en attente, puis TP / SL / liquidation, au cours actuel.
- * Jamais sur un cours absent ou ancien (q.ok faux). Renvoie la liste des événements.
+ * Exécution : ordres en attente (un ordre OCO exécuté annule les ordres liés), puis stop suiveur,
+ * TP / SL / liquidation, au cours actuel. Jamais sur un cours absent ou ancien (q.ok faux).
+ * Renvoie la liste des événements : filled, fail, oco (ordre lié annulé), trail (SL remonté), closed.
  */
 export function runEngine(acct, quote) {
   const events = [];
@@ -116,14 +126,28 @@ export function runEngine(acct, quote) {
     const hit = o.type === 'limit' ? (o.side === 'long' ? last <= o.price : last >= o.price)
       : (o.side === 'long' ? last >= o.price : last <= o.price);
     if (!hit) continue;
+    if (!acct.orders.some((x) => x.id === o.id)) continue; // déjà annulé par un ordre lié (OCO)
     acct.orders = acct.orders.filter((x) => x.id !== o.id);
-    const r = openPosition(acct, o, { side: o.side, qty: o.qty, price: last, lev: o.lev, tp: o.tp, sl: o.sl, fx: q.fx, ccy: q.ccy });
+    const r = openPosition(acct, o, { side: o.side, qty: o.qty, price: last, lev: o.lev, tp: o.tp, sl: o.sl, trail: o.trail, fx: q.fx, ccy: q.ccy });
     events.push(r.error ? { type: 'fail', o, reason: r.error } : { type: 'filled', p: r.position });
+    if (o.oco && !r.error) {
+      for (const x of acct.orders.filter((y) => y.oco === o.oco)) events.push({ type: 'oco', o: x });
+      acct.orders = acct.orders.filter((y) => y.oco !== o.oco);
+    }
   }
   for (const p of [...acct.positions]) {
     const q = quote(p);
     if (!q.ok) continue;
     const last = q.price, d = dirOf(p.side);
+    if (validTrail(p.trail)) {
+      const peak = p.side === 'long' ? Math.max(p.peak ?? p.entry, last) : Math.min(p.peak ?? p.entry, last);
+      const sl = tighter(p.side, p.sl, trailLevel(p.side, peak, p.trail));
+      if (peak !== p.peak || sl !== p.sl) {
+        const moved = sl !== p.sl;
+        p.peak = peak; p.sl = sl;
+        if (moved) events.push({ type: 'trail', p });
+      }
+    }
     let reason = null;
     if (p.sl != null && (d > 0 ? last <= p.sl : last >= p.sl)) reason = 'sl';
     else if (p.tp != null && (d > 0 ? last >= p.tp : last <= p.tp)) reason = 'tp';

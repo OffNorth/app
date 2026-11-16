@@ -2,6 +2,8 @@
 // Bibliothèque : TradingView Lightweight Charts™ (Apache 2.0), servie par le site lui-même :
 // aucun appel à un tiers, pas de consentement requis. Logo d'attribution TradingView affiché sur le graphique.
 
+import { macd, rsi, sma } from './indicators.js';
+
 const LIB = '/vendor/lightweight-charts/lightweight-charts.standalone.production.js';
 export const TIMEFRAMES = ['5m', '15m', '1h', '4h', '1d'];
 const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
@@ -24,47 +26,7 @@ function themeOpts() {
 const IC = { ma20: '#f5b84a', ma50: '#b48cff', rsi: '#7cc4ff', macd: '#7cc4ff', signal: '#f5b84a' };
 
 /* ---------- Indicateurs (calculés sur les clôtures) ---------- */
-function sma(bars, n) {
-  const out = []; let sum = 0;
-  bars.forEach((b, i) => { sum += b.close; if (i >= n) sum -= bars[i - n].close; if (i >= n - 1) out.push({ time: b.time, value: sum / n }); });
-  return out;
-}
-function emaArr(values, n) {
-  const k = 2 / (n + 1); const out = []; let prev = null;
-  values.forEach((v, i) => {
-    if (i < n - 1) { out.push(null); return; }
-    if (prev === null) prev = values.slice(0, n).reduce((a, b) => a + b, 0) / n; else prev = v * k + prev * (1 - k);
-    out.push(prev);
-  });
-  return out;
-}
-/** RSI de Wilder sur 14 périodes. */
-function rsi(bars, n = 14) {
-  const out = []; let g = 0, l = 0;
-  for (let i = 1; i < bars.length; i++) {
-    const d = bars[i].close - bars[i - 1].close;
-    const up = Math.max(d, 0), dn = Math.max(-d, 0);
-    if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; out.push({ time: bars[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l) }); } continue; }
-    g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n;
-    out.push({ time: bars[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l) });
-  }
-  return out;
-}
-/** MACD(12, 26, 9) : ligne, signal, histogramme. */
-function macd(bars) {
-  const closes = bars.map((b) => b.close);
-  const e12 = emaArr(closes, 12), e26 = emaArr(closes, 26);
-  const line = closes.map((_, i) => (e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null));
-  const start = line.findIndex((v) => v != null);
-  const sig = start < 0 ? [] : emaArr(line.slice(start), 9);
-  const out = { line: [], signal: [], hist: [] };
-  for (let i = start; i >= 0 && i < bars.length; i++) {
-    const t = bars[i].time, m = line[i], sgl = sig[i - start];
-    out.line.push({ time: t, value: m });
-    if (sgl != null) { out.signal.push({ time: t, value: sgl }); out.hist.push({ time: t, value: m - sgl, color: m - sgl >= 0 ? 'rgba(34,197,94,.55)' : 'rgba(240,82,82,.55)' }); }
-  }
-  return out;
-}
+
 
 let libPromise = null;
 function loadLib() {
@@ -88,6 +50,29 @@ export function createTradeChart(ctx) {
   let token = 0;
   let suppressClick = 0;
 
+  /* Comparaison avec un autre actif : les deux courbes en % depuis le début de la période affichée (échelle en pourcentage). */
+  let compareWith = null; // { forKey, key, asset }
+  const keyOf = (a) => `${a.kind}:${a.assetId}`;
+  async function applyCompare() {
+    if (!cur?.chart) return;
+    const { chart, LWC } = cur;
+    if (cur.cmpSeries) { try { chart.removeSeries(cur.cmpSeries); } catch { /* déjà retirée */ } cur.cmpSeries = null; }
+    const other = compareWith && compareWith.forKey === keyOf(cur.asset) ? compareWith.asset : null;
+    chart.priceScale('right').applyOptions({ mode: other ? LWC.PriceScaleMode.Percentage : LWC.PriceScaleMode.Normal });
+    const lbl = cur.el.querySelector('#tc-cmp-l');
+    if (lbl) lbl.textContent = other ? t('tc.cmpNote') : '';
+    if (!other) return;
+    const my = token;
+    let data = null;
+    try { data = await ctx.fetchCandles(other, cur.tf); } catch { /* n/d */ }
+    if (my !== token || !cur?.chart) return;
+    if (!data?.candles?.length) { if (lbl) lbl.textContent = t('tc.cmpNa'); return; }
+    const first = cur.bars[0]?.time ?? 0;
+    const pts = data.candles.map((c) => ({ time: local(c[0]), value: c[4] })).filter((x) => x.time >= first);
+    cur.cmpSeries = chart.addSeries(LWC.LineSeries, { color: '#b48cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: other.label });
+    cur.cmpSeries.setData(pts);
+  }
+
   function unmount() {
     token++;
     if (cur?.chart) cur.chart.remove();
@@ -104,6 +89,10 @@ export function createTradeChart(ctx) {
         <span class="tc-src" id="tc-src"></span></div>
       <div class="tc-ind" role="group" aria-label="${esc(t('tc.ind'))}">${INDICATORS.map((k) =>
         `<button type="button" data-ind="${k}" aria-pressed="${ctx.getInd().includes(k)}">${t(`tc.ind.${k}`)}</button>`).join('')}</div>
+      <div class="tc-cmp"><label for="tc-cmp-sel">${t('tc.cmp')}</label>
+        <select id="tc-cmp-sel" class="lang-select"><option value="">${t('tc.cmpNone')}</option>${ctx.compareList().filter((x) => x.key !== keyOf(asset)).map((x) =>
+          `<option value="${esc(x.key)}"${compareWith?.forKey === keyOf(asset) && compareWith.key === x.key ? ' selected' : ''}>${esc(x.label)}${x.name ? ` · ${esc(x.name)}` : ''}</option>`).join('')}</select>
+        <span class="tc-cmp-l" id="tc-cmp-l"></span></div>
       <div class="tc-chart" id="tc-chart"><div class="msg">${t('chartLoading')}</div></div>
       <div class="tc-pop" id="tc-pop" hidden></div>
       <p class="tc-hint">${t('tc.hint')}</p>
@@ -113,6 +102,11 @@ export function createTradeChart(ctx) {
     cur = { asset, el, tf, lines: [], tap: null };
     el.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { ctx.setTf(b.dataset.tf); mount(el, asset); }));
     el.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => ctx.openTicket(asset, { side: b.dataset.side })));
+    el.querySelector('#tc-cmp-sel').addEventListener('change', (e) => {
+      const x = ctx.compareList().find((y) => y.key === e.target.value);
+      compareWith = x ? { forKey: keyOf(asset), key: x.key, asset: x } : null;
+      applyCompare();
+    });
     el.querySelectorAll('[data-ind]').forEach((b) => b.addEventListener('click', () => {
       const on = new Set(ctx.getInd());
       if (on.has(b.dataset.ind)) on.delete(b.dataset.ind); else on.add(b.dataset.ind);
@@ -153,6 +147,7 @@ export function createTradeChart(ctx) {
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 90), to: bars.length + 5 });
     Object.assign(cur, { chart, series, LWC, bars, prec, ind: {} });
     buildIndicators();
+    applyCompare();
     el.querySelector('#tc-src').textContent = t('tc.src', { s: data.source });
     applyLive();
     drawLines();
