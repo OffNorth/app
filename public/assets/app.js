@@ -1,14 +1,16 @@
 // Marchés — client PWA (vanilla JS, aucune dépendance).
 import { getConsent, setConsent, SERVICES } from './consent.js';
 import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix, LOCALES, setLang, t, TV_LOCALE } from './i18n.js';
-import { makeSnapshot } from './snapshot.js';
+import { makeSnapshot, makeTradeCard } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
-import { createTradeChart, TIMEFRAMES } from './tradechart.js';
+import { createTradeChart, INDICATORS, TIMEFRAMES } from './tradechart.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 16; // à garder égal à VERSION ('v16') dans /sw.js
+const APP_BUILD = 17; // à garder égal à VERSION ('v17') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
 const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
+const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
+const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS];
 const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
 // Anciens liens #europe, #asie… : onglet Indices sur la région demandée.
 const regionOf = (x) => (REGIONS.includes(x) ? x : LEGACY_REGIONS[x]);
@@ -22,15 +24,15 @@ const store = {
 };
 
 // Réglages de l'utilisateur (mémorisés sur l'appareil).
-const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m' };
-const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], region: REGIONS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
+const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies' };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
 const prefs = { ...PREF_DEFAULT };
 for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
 { const r = regionOf(location.hash.slice(1)) || regionOf(store.get('tab')); if (r) prefs.region = r; }
 
 /* Favoris : { t: 'c' (crypto) | 's' (entreprise) | 'i' (indice), id, label, name, logo, logoSmall }, mémorisés sur l'appareil. */
 const favKey = (f) => `${f.t}:${f.id}`;
-let favs = (store.get('favs') || []).filter((f) => f && ['c', 's', 'i'].includes(f.t) && f.id);
+let favs = (store.get('favs') || []).filter((f) => f && ['c', 's', 'i', 'm'].includes(f.t) && f.id);
 const isFav = (f) => favs.some((x) => favKey(x) === favKey(f));
 const hasStockFav = () => favs.some((f) => f.t === 's');
 function toggleFav(f) {
@@ -42,11 +44,13 @@ const stocksToLoad = () => (hasStockFav() || paper?.exposure().some((x) => x.kin
 
 const state = {
   fx: store.get('fx'),
+  macro: store.get('macro'),
+  extra: { c: {}, s: {} }, // actifs trouvés par la recherche (hors des listes principales)
   tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'crypto',
   crypto: store.get('crypto'),
   indices: store.get('indices'),
   stocks: store.get('stocks'),
-  offline: { crypto: false, indices: false, stocks: false, fx: false },
+  offline: { crypto: false, indices: false, stocks: false, fx: false, macro: false, extra: false },
   loading: false,
   lastFetch: 0,
   prevPrices: new Map(),
@@ -215,16 +219,50 @@ function shrinkBTC(list) {
   return list;
 }
 
-function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize }) {
+/** Variation moyenne pondérée par la capitalisation (entreprises sans variation exclues) ; null si aucune. */
+function weightedChange(list) {
+  let w = 0, v = 0;
+  for (const c of list) if (isNum(c.changePct) && isNum(c.marketCap)) { w += c.marketCap; v += c.marketCap * c.changePct; }
+  return w > 0 ? v / w : null;
+}
+/**
+ * Disposition par groupes (secteurs) : les groupes se partagent la surface selon leur capitalisation,
+ * puis les entreprises de chaque groupe se partagent celle du groupe. Renvoie { rects, groups }.
+ */
+function groupedLayout(sorted, groupOf, width, height) {
+  const by = new Map();
+  for (const c of sorted) { const g = groupOf(c); if (!by.has(g)) by.set(g, []); by.get(g).push(c); }
+  const groups = [...by].map(([key, list]) => ({ key, list, value: list.reduce((s, c) => s + c.value, 0) })).sort((a, b) => b.value - a.value);
+  const rects = [], boxes = [];
+  for (const g of squarify(groups, 0, 0, width, height)) {
+    const head = g.w >= 70 && g.h >= 44 ? 18 : 0; // bandeau du nom du secteur s'il y a la place
+    const x = g.x + 1.5, y = g.y + 1.5 + head, w = Math.max(0, g.w - 3), h = Math.max(0, g.h - 3 - head);
+    if (w > 0 && h > 0) rects.push(...squarify(g.list, x, y, w, h));
+    boxes.push({ ...g, head });
+  }
+  return { rects, groups: boxes };
+}
+
+function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize, groupOf, groupName }) {
   const { width, height } = sizeTreemap(map);
   let sorted = items.filter((c) => isNum(c.marketCap) && c.marketCap > 0)
     .sort((a, b) => b.marketCap - a.marketCap)
     .map((c) => ({ ...c, value: c.marketCap }));
   if (resize) sorted = resize(sorted);
-  const rects = squarify(sorted, 0, 0, width, height);
+  const layout = groupOf ? groupedLayout(sorted, groupOf, width, height) : { rects: squarify(sorted, 0, 0, width, height), groups: [] };
+  const rects = layout.rects;
   const total = sorted.reduce((s, c) => s + c.marketCap, 0); // parts calculées sur la vraie capitalisation
+  const groupsHTML = layout.groups.map((g) => {
+    const chg = weightedChange(g.list);
+    const share = total ? `${NF1.format((g.value / total) * 100)}${pctSign()}` : '';
+    // Largeur limitée : le nom passe avant la variation, puis la part de capitalisation.
+    const extra = `${g.w >= 95 ? ` <span>${fmtPct(chg, 1)}</span>` : ''}${g.w >= 160 ? ` <small>${share}</small>` : ''}`;
+    return `<div class="tm-group" aria-hidden="true" style="left:${g.x}px;top:${g.y}px;width:${g.w}px;height:${g.h}px">${g.head
+      ? `<span class="tm-group-h" title="${esc(`${groupName(g.key)} ${fmtPct(chg, 1)} · ${share}`)}"><b>${esc(groupName(g.key))}</b>${extra}</span>` : ''}</div>`;
+  }).join('');
 
-  map.innerHTML = rects.map((r) => {
+  map.classList.toggle('grouped', !!groupOf);
+  map.innerHTML = groupsHTML + rects.map((r) => {
     const base = Math.sqrt(r.w * r.h);
     let sym = Math.max(10, Math.min(30, base / 4.2));
     sym = Math.min(sym, (r.w - 6) / (Math.max(r.label.length, 2) * 0.68));
@@ -254,7 +292,7 @@ function renderTiles(map, items, { maxAbs, priceText, period, onOpen, resize }) 
     }
     const prev = state.prevPrices.get(r.id);
     const flash = isNum(prev) && isNum(r.price) && prev !== r.price ? ' flash' : '';
-    const aria = `${r.name} (${r.label}) : ${fmtPct(r.changePct)} ${period}, ${t('priceWord')} ${priceText(r)}`;
+    const aria = `${groupOf ? `${groupName(groupOf(r))} · ` : ''}${r.name} (${r.label}) : ${fmtPct(r.changePct)} ${period}, ${t('priceWord')} ${priceText(r)}`;
     return `<button class="tile${flash}" role="listitem" data-id="${esc(r.id)}" aria-label="${esc(aria)}"
       style="left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;background-color:${heat(r.changePct, maxAbs)}">${inner}</button>`;
   }).join('');
@@ -339,10 +377,33 @@ function renderStocks() {
   if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
   renderTools('stocks');
   statsEl.innerHTML = stocksStats(data).map(statHTML).join('');
+  const bySector = prefs.stocksView === 'sectors';
+  if (bySector && !state.sectors) loadSectors();
+  const sec = state.sectors?.sectors || {};
   renderTiles(map, stockItems(data), {
     maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
+    ...(bySector ? { groupOf: (c) => sec[c.id] || 'other', groupName: sectorName } : {}),
   });
+  const src = $('#stocks-sector-src');
+  src.hidden = !bySector;
+  if (bySector) src.textContent = state.sectors ? t('sector.src', { s: state.sectors.source, d: fmtDay(Date.parse(state.sectors.generatedAt)) }) : t('loading');
 }
+/** Secteurs d'activité des entreprises suivies : fichier statique généré par scripts/sectors.mjs (classement Yahoo Finance). */
+let sectorsLoading = false;
+async function loadSectors() {
+  if (sectorsLoading) return;
+  sectorsLoading = true;
+  try {
+    const r = await fetch('/data/sectors.json');
+    if (r.ok) state.sectors = await r.json();
+  } catch { /* hors ligne : entreprises affichées dans « Autre / n/d » */ }
+  sectorsLoading = false;
+  if (!state.sectors) state.sectors = { sectors: {}, source: ND, generatedAt: null };
+  if (state.tab === 'actions') renderStocks();
+}
+const SECTORS = ['Technology', 'Communication Services', 'Consumer Cyclical', 'Consumer Defensive', 'Financial Services', 'Healthcare',
+  'Industrials', 'Energy', 'Basic Materials', 'Real Estate', 'Utilities'];
+const sectorName = (k) => (SECTORS.includes(k) ? t(`sector.${k.replace(/\s+/g, '')}`) : k === 'other' ? t('sector.other') : k);
 
 /* ---------- Alertes de prix (notifications push) ----------
  * Le site relaie les demandes vers le service d'alertes (/api/alerts). L'appareil est identifié par un jeton
@@ -373,8 +434,20 @@ function parseAmount(raw) {
 async function alertsApi(action, extra = {}) {
   const res = await fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, ...extra }) });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status });
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { status: res.status, body });
   return body;
+}
+/** Relie (ou non) cet appareil au compte démo synchronisé, pour recevoir les notifications d'exécution. */
+async function linkDevice(code, on) {
+  if (on) {
+    const sup = pushSupport();
+    if (sup !== 'ok') throw Object.assign(new Error(sup), { status: 0 });
+    const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+    if (perm !== 'granted') { toast(t('alert.denied'), 'neg'); throw Object.assign(new Error('denied'), { status: 0 }); }
+  }
+  const token = on ? await ensureDevice() : store.get(ALERT_TOKEN);
+  if (!token) return;
+  await alertsApi('paper.link', { code, device: token, on });
 }
 const fromB64url = (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4)), (ch) => ch.charCodeAt(0));
 function newToken() {
@@ -413,10 +486,13 @@ async function ensureDevice() {
   return token;
 }
 
+const alertWindow = (kind) => t(kind === 'c' ? 'alert.w24' : 'alert.wDay');
 function alertLine(a) {
-  const cond = `${esc(a.label)} ${a.direction === 'above' ? '≥' : '≤'} ${fmtNative(a.target, a.currency)}`;
+  const pct = a.metric === 'pct';
+  const val = (v) => (pct ? fmtPct(v) : fmtNative(v, a.currency));
+  const cond = `${esc(a.label)} ${a.direction === 'above' ? '≥' : '≤'} ${val(a.target)}${pct ? ` <small>(${alertWindow(a.kind)})</small>` : ''}`;
   const st = a.triggeredAt
-    ? t('alert.fired', { d: fmtDay(Date.parse(a.triggeredAt)), p: fmtNative(a.triggeredPrice, a.currency) })
+    ? t('alert.fired', { d: fmtDay(Date.parse(a.triggeredAt)), p: val(a.triggeredPrice) })
     : t('alert.active');
   return `<li class="${a.triggeredAt ? 'fired' : ''}"><span class="alert-cond">${cond}</span><span class="alert-state">${st}</span>
     <button type="button" class="alert-del" data-del="${esc(a.id)}" aria-label="${esc(t('alert.delete'))} : ${esc(a.label)}">✕</button></li>`;
@@ -459,25 +535,50 @@ function alertMsg(key, vars) {
   m.innerHTML = key ? t(key, vars) : '';
   m.hidden = !key;
 }
+let alertMetric = 'price'; // 'price' : seuil de cours ; 'pct' : seuil de variation (24 h pour une crypto, séance sinon)
+/** Pourcentage signé saisi (« -5 », « −2,5 », « +3 % »). */
+function parseSigned(raw) {
+  const s = String(raw).trim().replace(/[%\s\u00a0\u202f]/g, '');
+  const neg = /^[-−–]/.test(s);
+  const v = parseAmount(s.replace(/^[-−–+]/, ''));
+  return isNum(v) ? (neg ? -v : v) : NaN;
+}
+function setAlertMetric(m) {
+  const a = alertAsset;
+  alertMetric = m;
+  for (const b of document.querySelectorAll('#alert-mode [data-metric]')) b.setAttribute('aria-pressed', String(b.dataset.metric === m));
+  const pct = m === 'pct';
+  $('#alert-title').textContent = t(pct ? 'alert.titlePct' : 'alert.title', { l: a.label });
+  $('#alert-label').textContent = pct ? t('alert.targetPct', { w: alertWindow(a.kind) }) : t('alert.target');
+  $('#alert-now').textContent = pct ? t('alert.nowPct', { v: isNum(a.chg) ? fmtPct(a.chg) : ND, w: alertWindow(a.kind) }) : t('alert.now', { p: fmtNative(a.price, a.currency) });
+  $('#alert-unit').textContent = pct ? '%' : a.currency === 'USD' ? '$' : a.currency || t('alert.points');
+  $('#alert-note').textContent = pct ? t('alert.pctNote') : a.currency === 'USD' && eurRate() ? t('alert.usdNote') : '';
+  const input = $('#alert-target');
+  input.value = '';
+  input.inputMode = pct ? 'text' : 'decimal';
+  input.placeholder = pct ? t('alert.pctPh') : isNum(a.price) ? NF2.format(a.price) : '';
+  $('#alert-dir').textContent = '';
+  const ok = pct ? isNum(a.chg) : isNum(a.price);
+  alertMsg(ok ? null : pct ? 'alert.noChg' : 'alert.noPrice');
+  $('#alert-submit').disabled = !ok;
+}
 function updateAlertDir() {
   const a = alertAsset;
-  const v = parseAmount($('#alert-target').value);
   const out = $('#alert-dir');
+  if (alertMetric === 'pct') {
+    const v = parseSigned($('#alert-target').value);
+    out.textContent = isNum(v) && v !== 0 ? t(v > 0 ? 'alert.pctAbove' : 'alert.pctBelow', { t: fmtPct(v), w: alertWindow(a?.kind) }) : '';
+    return;
+  }
+  const v = parseAmount($('#alert-target').value);
   if (!isNum(v) || !isNum(a?.price) || v === a.price) { out.textContent = ''; return; }
   out.textContent = t(v > a.price ? 'alert.above' : 'alert.below', { t: fmtNative(v, a.currency) });
 }
 async function openAlert(a) {
   alertAsset = a;
-  $('#alert-title').textContent = t('alert.title', { l: a.label });
-  $('#alert-now').textContent = t('alert.now', { p: fmtNative(a.price, a.currency) });
-  $('#alert-unit').textContent = a.currency === 'USD' ? '$' : a.currency || t('alert.points');
-  $('#alert-note').textContent = a.currency === 'USD' && eurRate() ? t('alert.usdNote') : '';
+  $('#alert-mode').setAttribute('aria-label', t('alert.mode'));
+  setAlertMetric('price');
   const input = $('#alert-target');
-  input.value = '';
-  input.placeholder = isNum(a.price) ? NF2.format(a.price) : '';
-  $('#alert-dir').textContent = '';
-  alertMsg(isNum(a.price) ? null : 'alert.noPrice');
-  $('#alert-submit').disabled = !isNum(a.price);
   $('#alert-info').innerHTML = t('alert.info', { link: `<a href="${legalPrefix()}/confidentialite.html#alertes">${t('alert.privacy')}</a>` });
   $('#alert-list').innerHTML = '';
   $('#alert').hidden = false;
@@ -491,13 +592,22 @@ function closeAlert() {
 $('#alert-close').addEventListener('click', closeAlert);
 $('#alert').addEventListener('click', (e) => { if (e.target.id === 'alert') closeAlert(); });
 $('#alert-target').addEventListener('input', updateAlertDir);
+for (const b of document.querySelectorAll('#alert-mode [data-metric]')) b.addEventListener('click', () => { if (alertAsset) { setAlertMetric(b.dataset.metric); $('#alert-target').focus(); } });
 $('#alert-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const a = alertAsset;
-  const target = parseAmount($('#alert-target').value);
-  if (!a || !isNum(a.price)) return alertMsg('alert.noPrice');
-  if (!isNum(target) || target <= 0) return alertMsg('alert.invalid');
-  if (target === a.price) return alertMsg('alert.same');
+  const pct = alertMetric === 'pct';
+  const target = pct ? parseSigned($('#alert-target').value) : parseAmount($('#alert-target').value);
+  if (!a) return;
+  if (pct) {
+    if (!isNum(a.chg)) return alertMsg('alert.noChg');
+    if (!isNum(target) || target === 0 || target < -99 || target > 1000) return alertMsg('alert.pctInvalid');
+    if (target > 0 ? a.chg >= target : a.chg <= target) return alertMsg('alert.pctReached');
+  } else {
+    if (!isNum(a.price)) return alertMsg('alert.noPrice');
+    if (!isNum(target) || target <= 0) return alertMsg('alert.invalid');
+    if (target === a.price) return alertMsg('alert.same');
+  }
   const sup = pushSupport();
   if (sup !== 'ok') return alertMsg(sup === 'ios' ? 'alert.ios' : 'alert.unsupported');
   if (!navigator.onLine) return alertMsg('alert.offline');
@@ -509,7 +619,9 @@ $('#alert-form').addEventListener('submit', async (e) => {
   btn.textContent = t('alert.creating');
   try {
     const token = await ensureDevice();
-    await alertsApi('create', { token, alert: { kind: a.kind, assetId: a.assetId, label: a.label, direction: target > a.price ? 'above' : 'below', target, currency: a.currency } });
+    await alertsApi('create', { token, alert: pct
+      ? { kind: a.kind, assetId: a.assetId, label: a.label, metric: 'pct', direction: target > 0 ? 'above' : 'below', target, currency: null }
+      : { kind: a.kind, assetId: a.assetId, label: a.label, direction: target > a.price ? 'above' : 'below', target, currency: a.currency } });
     $('#alert-target').value = '';
     $('#alert-dir').textContent = '';
     alertMsg('alert.created');
@@ -574,7 +686,71 @@ async function openSnapshot(kind) {
   btn.querySelector('span').textContent = t('snap.btn');
 }
 
-function showSnapshot(blob, name) {
+/** Image d'une position du compte démo (ouverte, ou clôturée : entrée d'historique), avec la courbe réelle du cours. */
+async function shareTrade(x, closed) {
+  try {
+    const q = quoteOf(x);
+    const d = x.side === 'long' ? 1 : -1;
+    const end = closed ? x.closedAt : Date.now();
+    const price = closed ? x.exit : q.price;
+    let pnl, pct;
+    if (closed) {
+      pnl = x.net;
+      pct = Math.max(-100, (x.exit / x.entry - 1) * d * x.lev * 100);
+    } else {
+      pnl = isNum(q.price) ? Math.max(-x.margin, (q.price - x.entry) * x.qty * d * paper.fxOf(x, q)) : null;
+      pct = pnl == null ? null : (pnl / x.margin) * 100;
+    }
+    const span = Math.max(end - x.openedAt, 3600_000);
+    const tf = span < 2 * 86400_000 ? '15m' : span < 20 * 86400_000 ? '1h' : span < 300 * 86400_000 ? '4h' : '1d';
+    let line = [], source = null;
+    try {
+      const c = await fetchCandles(x, tf);
+      const from = x.openedAt - span * 0.15;
+      line = (c.candles || []).map((k) => [k[0] * 1000, k[4]]).filter((k) => k[0] >= from && k[0] <= end);
+      source = c.source;
+    } catch { /* courbe indisponible : image sans courbe */ }
+    const P = (v) => priceIn(v, x.kind, x.ccy);
+    const marks = [{ value: x.entry, text: `${t('share.entry')} ${P(x.entry)}`, color: '#8d9aab' }];
+    if (!closed && isNum(x.tp)) marks.push({ value: x.tp, text: `TP ${P(x.tp)}`, color: '#22c55e' });
+    if (!closed && isNum(x.sl)) marks.push({ value: x.sl, text: `SL ${P(x.sl)}`, color: '#f05252' });
+    const signedUSD = (v) => (isNum(v) ? `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}${fmtNative(Math.abs(v), 'USD')}` : ND);
+    const rows = closed
+      ? [[t('share.entry'), P(x.entry)], [t('share.exit'), P(x.exit)], [t('share.qty'), qtyNF().format(x.qty)],
+        [t('share.lev'), `${x.lev}×`], [t('share.fees'), fmtNative(x.fees, 'USD')], [t('share.duration'), fmtDuration(x.closedAt - x.openedAt)]]
+      : [[t('share.entry'), P(x.entry)], [t('share.now'), P(price)], [t('share.qty'), qtyNF().format(x.qty)],
+        [t('share.lev'), `${x.lev}× · ${t('share.margin')} ${fmtNative(x.margin, 'USD')}`], ['TP', isNum(x.tp) ? P(x.tp) : '—'], ['SL', isNum(x.sl) ? P(x.sl) : '—']];
+    const status = closed
+      ? `${t('share.closed', { r: t(`pt.reason.${x.reason}`) })} · ${dateTimeFmt.format(x.closedAt)}`
+      : t('share.open', { d: fmtDuration(Date.now() - x.openedAt) });
+    const blob = await makeTradeCard({
+      title: t('appName'),
+      when: dateTimeFmt.format(Date.now()),
+      demo: t('share.demo'),
+      label: x.label, name: x.name || '', logo: x.logo || x.logoSmall,
+      side: x.side, badge: `${x.side === 'long' ? 'LONG' : 'SHORT'} ${x.lev}×`,
+      status,
+      pnlPct: isNum(pct) ? fmtPct(pct) : ND,
+      pnl: signedUSD(pnl),
+      cls: !isNum(pnl) || Math.abs(pnl) < 0.005 ? '' : pnl > 0 ? 'pos' : 'neg',
+      line, marks, rows,
+      noLine: t('share.noLine'),
+      sources: t(closed ? 'share.srcClosed' : 'share.srcOpen', { s: source || ND }),
+      disclaimer: t('disclaimer'),
+      site: location.host,
+    });
+    const day = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const safe = String(x.label).replace(/[^\w.-]+/g, '').slice(0, 20) || 'position';
+    showSnapshot(blob, `marches-demo-${safe}-${x.side}-${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}.png`, 'share.title');
+  } catch {
+    toast(t('snap.failed'), 'neg');
+  }
+}
+
+function showSnapshot(blob, name, titleKey = 'snap.title') {
+  $('#snap-title').textContent = t(titleKey);
+  $('#snap-img').alt = t(titleKey);
   if (snapURL) URL.revokeObjectURL(snapURL);
   snapURL = URL.createObjectURL(blob);
   const file = typeof File === 'function' ? new File([blob], name, { type: 'image/png' }) : null;
@@ -610,8 +786,8 @@ function tvWidgetURL(tvSymbol, interval = '60') {
   let tz = 'Etc/UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* défaut UTC */ }
   const p = new URLSearchParams({
-    symbol: tvSymbol, interval, theme: 'dark', style: '1', locale: TV_LOCALE[getLang()], timezone: tz,
-    toolbarbg: '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
+    symbol: tvSymbol, interval, theme: isLight() ? 'light' : 'dark', style: '1', locale: TV_LOCALE[getLang()], timezone: tz,
+    toolbarbg: isLight() ? 'f4f6f9' : '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
     hideideas: '1', studies: '[]',
   });
   return `https://s.tradingview.com/widgetembed/?${p}`;
@@ -755,14 +931,14 @@ function renderTVFrame(res, label, token) {
 function openChart(c, rank, totalTop, count) {
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.symbol)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
-    sub: `${c.name} · ${t('rank', { n: rank })} · ${t('change24', { p: periodLabel() })}`,
+    sub: `${c.name}${rank ? ` · ${t('rank', { n: rank })}` : ''} · ${t('change24', { p: periodLabel() })}`,
     statsHTML: stat(t('price'), fmtPrice(c.price)) + stat(t('cap'), fmtCap(c.marketCap))
       + stat(t('share', { n: count }), isNum(c.marketCap) && totalTop ? `${NF1.format((c.marketCap / totalTop) * 100)}${pctSign()}` : ND),
     tv: resolveTV(c),
     label: c.symbol,
     missingMsg: t('missCrypto', { s: esc(c.symbol) }),
     fav: { t: 'c', id: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
-    alert: { kind: 'c', assetId: c.id, label: c.symbol, price: c.price, currency: 'USD' },
+    alert: { kind: 'c', assetId: c.id, label: c.symbol, price: c.price, currency: 'USD', chg: c.changePct },
     trade: { kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
   });
 }
@@ -771,14 +947,14 @@ function openStockChart(c, rank, total, count) {
   const st = statusOf(c);
   showChart({
     titleHTML: `${logoImg(c, 28, 'chart-logo')}${esc(c.label)} <span class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</span>`,
-    sub: `${c.name} · ${t('rank', { n: rank })}${c.country ? ` · ${country(c.country)}` : ''} · ${st.chip}`,
+    sub: `${c.name}${rank ? ` · ${t('rank', { n: rank })}` : ''}${c.country ? ` · ${country(c.country)}` : ''} · ${st.chip}`,
     statsHTML: stat(t('quote'), fmtStockPrice(c.price, c.currency)) + stat(t('cap'), fmtCap(c.marketCap))
       + stat(t('share', { n: count }), isNum(c.marketCap) && total ? `${NF1.format((c.marketCap / total) * 100)}${pctSign()}` : ND),
     tv: c.tv || { tv: null },
     label: c.label,
     missingMsg: t('missStock', { s: esc(c.name) }),
     fav: { t: 's', id: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
-    alert: { kind: 's', assetId: c.id, label: c.label, price: c.price, currency: c.currency || null },
+    alert: { kind: 's', assetId: c.id, label: c.label, price: c.price, currency: c.currency || null, chg: c.changePct },
     trade: { kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
   });
 }
@@ -853,7 +1029,7 @@ function openIndexChart(ix) {
     label: indexName(ix),
     missingMsg: t('missIndex', { s: esc(indexName(ix)) }),
     fav: { t: 'i', id: ix.id, label: ix.name, name: ix.name, logo: ix.logo, logoSmall: ix.logoSmall },
-    alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null },
+    alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null, chg: ix.outdated ? null : ix.changePct },
     trade: ix.symbol ? { kind: 'i', assetId: ix.id, label: ix.name, name: country(ix.country), symbol: ix.symbol, logo: ix.logo, logoSmall: ix.logoSmall } : null,
   });
 }
@@ -874,6 +1050,119 @@ $('#chart-close').addEventListener('click', () => {
 });
 window.addEventListener('popstate', closeChart);
 
+/* ---------- Matières premières et devises ---------- */
+const macroById = (id) => (state.macro?.items || []).find((m) => m.id === id) || null;
+const macroName = (m) => (m.pair ? `${m.pair[0]}/${m.pair[1]}` : t(`macro.${m.id}`));
+/** Cours d'une matière première (devise + unité) ou d'une paire de devises. */
+function fmtMacro(m, v = m.price) {
+  if (!isNum(v)) return ND;
+  if (m.pair) return nf(v >= 100 ? 2 : 4).format(v);
+  const n = nf(v >= 1000 ? 0 : 2, v >= 1000 ? 0 : v >= 10 ? 2 : 3).format(v);
+  const cur = m.currency === 'USX' ? '¢' : m.currency === 'USD' ? '$' : m.currency || '';
+  return `${n}\u00a0${cur}/${t(`unit.${m.unit}`)}`;
+}
+function macroCardHTML(m, dataId = m.id) {
+  const st = statusOf(m);
+  return `<article class="idx" data-id="${esc(dataId)}" tabindex="0" role="button" aria-label="${esc(`${macroName(m)} : ${fmtMacro(m)}, ${fmtPct(m.changePct)}. ${t('openChart')}`)}" style="background-color:${heat(m.changePct, m.pair ? 1 : 2.5)}">
+      <div class="idx-country">${logoImg(m, 20, 'idx-logo')}<span>${esc(t(`macro.g.${m.group}`))}</span></div>
+      <div class="idx-top"><h3>${esc(macroName(m))}</h3><span class="chip ${st.cls}">${st.chip}</span></div>
+      <div class="idx-level">${fmtMacro(m)}</div>
+      <div class="idx-chg">${fmtPct(m.changePct)}</div>
+      ${sparkSVG(m.spark, m.prevClose)}
+      <div class="idx-foot">${st.foot}</div>
+      ${cdHTML(marketClock(m), 'idx-cd')}
+    </article>`;
+}
+function renderMacro(group) {
+  const grid = $(`#grid-${group}`);
+  const list = (state.macro?.items || []).filter((m) => m.group === group);
+  if (!list.length) {
+    grid.innerHTML = state.loading ? Array.from({ length: 4 }, () => '<div class="idx skeleton"></div>').join('') : `<div class="empty" style="grid-column:1/-1">${t('noData')}</div>`;
+    return;
+  }
+  grid.innerHTML = list.map((m) => macroCardHTML(m)).join('');
+  grid.onclick = (e) => { const card = e.target.closest('.idx'); const m = card && macroById(card.dataset.id); if (m) openMacroChart(m); };
+  grid.onkeydown = (e) => { if (e.key !== 'Enter' && e.key !== ' ') return; const card = e.target.closest('.idx'); if (card) { e.preventDefault(); card.click(); } };
+}
+// Graphiques TradingView vérifiés dans le widget gratuit (nov. 2026). Matières premières : cours au comptant ou CFD.
+const MACRO_NOTE = () => t('macro.tvNote');
+const MACRO_TV = {
+  gold: { tv: 'TVC:GOLD', link: 'COMEX:GC1!', note: MACRO_NOTE }, silver: { tv: 'OANDA:XAGUSD', link: 'COMEX:SI1!', note: MACRO_NOTE },
+  wti: { tv: 'TVC:USOIL', link: 'NYMEX:CL1!', note: MACRO_NOTE }, brent: { tv: 'TVC:UKOIL', link: 'ICEEUR:BRN1!', note: MACRO_NOTE },
+  natgas: { tv: 'CAPITALCOM:NATURALGAS', link: 'NYMEX:NG1!', note: MACRO_NOTE }, copper: { tv: 'CAPITALCOM:COPPER', link: 'COMEX:HG1!', note: MACRO_NOTE },
+  wheat: { tv: 'CAPITALCOM:WHEAT', link: 'CBOT:ZW1!', note: MACRO_NOTE },
+  eurusd: { tv: 'FX:EURUSD' }, gbpusd: { tv: 'FX:GBPUSD' }, usdjpy: { tv: 'FX:USDJPY' }, usdchf: { tv: 'FX:USDCHF' },
+  audusd: { tv: 'FX:AUDUSD' }, usdcad: { tv: 'FX:USDCAD' }, usdcny: { tv: 'FX_IDC:USDCNY' }, usdkrw: { tv: 'FX_IDC:USDKRW' },
+};
+function openMacroChart(m) {
+  const st = statusOf(m);
+  const name = macroName(m);
+  showChart({
+    titleHTML: `${logoImg(m, 28, 'chart-logo')}${esc(name)} <span class="${signClass(m.changePct)}">${fmtPct(m.changePct)}</span>`,
+    sub: `${t(`macro.g.${m.group}`)} · ${st.chip} · ${st.foot}`,
+    statsHTML: stat(t('quote'), fmtMacro(m)) + stat(t('change'), fmtSigned(m.change), signClass(m.change)) + stat(t('prevClose'), fmtMacro(m, m.prevClose)),
+    tv: MACRO_TV[m.id] || { tv: null },
+    label: name,
+    missingMsg: t('missIndex', { s: esc(name) }),
+    fav: { t: 'm', id: m.id, label: name, name, logo: m.logo, logoSmall: m.logoSmall },
+    alert: { kind: 'm', assetId: m.id, label: name, price: m.price, currency: m.currency || null, chg: m.outdated ? null : m.changePct },
+    trade: { kind: 'm', assetId: m.id, label: name, name: t(`macro.g.${m.group}`), symbol: m.symbol, logo: m.logo, logoSmall: m.logoSmall },
+  });
+}
+
+/* ---------- Recherche de n'importe quel actif ---------- */
+let searchTimer = 0, searchSeq = 0;
+function openSearch() {
+  $('#search').hidden = false;
+  document.body.style.overflow = 'hidden';
+  const input = $('#search-q');
+  input.value = '';
+  $('#search-results').innerHTML = `<p class="search-hint">${t('search.hint')}</p>`;
+  input.focus();
+}
+function closeSearch() {
+  if ($('#search').hidden) return;
+  $('#search').hidden = true;
+  if ($('#chart').hidden) document.body.style.overflow = '';
+}
+async function runSearch(q) {
+  const my = ++searchSeq;
+  const box = $('#search-results');
+  if (q.trim().length < 2) { box.innerHTML = `<p class="search-hint">${t('search.hint')}</p>`; return; }
+  box.innerHTML = `<p class="search-hint">${t('loading')}</p>`;
+  let res;
+  try { res = (await getJSON(`/api/search?q=${encodeURIComponent(q.trim())}`)).body; } catch { res = { error: true }; }
+  if (my !== searchSeq) return;
+  if (res.error) { box.innerHTML = `<p class="search-hint">${t('search.error')}</p>`; return; }
+  const st = res.results.filter((r) => r.kind === 's'), cr = res.results.filter((r) => r.kind === 'c');
+  const row = (r, i) => `<li><button type="button" data-i="${i}">${r.kind === 'c' ? logoImg(r, 24, 'pt-logo') : ''}
+      <span class="pk-l"><strong>${esc(r.kind === 'c' ? r.symbol : r.symbol)}</strong><small>${esc(r.name)}${r.kind === 's' ? ` · ${esc(r.exchangeName || r.exchange || '')}${r.type === 'ETF' ? ' · ETF' : ''}${r.sector ? ` · ${esc(r.sector)}` : ''}` : r.rank ? ` · ${t('rank', { n: r.rank })}` : ''}</small></span></button></li>`;
+  const all = [...st, ...cr];
+  box.innerHTML = !all.length ? `<p class="search-hint">${t('pt.noMatch')}</p>`
+    : `${st.length ? `<h3>${t('search.stocks')}</h3><ul class="pt-pick">${st.map((r) => row(r, all.indexOf(r))).join('')}</ul>` : ''}
+       ${cr.length ? `<h3>${t('search.cryptos')}</h3><ul class="pt-pick">${cr.map((r) => row(r, all.indexOf(r))).join('')}</ul>` : ''}`;
+  box.onclick = async (e) => {
+    const b = e.target.closest('[data-i]');
+    if (!b) return;
+    const r = all[Number(b.dataset.i)];
+    b.disabled = true;
+    try { await openFound(r); } catch { toast(t('search.error'), 'neg'); b.disabled = false; }
+  };
+}
+/** Ouvre l'écran graphique d'un actif trouvé par la recherche (cours récupéré à la demande). */
+async function openFound(r) {
+  const [item] = await fetchExtra(r.kind, [r.id]);
+  if (!item) throw new Error('n/d');
+  if (r.kind === 's') state.extra.s[r.id] = { ...state.extra.s[r.id], name: r.name, label: r.symbol.replace(/\.[A-Z]{1,3}$/, ''), exchangeName: r.exchangeName || r.exchange };
+  closeSearch();
+  if (r.kind === 'c') { const c = state.extra.c[r.id]; openChart({ ...c, label: c.symbol }, c.rank, null, null); }
+  else openStockChart(state.extra.s[r.id], null, null, null);
+}
+$('#search-open').addEventListener('click', openSearch);
+$('#search-close').addEventListener('click', closeSearch);
+$('#search').addEventListener('click', (e) => { if (e.target.id === 'search') closeSearch(); });
+$('#search-q').addEventListener('input', (e) => { clearTimeout(searchTimer); searchTimer = setTimeout(() => runSearch(e.target.value), 350); });
+
 /* ---------- Horaires des bourses : décompte d'ouverture / de fermeture ---------- */
 // Week-end local (0 = dimanche) : vendredi-samedi en Arabie saoudite et en Égypte, samedi-dimanche ailleurs.
 const WEEKEND = { 'Asia/Riyadh': [5, 6], 'Africa/Cairo': [5, 6] };
@@ -884,25 +1173,42 @@ function tzParts(ms, tz) {
   return o;
 }
 const tzOffsetMin = (ms, tz) => { const o = tzParts(ms, tz); return (Date.UTC(+o.year, o.month - 1, +o.day, +o.hour, +o.minute) - Math.floor(ms / 60000) * 60000) / 60000; };
+/* Jours fériés des bourses (fichier statique généré par scripts/holidays.py, source exchange_calendars) :
+ * { markets: { fuseau: { mic, weekend:[jours], until:'AAAA-MM-JJ', closed:['AAAA-MM-JJ'] } } }. */
+let holidays = null;
+fetch('/data/holidays.json').then((r) => (r.ok ? r.json() : null)).then((d) => {
+  if (!d?.markets) return;
+  holidays = d;
+  for (const m of Object.values(d.markets)) m.closedSet = new Set(m.closed);
+  if (state.tab === 'indices') renderMarketClock();
+}).catch(() => { /* hors ligne : décompte estimé (≈) */ });
+const ymd = (o) => `${o.year}-${String(o.month).padStart(2, '0')}-${String(o.day).padStart(2, '0')}`;
 /**
  * Prochain événement de séance d'un marché, d'après la séance du jour donnée par Yahoo.
- * Séance à venir ou en cours : horaires Yahoo. Séance du jour terminée : prochain jour ouvré à la même
- * heure locale (heure d'été comprise), sans connaître les jours fériés → estimated = true.
+ * Séance à venir ou en cours : horaires Yahoo. Séance du jour terminée : prochain jour de séance à la même
+ * heure locale (heure d'été comprise), en sautant week-ends et jours fériés connus.
+ * estimated = true (« ≈ ») si les jours fériés de cette place ne sont pas connus pour la date trouvée.
  */
 function marketClock(item, now = Date.now()) {
   const ses = item?.session, tz = item?.timezone;
   if (!ses || !isNum(ses.start) || !isNum(ses.end) || !tz) return null;
   if (now < ses.start) return { kind: 'open', at: ses.start, estimated: false };
   if (now < ses.end && item.state !== 'closed') return { kind: 'close', at: ses.end, estimated: false };
-  const weekend = WEEKEND[tz] || [6, 0];
-  let t = ses.start;
+  const cal = holidays?.markets?.[tz];
+  const weekend = cal?.weekend || WEEKEND[tz] || [6, 0];
+  let t = ses.start, day = null;
   try {
-    for (let i = 0; i < 10 && (t <= now || weekend.includes(WD[tzParts(t, tz).weekday])); i++) {
+    for (let i = 0; i < 20; i++) {
+      const o = tzParts(t, tz);
+      day = ymd(o);
+      if (t > now && !weekend.includes(WD[o.weekday]) && !cal?.closedSet?.has(day)) break;
       const next = t + 86400_000;
       t = next + (tzOffsetMin(t, tz) - tzOffsetMin(next, tz)) * 60_000; // même heure locale malgré l'heure d'été
     }
   } catch { return null; }
-  return t > now ? { kind: 'open', at: t, estimated: true } : null;
+  if (t <= now) return null;
+  const known = !!cal && day >= holidays.from && day <= cal.until;
+  return { kind: 'open', at: t, estimated: !known };
 }
 /** Durée lisible : « 2 j 3 h », « 7 h 05 min », « 4 min 12 s ». */
 function fmtDuration(ms) {
@@ -957,6 +1263,66 @@ function renderMarketClock() {
     ${rows.length > 5 ? `<button type="button" class="mc-more" aria-expanded="${clockExpanded}">${t(clockExpanded ? 'cd.less' : 'cd.more', { n: rows.length })}</button>` : ''}
     ${clockExpanded ? `<p class="mc-note">${t('cd.note')}</p>` : ''}`;
   box.querySelector('.mc-more')?.addEventListener('click', () => { clockExpanded = !clockExpanded; renderMarketClock(); });
+}
+
+/* ---------- Agenda : décisions Fed / BCE (pages officielles) et résultats d'entreprises (Nasdaq) : /api/calendar ---------- */
+let agenda = null, agendaAt = 0, agendaLoading = false, agendaExpanded = false;
+async function loadAgenda() {
+  if (agendaLoading) return;
+  agendaLoading = true;
+  try {
+    const r = await fetch('/api/calendar');
+    const d = await r.json();
+    agenda = r.ok ? d : { error: true };
+  } catch { agenda = agenda?.central ? agenda : { error: true }; }
+  agendaAt = Date.now();
+  agendaLoading = false;
+  if (state.tab === 'indices') renderAgenda();
+}
+const dayMs = (d) => Date.parse(`${d}T12:00:00Z`); // date publiée (AAAA-MM-JJ), sans heure
+function inDays(d) {
+  const n = Math.round((dayMs(d) - Date.parse(`${new Date().toLocaleDateString('en-CA')}T12:00:00Z`)) / 86_400_000);
+  return n <= 0 ? t('ag.today') : n === 1 ? t('ag.tomorrow') : t('ag.inDays', { n });
+}
+function renderAgenda() {
+  const box = $('#agenda');
+  if (!agenda || Date.now() - agendaAt > 30 * 60_000) loadAgenda();
+  if (!agenda) { box.innerHTML = `<h2>${t('ag.title')}</h2><p class="mc-note">${t('loading')}</p>`; return; }
+  if (agenda.error) { box.innerHTML = `<h2>${t('ag.title')}</h2><p class="mc-note">${t('ag.na')}</p>`; return; }
+  const day = (d) => fmtDay(dayMs(d), 'UTC');
+  const banks = ['fed', 'ecb'].flatMap((b) => agenda.central.filter((x) => x.bank === b).slice(0, agendaExpanded ? 4 : 1))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const earn = agenda.earnings || [];
+  const shown = agendaExpanded ? earn : earn.slice(0, 3);
+  const bankRow = (x) => `<li><span class="ag-badge ${x.bank}">${t(`ag.${x.bank}`)}</span>
+      <span class="mc-name"><strong>${t('ag.rate')}${x.sep ? ` <small class="ag-tag">${t('ag.sep')}</small>` : ''}</strong><small>${esc(t(`ag.${x.bank}Long`))}</small></span>
+      <span class="ag-when"><b>${day(x.date)}</b><small>${inDays(x.date)}</small></span></li>`;
+  const earnRow = (x) => {
+    const c = stockById(x.symbol);
+    const eps = isNum(x.eps) ? t('ag.eps', { v: getLang() === 'fr' ? `${NF2.format(x.eps)}\u00a0$` : `${x.eps < 0 ? '−' : ''}$${NF2.format(Math.abs(x.eps))}` }) : '';
+    return `<li${c ? ` class="ag-link" data-sym="${esc(x.symbol)}" tabindex="0" role="button"` : ''}>${c ? logoImg(c, 18, 'idx-logo') : '<span class="ag-badge earn">$</span>'}
+      <span class="mc-name"><strong>${esc(x.symbol)} <small class="ag-co">${esc(x.name)}</small></strong><small>${[x.time ? t(`ag.${x.time}`) : '', eps].filter(Boolean).join(' · ')}</small></span>
+      <span class="ag-when"><b>${day(x.date)}</b><small>${inDays(x.date)}</small></span></li>`;
+  };
+  const okNote = [!agenda.centralOk?.fed ? t('ag.fedNa') : '', !agenda.centralOk?.ecb ? t('ag.ecbNa') : ''].filter(Boolean).join(' ');
+  box.innerHTML = `<h2>${t('ag.title')}</h2>
+    <h3>${t('ag.banks')}</h3>
+    ${banks.length ? `<ul>${banks.map(bankRow).join('')}</ul>` : `<p class="mc-note">${ND}</p>`}
+    ${okNote ? `<p class="mc-note">${okNote}</p>` : ''}
+    <h3>${t('ag.earnings')}</h3>
+    ${agenda.earnings == null ? `<p class="mc-note">${t('ag.earnNa')}</p>` : shown.length ? `<ul>${shown.map(earnRow).join('')}</ul>` : `<p class="mc-note">${t('ag.earnNone')}</p>`}
+    <button type="button" class="mc-more" aria-expanded="${agendaExpanded}">${t(agendaExpanded ? 'cd.less' : 'ag.more', { n: earn.length })}</button>
+    ${agendaExpanded ? `<p class="mc-note">${t('ag.note', {
+      fed: `<a href="${agenda.sources.fed}" target="_blank" rel="noopener noreferrer">${t('ag.fedLong')}</a>`,
+      ecb: `<a href="${agenda.sources.ecb}" target="_blank" rel="noopener noreferrer">${t('ag.ecbLong')}</a>`,
+      nasdaq: `<a href="${agenda.sources.earnings}" target="_blank" rel="noopener noreferrer">Nasdaq</a>`,
+    })}</p>` : ''}`;
+  box.querySelector('.mc-more').addEventListener('click', () => { agendaExpanded = !agendaExpanded; renderAgenda(); });
+  box.querySelectorAll('.ag-link').forEach((li) => {
+    const open = () => { const c = stockById(li.dataset.sym); if (c) openStockChart(c); };
+    li.addEventListener('click', open);
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+  });
 }
 
 /* ---------- Rendu indices ---------- */
@@ -1018,6 +1384,38 @@ function assetCardHTML({ key, kicker, f, title, chip, price, pct, maxAbs, foot, 
 }
 
 /* ---------- Favoris ---------- */
+/* ---------- Actifs hors des listes principales (recherche) ---------- */
+const coinById = (id, label) => (state.crypto?.coins || []).find((c) => c.id === id)
+  || (label ? (state.crypto?.coins || []).find((c) => c.symbol === label) : null) || state.extra.c[id] || null;
+const stockById = (id) => (state.stocks?.companies || []).find((c) => c.id === id) || state.extra.s[id] || null;
+/** Identifiants à suivre hors des listes : favoris, positions et ordres du compte démo, graphique ouvert. */
+function extraNeeded() {
+  const need = { c: new Set(), s: new Set() };
+  const add = (kind, id, label) => {
+    if (kind === 'c' && !(state.crypto?.coins || []).some((c) => c.id === id || c.symbol === label)) need.c.add(id);
+    if (kind === 's' && !(state.stocks?.companies || []).some((c) => c.id === id)) need.s.add(id);
+  };
+  for (const f of favs) add(f.t, f.id, f.label);
+  for (const x of paper.exposure()) add(x.kind, x.assetId, x.label);
+  if (chartArgs?.trade) add(chartArgs.trade.kind, chartArgs.trade.assetId, chartArgs.trade.label);
+  return need;
+}
+async function fetchExtra(kind, ids) {
+  if (!ids.length) return [];
+  const r = await getJSON(`/api/quote?kind=${kind}&ids=${ids.map(encodeURIComponent).join(',')}`);
+  if (r.body.error) throw new Error(r.body.error);
+  state.offline.extra = r.fromCache;
+  for (const it of r.body.items) {
+    const prev = state.extra[kind][it.id] || {};
+    state.extra[kind][it.id] = { ...prev, ...it, name: prev.name || it.name, label: kind === 'c' ? it.symbol : prev.label || it.label, extra: true };
+  }
+  return r.body.items;
+}
+async function refreshExtra() {
+  const need = extraNeeded();
+  try { await Promise.all([fetchExtra('c', [...need.c]), fetchExtra('s', [...need.s])]); } catch { state.offline.extra = true; }
+}
+
 function findCoin(f) {
   const coins = state.crypto?.coins || [];
   const i = coins.findIndex((c) => c.id === f.id);
@@ -1040,6 +1438,18 @@ function renderFavs() {
       if (ix) { actions.set(key, () => openIndexChart(ix)); return indexCardHTML(ix, key); }
       return assetCardHTML({ key, kicker: t('fav.index'), f: { ...f, name: f.name }, title: f.label, price: ND, pct: null, maxAbs: 2.5, foot: state.loading ? t('loading') : t('noData') });
     }
+    if (f.t === 'm') {
+      const m = macroById(f.id);
+      if (m) { actions.set(key, () => openMacroChart(m)); return macroCardHTML(m, key); }
+      return assetCardHTML({ key, kicker: t('macro.kind'), f, title: f.label, price: ND, pct: null, maxAbs: 2, foot: state.loading ? t('loading') : t('noData') });
+    }
+    if (f.t === 'c' && findCoin(f) < 0 && state.extra.c[f.id]) {
+      const c = state.extra.c[f.id];
+      const item = { ...c, label: c.symbol, changePct: isNum(c[field]) ? c[field] : null };
+      actions.set(key, () => openChart(item, c.rank, null, null));
+      return assetCardHTML({ key, kicker: `${t('fav.crypto')}${c.rank ? ` · ${t('rank', { n: c.rank })}` : ''}`, f: c, title: c.symbol, price: fmtPrice(c.price),
+        pct: item.changePct, maxAbs: PERIOD_MAX[prefs.period], foot: `${t('change24', { p: periodLabel() })} · ${fmtCap(c.marketCap)}` });
+    }
     if (f.t === 'c') {
       const i = findCoin(f);
       const c = i >= 0 ? state.crypto.coins[i] : null;
@@ -1054,6 +1464,13 @@ function renderFavs() {
     }
     const list = state.stocks?.companies || [];
     const i = list.findIndex((c) => c.id === f.id);
+    if (i < 0 && state.extra.s[f.id]) {
+      const c = state.extra.s[f.id];
+      const st = statusOf(c);
+      actions.set(key, () => openStockChart(c, null, null, null));
+      return assetCardHTML({ key, kicker: c.exchangeName || t('fav.stock'), f: c, title: c.label, chip: st,
+        price: fmtStockPrice(c.price, c.currency), pct: c.changePct, maxAbs: 4, foot: st.foot, clock: marketClock(c) });
+    }
     const c = i >= 0 ? list[i] : null;
     if (!c) return assetCardHTML({ key, kicker: t('fav.stock'), f, title: f.label, price: ND, pct: null, maxAbs: 4, foot: state.loading ? t('loading') : t('fav.missingStock') });
     const top = stockItems(state.stocks);
@@ -1077,6 +1494,7 @@ function renderFavs() {
 }
 
 function renderIndices(region) {
+  if (MACRO_GROUPS.includes(region)) return renderMacro(region);
   const grid = $(`#grid-${region}`);
   const list = state.indices?.indices?.filter((i) => i.region === region);
   if (!list?.length) {
@@ -1105,7 +1523,7 @@ function renderChrome() {
   const data = state[key];
   const when = data?.fetchedAt && (key === 'indices' || state.tab === 'favoris') ? ` · ${t('updatedShort')} ${fmtTime(data.fetchedAt)}` : '';
   const n = state.tab === 'crypto' ? cryptoItems(state.crypto).length || prefs.nCrypto : stockItems(state.stocks).length || prefs.nStocks;
-  const titleKey = state.tab === 'indices' ? `title.${prefs.region}` : `title.${state.tab}`;
+  const titleKey = state.tab === 'indices' ? (MACRO_GROUPS.includes(prefs.region) ? `macro.g.${prefs.region}` : `title.${prefs.region}`) : `title.${state.tab}`;
   $('#subtitle').textContent = `${t(titleKey, { n, p: periodLabel() })}${when}`;
 
   const banner = $('#banner');
@@ -1141,9 +1559,10 @@ function render() {
   else if (state.tab === 'favoris') renderFavs();
   else if (state.tab === 'compte') paper.render($('#paper'));
   else {
-    for (const r of REGIONS) $(`#grid-${r}`).hidden = r !== prefs.region;
-    $('#indices-tools').innerHTML = segHTML('region', REGIONS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
+    for (const r of INDEX_TABS) $(`#grid-${r}`).hidden = r !== prefs.region;
+    $('#indices-tools').innerHTML = segHTML('region', INDEX_TABS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
     renderMarketClock();
+    renderAgenda();
     renderIndices(prefs.region);
   }
 }
@@ -1157,10 +1576,12 @@ function applyStatic() {
   for (const el of document.querySelectorAll('[data-i18n]')) el.textContent = t(el.dataset.i18n, vars);
   for (const el of document.querySelectorAll('[data-i18n-aria]')) el.setAttribute('aria-label', t(el.dataset.i18nAria));
   for (const el of document.querySelectorAll('[data-i18n-alt]')) el.alt = t(el.dataset.i18nAlt);
+  for (const el of document.querySelectorAll('[data-i18n-ph]')) el.placeholder = t(el.dataset.i18nPh);
   for (const el of document.querySelectorAll('[data-legal]')) el.href = `${legalPrefix(l)}/${el.dataset.legal}.html`;
   const sel = $('#lang');
   if (sel && !sel.options.length) sel.innerHTML = LANGS.map((x) => `<option value="${x}">${LANG_LABELS[x]}</option>`).join('');
   if (sel) sel.value = l;
+  themeLabel();
 }
 $('#lang')?.addEventListener('change', (e) => {
   setLang(e.target.value);
@@ -1183,10 +1604,10 @@ async function refresh() {
   state.loading = true;
   $('#refresh').classList.add('spinning');
   if (!state.crypto || !state.indices || !state.stocks) render();
-  const [c, i, st, fx] = await Promise.allSettled([
-    getJSON('/api/crypto'), getJSON('/api/indices'), getJSON(`/api/stocks?n=${stocksToLoad()}`), getJSON('/api/fx'),
+  const [c, i, st, fx, mc] = await Promise.allSettled([
+    getJSON('/api/crypto'), getJSON('/api/indices'), getJSON(`/api/stocks?n=${stocksToLoad()}`), getJSON('/api/fx'), getJSON('/api/macro'),
   ]);
-  for (const [key, r] of [['crypto', c], ['indices', i], ['stocks', st], ['fx', fx]]) {
+  for (const [key, r] of [['crypto', c], ['indices', i], ['stocks', st], ['fx', fx], ['macro', mc]]) {
     if (r.status === 'fulfilled' && !r.value.body.error) {
       state[key] = r.value.body;
       state.offline[key] = r.value.fromCache;
@@ -1195,6 +1616,7 @@ async function refresh() {
       state.offline[key] = true;
     }
   }
+  await refreshExtra();
   state.loading = false;
   state.lastFetch = Date.now();
   $('#refresh').classList.remove('spinning');
@@ -1241,6 +1663,7 @@ function renderTools(kind) {
   parts.push(segHTML(kind === 'crypto' ? 'nCrypto' : 'nStocks', [[25, '25'], [50, '50'], [100, '100']], t('tools.top'),
     `<span class="seg-label" aria-hidden="true">${t('tools.top')}</span>`));
   parts.push(segHTML('cur', [['USD', '$'], ['EUR', '€']], t('tools.cur')));
+  if (kind === 'stocks') parts.push(segHTML('stocksView', [['companies', t('view.companies')], ['sectors', t('view.sectors')]], t('tools.view')));
   el.innerHTML = parts.join('');
   const note = $(`#${kind}-fx`);
   const fx = state.fx;
@@ -1265,7 +1688,7 @@ document.addEventListener('click', (e) => {
 
 /* ---------- Papertrading (compte de démonstration, argent fictif) ---------- */
 /* Devises en sous-unités chez Yahoo : pence, agorot, cents sud-africains. */
-const MINOR_CCY = { GBp: ['GBP', 100], GBX: ['GBP', 100], ILA: ['ILS', 100], ZAc: ['ZAR', 100], ZAC: ['ZAR', 100] };
+const MINOR_CCY = { GBp: ['GBP', 100], GBX: ['GBP', 100], ILA: ['ILS', 100], ZAc: ['ZAR', 100], ZAC: ['ZAR', 100], USX: ['USD', 100] };
 /** Dollars US pour 1 unité de la devise (taux de /api/fx) ; null si inconnu. */
 function usdPer(ccy) {
   if (!ccy) return null;
@@ -1280,19 +1703,19 @@ function usdPer(ccy) {
  */
 function quoteOf(x) {
   if (x.kind === 'c') {
-    const coins = state.crypto?.coins || [];
-    const c = coins.find((y) => y.id === x.assetId) || coins.find((y) => y.symbol === x.label);
+    const c = coinById(x.assetId, x.label);
     if (!c || !isNum(c.price)) return { price: null, ok: false, reason: 'na' };
-    const fresh = !state.offline.crypto && !state.crypto.stale;
+    const fresh = c.extra ? !state.offline.extra : !state.offline.crypto && !state.crypto.stale;
     return { price: c.price, chg: c.changePct, ok: fresh, reason: fresh ? null : 'stale', ccy: 'USD', fx: 1 };
   }
-  const item = x.kind === 's' ? (state.stocks?.companies || []).find((y) => y.id === x.assetId)
-    : x.kind === 'i' ? (state.indices?.indices || []).find((y) => y.id === x.assetId) : null;
+  const item = x.kind === 's' ? stockById(x.assetId)
+    : x.kind === 'i' ? (state.indices?.indices || []).find((y) => y.id === x.assetId)
+      : x.kind === 'm' ? macroById(x.assetId) : null;
   if (!item || !isNum(item.price)) return { price: null, ok: false, reason: 'na' };
-  const key = x.kind === 's' ? 'stocks' : 'indices';
+  const key = item.extra ? 'extra' : x.kind === 's' ? 'stocks' : x.kind === 'm' ? 'macro' : 'indices';
   const ccy = item.currency || null;
   const fx = usdPer(ccy);
-  const fresh = !state.offline[key] && !state[key].stale && !item.outdated;
+  const fresh = !state.offline[key] && !(state[key] && state[key].stale) && !item.outdated;
   const closed = item.state !== 'open';
   const base = { price: item.price, chg: item.changePct, ccy, fx, closed, lastTime: item.lastTime, clock: marketClock(item) };
   if (!fresh) return { ...base, ok: false, reason: 'stale' };
@@ -1313,6 +1736,7 @@ const qtyNF = () => new Intl.NumberFormat(loc(), { maximumSignificantDigits: 6 }
 function priceIn(v, kind, ccy) {
   if (!isNum(v)) return ND;
   if (kind === 'i') return `${NF2.format(v)}\u00a0${t('pt.pts')}`;
+  if (ccy === 'USX') return `${NF2.format(v)}\u00a0¢`;
   return fmtNative(v, ccy || 'USD');
 }
 const paper = createPaper({
@@ -1321,7 +1745,7 @@ const paper = createPaper({
   money: (v) => fmtNative(v, 'USD'),
   price: priceIn,
   cd: (c) => cdHTML(c, 'pt-cd'),
-  unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy),
+  unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy === 'USX' ? '¢' : ccy),
   fxText: (fx, ccy) => (isNum(fx) ? (fx >= 0.1 ? `1 ${ccy} = ${fmtNative(fx, 'USD')}` : `1 $ = ${NF2.format(1 / fx)} ${ccy}`) : ND),
   pct: (v) => fmtPct(v),
   qty: (v) => (isNum(v) ? (Math.abs(v) >= 1000 ? NF2 : qtyNF()).format(v) : ND),
@@ -1329,6 +1753,10 @@ const paper = createPaper({
   day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
   parse: parseAmount,
   fmtInput,
+  api: (action, body) => alertsApi(action, body),
+  linkDevice: (code, on) => linkDevice(code, on),
+  share: (x, closed) => shareTrade(x, closed),
+  legalPrefix: () => legalPrefix(),
   logo: (a, size) => logoImg(a, size, 'pt-logo'),
   toast,
   changed: () => { tradeChart.refresh(); if (state.tab === 'compte') render(); if ((state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks(); },
@@ -1336,6 +1764,12 @@ const paper = createPaper({
     ...(state.crypto?.coins || []).map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
     ...(state.stocks?.companies || []).filter((c) => isNum(c.price))
       .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
+    ...Object.values(state.extra.c).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+    ...Object.values(state.extra.s).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
+    ...(state.macro?.items || []).filter((m) => isNum(m.price))
+      .map((m) => ({ kind: 'm', assetId: m.id, label: macroName(m), name: t(`macro.g.${m.group}`), symbol: m.symbol, logo: m.logo, logoSmall: m.logoSmall, price: m.price, chg: m.changePct, ccy: m.currency })),
     ...(state.indices?.indices || []).filter((i) => isNum(i.price) && !i.outdated)
       .map((i) => ({ kind: 'i', assetId: i.id, label: i.name, name: country(i.country), symbol: i.symbol, logo: i.logo, logoSmall: i.logoSmall, price: i.price, chg: i.changePct, ccy: i.currency })),
   ],
@@ -1358,6 +1792,8 @@ const tradeChart = createTradeChart({
   qty: (v) => (isNum(v) ? qtyNF().format(v) : ND),
   locale: () => loc(),
   getTf: () => prefs.tcTf,
+  getInd: () => { const v = store.get('tcInd'); return Array.isArray(v) ? v.filter((x) => INDICATORS.includes(x)) : ['ma20']; },
+  setInd: (v) => store.set('tcInd', v),
   setTf: (tf) => { prefs.tcTf = tf; store.set('prefs', prefs); },
   openTicket: (asset, pre) => paper.openTicket(asset, pre),
   openAlert: (price) => {
@@ -1366,15 +1802,48 @@ const tradeChart = createTradeChart({
     $('#alert-target').value = fmtInput(price);
     updateAlertDir();
   },
-  fetchCandles: async (a, tf) => {
-    const q = quoteOf(a);
-    const params = new URLSearchParams({ kind: a.kind, symbol: a.kind === 'c' ? a.label : a.kind === 'i' ? a.symbol : a.assetId, tf });
-    if (a.kind === 'c' && /^[a-z0-9-]+$/.test(a.assetId)) params.set('id', a.assetId);
-    if (isNum(q.price)) params.set('ref', String(q.price));
-    const r = await fetch(`/api/candles?${params}`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
-  },
+  fetchCandles,
+});
+
+/** Bougies réelles d'un actif (/api/candles). */
+async function fetchCandles(a, tf) {
+  const q = quoteOf(a);
+  const params = new URLSearchParams({ kind: a.kind, symbol: a.kind === 'c' ? a.label : ['i', 'm'].includes(a.kind) ? a.symbol : a.assetId, tf });
+  if (a.kind === 'c' && /^[a-z0-9-]+$/.test(a.assetId)) params.set('id', a.assetId);
+  if (isNum(q.price)) params.set('ref', String(q.price));
+  const r = await fetch(`/api/candles?${params}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+/* ---------- Thème (Auto / Sombre / Clair) : assets/theme.js ---------- */
+const isLight = () => document.documentElement.dataset.theme === 'light';
+function themeLabel() {
+  const pref = window.marchesTheme?.pref() || 'auto';
+  $('#theme-btn').setAttribute('aria-label', t('theme.btn', { m: t(`theme.${pref}`) }));
+  $('#theme-btn').title = t('theme.btn', { m: t(`theme.${pref}`) });
+}
+$('#theme-btn').addEventListener('click', () => {
+  const T = window.marchesTheme;
+  if (!T) return;
+  const next = T.modes[(T.modes.indexOf(T.pref()) + 1) % T.modes.length];
+  T.set(next);
+  toast(t('theme.btn', { m: t(`theme.${next}`) }));
+});
+function reloadTVTheme() {
+  const ifr = $('#chart-frame iframe');
+  if (!ifr) return;
+  const u = new URL(ifr.src);
+  u.searchParams.set('theme', isLight() ? 'light' : 'dark');
+  u.searchParams.set('toolbarbg', isLight() ? 'f4f6f9' : '0b0f14');
+  ifr.src = u.href;
+}
+let tvThemeShown = isLight();
+window.addEventListener('marches-theme', () => {
+  themeLabel();
+  tradeChart.theme?.();
+  // Graphique TradingView ouvert : rechargé avec le bon thème.
+  if (tvThemeShown !== isLight()) { tvThemeShown = isLight(); reloadTVTheme(); }
 });
 
 /* ---------- Navigation ---------- */
@@ -1394,7 +1863,8 @@ $('#refresh').addEventListener('click', refresh);
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (paper.isOpen()) paper.closeModal();
+  if (!$('#search').hidden) closeSearch();
+  else if (paper.isOpen()) paper.closeModal();
   else if (!$('#alert').hidden) closeAlert();
   else if (!$('#snap').hidden) closeSnapshot();
   else if (!$('#chart').hidden) $('#chart-close').click();

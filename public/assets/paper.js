@@ -4,137 +4,118 @@
 // Multi-devises : prix, TP, SL et ordres dans la devise de l'actif (points pour un indice) ; compte, marge,
 // frais et P&L en dollars US, convertis au taux de change du moment (fx = dollars pour 1 unité de devise).
 
-const KEY = 'paper';
-const FEE = 0.001; // frais simulés : 0,1 % de la valeur, à l'ouverture et à la clôture
-const LEVERAGES = [1, 2, 5, 10];
-const CAPITALS = [1000, 10000, 100000];
-const MAX_OPEN = 50, MAX_ORDERS = 50, MAX_HISTORY = 500, MAX_POINTS = 400;
+import * as E from './paper-engine.js';
+import { CAPITALS, FEE, LEVERAGES, MAX_ORDERS, MAX_OPEN, dirOf, liqPrice } from './paper-engine.js';
 
-const dirOf = (side) => (side === 'long' ? 1 : -1);
-/** Prix de liquidation (marge isolée, perte limitée à la marge). Achat sans levier : aucun. */
-export function liqPrice(side, entry, lev) {
-  if (side === 'long') return lev > 1 ? entry * (1 - 1 / lev) : null;
-  return entry * (1 + 1 / lev);
-}
+export { liqPrice };
+const KEY = 'paper';
+const SYNC_KEY = 'paperSync'; // { code, rev, notify } : compte synchronisé (facultatif)
 
 export function createPaper(ctx) {
   const { t, store, esc, isNum } = ctx;
-  let acct = load();
+  let acct = E.normalize(store.get(KEY));
+  let sync = store.get(SYNC_KEY);
+  let syncError = false;
+  let board = null; // classement (groupes) chargé à l'affichage
   let ticket = null; // ticket d'ordre ouvert
   let manageId = null; // position en cours de gestion
   let picker = null; // fonction de redessin du sélecteur d'actif ouvert
 
-  /* ---------- Compte ---------- */
-  function load() {
-    const a = store.get(KEY);
-    if (!(a && a.v === 1 && isNum(a.cash) && Array.isArray(a.positions))) return null;
-    for (const x of [...a.positions, ...a.orders]) { x.ccy ||= 'USD'; if (!isNum(x.fxOpen)) x.fxOpen = 1; } // comptes d'avant le multi-devises
-    return a;
+  /* ---------- Compte (moteur partagé avec le serveur : paper-engine.js) ---------- */
+  function save() {
+    store.set(KEY, acct);
+    if (sync) schedulePush();
   }
-  const save = () => store.set(KEY, acct);
-  const nextId = () => `${Date.now().toString(36)}${(acct.seq++).toString(36)}`;
+  const nextId = () => E.nextId(acct);
   function create(initial) {
-    acct = { v: 1, initial, cash: initial, positions: [], orders: [], history: [], equity: [[Date.now(), initial]], createdAt: Date.now(), seq: 1 };
+    acct = E.newAccount(initial);
     save();
   }
-  const assetOf = (x) => ({ kind: x.kind, assetId: x.assetId, label: x.label, name: x.name, symbol: x.symbol, logo: x.logo, logoSmall: x.logoSmall });
-  /** Dollars pour 1 unité de la devise de la position : taux actuel, sinon celui de l'ouverture. */
-  const fxOf = (p, q = ctx.quote(p)) => (isNum(q.fx) ? q.fx : p.fxOpen ?? 1);
-  /** P&L latent en dollars. */
-  const upnl = (p, price, fx = fxOf(p)) => (price - p.entry) * p.qty * dirOf(p.side) * fx;
-  /** Prix (dans la devise de l'actif) auquel la perte atteint la marge, au taux de change actuel. */
-  function liqOf(p, fx = fxOf(p)) {
-    const v = p.entry - dirOf(p.side) * p.margin / (p.qty * fx);
-    return v > 0 ? v : null;
-  }
+  const assetOf = E.assetOf;
+  const fxOf = (p, q = ctx.quote(p)) => E.fxOf(p, q);
+  const upnl = (p, price, fx = fxOf(p)) => E.upnl(p, price, fx);
+  const liqOf = (p, fx = fxOf(p)) => E.liqOf(p, fx);
   const px = (v, a) => ctx.price(v, a.kind, a.ccy);
-
-  function summary() {
-    let unreal = 0, margin = 0, valued = true;
-    for (const p of acct.positions) {
-      margin += p.margin;
-      const q = ctx.quote(p);
-      if (isNum(q.price)) unreal += Math.max(-p.margin, upnl(p, q.price, fxOf(p, q)));
-      else valued = false;
-    }
-    const equity = acct.cash + margin + unreal;
-    return { cash: acct.cash, margin, unreal, equity, valued, pnl: equity - acct.initial, pnlPct: (equity / acct.initial - 1) * 100 };
-  }
-  function recordEquity() {
-    const s = summary();
-    if (!s.valued) return;
-    const pts = acct.equity;
-    const last = pts[pts.length - 1];
-    const now = Date.now();
-    if (last && now - last[0] < 10 * 60_000 && Math.abs(s.equity - last[1]) < acct.initial * 0.002) return;
-    pts.push([now, Math.round(s.equity * 100) / 100]);
-    if (pts.length > MAX_POINTS) pts.splice(1, pts.length - MAX_POINTS); // garde le point de départ
-    save();
-  }
-
-  function openPosition(asset, { side, qty, price, lev, tp, sl, fx = 1, ccy = 'USD' }) {
-    const notional = qty * price * fx, margin = notional / lev, fee = notional * FEE;
-    if (acct.positions.length >= MAX_OPEN) return { error: 'maxPos' };
-    if (margin + fee > acct.cash + 1e-9) return { error: 'funds' };
-    acct.cash -= margin + fee;
-    const p = { id: nextId(), ...assetOf(asset), ccy, fxOpen: fx, side, qty, entry: price, lev, margin, fees: fee, tp: tp ?? null, sl: sl ?? null, openedAt: Date.now() };
-    acct.positions.push(p);
-    return { position: p };
-  }
-
-  /** Clôture (totale ou partielle) au prix donné ; perte plafonnée à la marge (liquidation). */
-  function closePosition(p, price, fraction = 1, reason = 'manual', fx = fxOf(p)) {
-    const all = fraction >= 0.999;
-    const qty = all ? p.qty : p.qty * fraction;
-    const share = qty / p.qty;
-    const margin = p.margin * share;
-    const gross = (price - p.entry) * qty * dirOf(p.side) * fx;
-    const liquidated = gross <= -margin;
-    const pnl = Math.max(-margin, gross);
-    const closeFee = Math.min(qty * price * fx * FEE, margin + pnl);
-    const openFee = p.fees * share;
-    acct.cash += margin + pnl - closeFee;
-    const h = {
-      id: nextId(), ...assetOf(p), ccy: p.ccy, side: p.side, qty, entry: p.entry, exit: price, lev: p.lev,
-      gross: pnl, fees: openFee + closeFee, net: pnl - openFee - closeFee,
-      reason: liquidated ? 'liq' : reason, openedAt: p.openedAt, closedAt: Date.now(),
-    };
-    acct.history.unshift(h);
-    if (acct.history.length > MAX_HISTORY) acct.history.length = MAX_HISTORY;
-    if (all) acct.positions = acct.positions.filter((x) => x.id !== p.id);
-    else { p.qty -= qty; p.margin -= margin; p.fees -= openFee; }
-    return h;
-  }
+  const summary = () => E.summary(acct, ctx.quote);
+  function recordEquity() { if (E.recordEquity(acct, ctx.quote)) save(); }
+  const openPosition = (asset, args) => E.openPosition(acct, asset, args);
+  const closePosition = (p, price, fraction = 1, reason = 'manual', fx = fxOf(p)) => E.closePosition(acct, p, price, fraction, reason, fx);
 
   /** Moteur : ordres en attente puis TP / SL / liquidation, au cours actuel. Renvoie les événements. */
   function run() {
     if (!acct) return [];
-    const events = [];
-    for (const o of [...acct.orders]) {
-      const q = ctx.quote(o);
-      if (!q.ok) continue; // cours absent ou ancien, ou taux de change manquant : rien n'est exécuté
-      const last = q.price;
-      const hit = o.type === 'limit' ? (o.side === 'long' ? last <= o.price : last >= o.price)
-        : (o.side === 'long' ? last >= o.price : last <= o.price);
-      if (!hit) continue;
-      acct.orders = acct.orders.filter((x) => x.id !== o.id);
-      const r = openPosition(o, { side: o.side, qty: o.qty, price: last, lev: o.lev, tp: o.tp, sl: o.sl, fx: q.fx, ccy: q.ccy });
-      events.push(r.error ? { type: 'fail', o, reason: r.error } : { type: 'filled', p: r.position });
-    }
-    for (const p of [...acct.positions]) {
-      const q = ctx.quote(p);
-      if (!q.ok) continue;
-      const last = q.price, d = dirOf(p.side);
-      let reason = null;
-      if (p.sl != null && (d > 0 ? last <= p.sl : last >= p.sl)) reason = 'sl';
-      else if (p.tp != null && (d > 0 ? last >= p.tp : last <= p.tp)) reason = 'tp';
-      else if (upnl(p, last, q.fx) <= -p.margin) reason = 'liq'; // perte ≥ marge (en dollars, change compris)
-      if (reason) events.push({ type: 'closed', h: closePosition(p, last, 1, reason, q.fx) });
-    }
+    const events = E.runEngine(acct, ctx.quote);
     if (events.length) save();
     recordEquity();
     for (const e of events) notify(e);
     return events;
+  }
+
+  /* ---------- Synchronisation (facultative) ----------
+   * Le compte est copié sur le serveur, protégé par un code secret (seule son empreinte y est stockée).
+   * Le serveur l'exécute toutes les 5 minutes, même app fermée ; l'app reprend la version la plus récente.
+   */
+  let pushTimer = 0, pushing = false;
+  function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(push, 500); }
+  function setSync(v) { sync = v; if (v) store.set(SYNC_KEY, v); else try { localStorage.removeItem(`marches:${SYNC_KEY}`); } catch { /* rien */ } }
+  function adopt(r) {
+    const a = E.normalize(r.data);
+    if (a) { acct = a; store.set(KEY, acct); }
+    setSync({ ...sync, rev: r.rev });
+    ctx.changed();
+  }
+  async function push() {
+    if (!sync || !acct || pushing) return;
+    pushing = true;
+    try {
+      const r = await ctx.api('paper.put', { code: sync.code, data: acct, rev: sync.rev });
+      setSync({ ...sync, rev: r.rev });
+      syncError = false;
+    } catch (err) {
+      if (err.status === 409 && err.body?.data) { adopt(err.body); ctx.toast(t('sync.conflict')); }
+      else if (err.status === 404) { setSync(null); ctx.toast(t('sync.gone'), 'neg'); ctx.changed(); }
+      else syncError = true;
+    } finally { pushing = false; }
+  }
+  async function pull() {
+    if (!sync) return;
+    try {
+      const r = await ctx.api('paper.get', { code: sync.code });
+      syncError = false;
+      if (r.rev !== sync.rev) adopt(r);
+    } catch (err) {
+      if (err.status === 404) { setSync(null); ctx.toast(t('sync.gone'), 'neg'); ctx.changed(); } else syncError = true;
+    }
+  }
+  const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const newCode = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), (b) => B32[b & 31]).join('');
+  const showCode = (c) => c.match(/.{1,4}/g).join('-');
+  const readCode = (v) => String(v || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  async function enableSync() {
+    if (!acct) create(CAPITALS[1]);
+    const code = newCode();
+    const r = await ctx.api('paper.put', { code, data: acct, create: true });
+    setSync({ code, rev: r.rev, notify: false });
+  }
+  async function joinSync(raw) {
+    const code = readCode(raw);
+    if (code.length !== 24) throw Object.assign(new Error('code'), { status: 400 });
+    const r = await ctx.api('paper.get', { code });
+    if (acct && acct.history.length + acct.positions.length > 0 && !confirm(t('sync.replaceConfirm'))) return false;
+    setSync({ code, rev: r.rev, notify: false });
+    adopt(r);
+    return true;
+  }
+  async function stopSync(remove) {
+    if (!sync) return;
+    if (remove) await ctx.api('paper.delete', { code: sync.code }).catch(() => {});
+    else if (sync.notify) await ctx.linkDevice(sync.code, false).catch(() => {});
+    setSync(null);
+    board = null;
+  }
+  async function loadBoard() {
+    if (!sync) return;
+    try { board = await ctx.api('group.board', { code: sync.code }); } catch { board = board || { groups: [], error: true }; }
   }
 
   /* ---------- Formats ---------- */
@@ -154,6 +135,42 @@ export function createPaper(ctx) {
     }
   }
 
+  /* ---------- Comparaison au marché (S&P 500, Bitcoin) sur la même période ----------
+   * Bougies réelles (/api/candles, Yahoo Finance) : cours de départ = dernière clôture connue avant la création
+   * du compte ; cours actuel = dernière bougie. Indice absent ou trop ancien → « n/d », rien d'extrapolé.
+   */
+  const BENCH = [
+    { key: 'spx', kind: 'i', symbol: '^GSPC', label: 'S&P 500' },
+    { key: 'btc', kind: 'c', symbol: 'BTC', id: 'bitcoin', label: 'Bitcoin' },
+  ];
+  let bench = null, benchLoading = false;
+  const benchFresh = () => bench && bench.since === acct.createdAt && Date.now() - bench.at < 10 * 60_000;
+  async function loadBench() {
+    if (benchLoading || !acct || benchFresh()) return false;
+    benchLoading = true;
+    const since = acct.createdAt;
+    const hourly = Date.now() - since < 80 * 86_400_000; // bougies horaires sur 3 mois, sinon journalières (5 ans)
+    const step = (hourly ? 3600 : 86_400) * 1000;
+    const series = {};
+    await Promise.all(BENCH.map(async (b) => {
+      try {
+        const r = await fetch(`/api/candles?kind=${b.kind}&symbol=${encodeURIComponent(b.symbol)}${b.id ? `&id=${b.id}` : ''}&tf=${hourly ? '1h' : '1d'}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        const c = (d.candles || []).map((x) => [x[0] * 1000, x[4]]).filter((x) => isNum(x[1]) && x[1] > 0);
+        // Dernière bougie terminée avant la création du compte (heure de fin ≤ création).
+        let i = -1;
+        for (let k = 0; k < c.length; k++) if (Math.min(c[k + 1]?.[0] ?? Infinity, c[k][0] + step) <= since) i = k;
+        if (i < 0 || c.length - 1 <= i && Date.now() - c[i][0] > 4 * 86_400_000) return;
+        const start = c[i][1], last = c[c.length - 1][1];
+        series[b.key] = { start, pct: (last / start - 1) * 100, pts: [[since, start], ...c.slice(i + 1)], source: d.source };
+      } catch { /* indisponible : n/d */ }
+    }));
+    bench = { since, at: Date.now(), series };
+    benchLoading = false;
+    return true;
+  }
+
   /* ---------- Onglet Compte ---------- */
   function equitySVG() {
     const pts = acct.equity.map(([x, y]) => [x, y]);
@@ -161,15 +178,31 @@ export function createPaper(ctx) {
     if (s.valued) pts.push([Date.now(), s.equity]);
     if (pts.length < 2) return '';
     const W = 320, H = 70;
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys, acct.initial), y1 = Math.max(...ys, acct.initial);
-    const X = (x) => (x1 === x0 ? 0 : ((x - x0) / (x1 - x0)) * W);
+    // Indices de comparaison ramenés à la même mise de départ que le compte.
+    const lines = BENCH.map((b) => {
+      const sr = bench?.since === acct.createdAt ? bench.series[b.key] : null;
+      return sr ? { key: b.key, pts: sr.pts.map(([x, v]) => [x, (acct.initial * v) / sr.start]) } : null;
+    }).filter(Boolean);
+    const all = [...pts, ...lines.flatMap((l) => l.pts)];
+    const xs = pts.map((p) => p[0]), ys = all.map((p) => p[1]);
+    const x0 = Math.min(...xs), x1 = Math.max(...xs, ...lines.map((l) => l.pts[l.pts.length - 1][0])), y0 = Math.min(...ys, acct.initial), y1 = Math.max(...ys, acct.initial);
+    const X = (x) => (x1 === x0 ? 0 : ((Math.max(x0, x) - x0) / (x1 - x0)) * W);
     const Y = (y) => (y1 === y0 ? H / 2 : H - 4 - ((y - y0) / (y1 - y0)) * (H - 8));
-    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join('');
+    const path = (p) => p.map((q, i) => `${i ? 'L' : 'M'}${X(q[0]).toFixed(1)},${Y(q[1]).toFixed(1)}`).join('');
+    const d = path(pts);
     const up = pts[pts.length - 1][1] >= acct.initial;
     return `<svg class="pt-curve ${up ? 'up' : 'down'}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t('pt.equityChart'))}">
       <line x1="0" x2="${W}" y1="${Y(acct.initial).toFixed(1)}" y2="${Y(acct.initial).toFixed(1)}" class="base"/>
-      <path d="${d}L${W},${H}L0,${H}Z" class="area"/><path d="${d}" class="line"/></svg>`;
+      ${lines.map((l) => `<path d="${path(l.pts)}" class="bench b-${l.key}"/>`).join('')}
+      <path d="${d}L${X(pts[pts.length - 1][0]).toFixed(1)},${H}L0,${H}Z" class="area"/><path d="${d}" class="line"/></svg>`;
+  }
+  function benchHTML(s) {
+    const fresh = bench?.since === acct.createdAt;
+    const item = (key, label, v) => `<span class="pt-bench-i"><i class="sw sw-${key}"></i>${esc(label)} <b class="${cls(v)}">${isNum(v) ? ctx.pct(v) : fresh ? ctx.ND : '…'}</b></span>`;
+    const src = [...new Set(Object.values(bench?.series || {}).map((x) => x.source).filter(Boolean))].join(', ');
+    return `<div class="pt-bench">${item('acct', t('pt.bench.acct'), s.valued ? s.pnlPct : null)}
+      ${BENCH.map((b) => item(b.key, b.label, fresh ? bench.series[b.key]?.pct : null)).join('')}
+      <small>${t('pt.bench.note')}${src ? ` · ${esc(src)}` : ''}</small></div>`;
   }
 
   function stats() {
@@ -199,11 +232,13 @@ export function createPaper(ctx) {
       <div class="pt-row2">${qtyFmt(p.qty)} @ ${px(p.entry, p)} · ${t('pt.nowShort')} ${isNum(q.price) ? px(q.price, p) : ctx.ND}</div>
       <div class="pt-row3">TP ${p.tp != null ? px(p.tp, p) : '—'} · SL ${p.sl != null ? px(p.sl, p) : '—'} · ${t('pt.liqShort')} ${liq != null ? px(liq, p) : '—'} ${note}</div>
       <div class="pt-actions"><button type="button" class="btn btn-sm" data-manage="${esc(p.id)}">${t('pt.manage')}</button>
-        <button type="button" class="btn btn-sm" data-close="${esc(p.id)}">${t('pt.close')}</button></div>
+        <button type="button" class="btn btn-sm" data-close="${esc(p.id)}">${t('pt.close')}</button>
+        <button type="button" class="btn btn-sm" data-share="${esc(p.id)}">${t('share.btn')}</button></div>
     </li>`;
   }
 
   function render(el) {
+    if (!acct && sync) { el.innerHTML = `<p class="pt-empty">${t('loading')}</p>`; pull().then(() => render(el)); return; }
     if (!acct) {
       el.innerHTML = `<div class="pt-welcome card">
         <h2>${t('pt.welcome')}</h2><p>${t('pt.welcomeP')}</p>
@@ -228,6 +263,7 @@ export function createPaper(ctx) {
         <div class="pt-eq">${money(s.equity)}</div>
         <div class="pt-perf ${cls(s.pnl)}">${signed(s.pnl)} (${ctx.pct(s.pnlPct)}) <span>${t('pt.since', { d: ctx.day(acct.createdAt), c: money(acct.initial) })}</span></div>
         ${equitySVG()}
+        ${benchHTML(s)}
         <dl class="pt-kv">
           <div><dt>${t('pt.cash')}</dt><dd>${money(avail)}</dd></div>
           <div><dt>${t('pt.margin')}</dt><dd>${money(s.margin)}</dd></div>
@@ -250,15 +286,19 @@ export function createPaper(ctx) {
       <h2 class="pt-h">${t('pt.history')} <span>${acct.history.length}</span></h2>
       ${acct.history.length ? `<ul class="pt-list pt-hist">${acct.history.slice(0, 50).map((h) => `<li>
         <div class="pt-row1">${ctx.logo(h, 20)}<strong>${esc(h.label)}</strong><span class="pt-badge ${h.side}">${h.side === 'long' ? 'LONG' : 'SHORT'} ${h.lev}×</span>
-          <span class="pt-reason r-${h.reason}">${t(`pt.reason.${h.reason}`)}</span><span class="pt-pnl ${cls(h.net)}">${signed(h.net)}</span></div>
+          <span class="pt-reason r-${h.reason}">${t(`pt.reason.${h.reason}`)}</span><span class="pt-pnl ${cls(h.net)}">${signed(h.net)}</span>
+          <button type="button" class="pt-share" data-share-h="${esc(h.id)}" aria-label="${esc(t('share.btn'))}" title="${esc(t('share.btn'))}"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
         <div class="pt-row2">${qtyFmt(h.qty)} · ${px(h.entry, h)} → ${px(h.exit, h)} · ${t('pt.feesShort')} ${money(h.fees)} · ${ctx.day(h.closedAt)} ${ctx.time(h.closedAt)}</div></li>`).join('')}</ul>`
         : `<p class="pt-empty">${t('pt.noHistory')}</p>`}
 
       <h2 class="pt-h">${t('pt.stats')}</h2>
       <dl class="pt-kv pt-stats">${stats().map(([k, v, c]) => `<div><dt>${k}</dt><dd class="${v === ctx.ND ? '' : c || ''}">${v}</dd></div>`).join('')}</dl>
 
+      ${syncHTML()}
       <p class="consent-small pt-disc">${t('pt.disclaimer')}</p>
       <button type="button" class="btn btn-sm pt-reset" data-reset>${t('pt.reset')}</button>`;
+    bindSync(el);
+    if (!benchFresh()) loadBench().then((changed) => { if (changed && el.isConnected) render(el); });
 
     el.querySelector('[data-new]').addEventListener('click', openPicker);
     el.querySelector('[data-reset]').addEventListener('click', () => {
@@ -272,11 +312,81 @@ export function createPaper(ctx) {
       save();
       render(el);
     }));
+    el.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', () => {
+      const p = acct.positions.find((x) => x.id === b.dataset.share);
+      if (p) ctx.share(p, false);
+    }));
+    el.querySelectorAll('[data-share-h]').forEach((b) => b.addEventListener('click', () => {
+      const h = acct.history.find((x) => x.id === b.dataset.shareH);
+      if (h) ctx.share(h, true);
+    }));
     el.querySelectorAll('[data-manage]').forEach((b) => b.addEventListener('click', () => openManage(b.dataset.manage)));
     el.querySelectorAll('[data-close]').forEach((b) => b.addEventListener('click', () => {
       const p = acct.positions.find((x) => x.id === b.dataset.close);
       if (p) closeManual(p, 1);
     }));
+  }
+
+  /* ---------- Carte « Synchronisation et classement » ---------- */
+  function syncHTML() {
+    if (!sync) {
+      return `<section class="card pt-sync"><h2>${t('sync.title')}</h2><p>${t('sync.pitch')}</p>
+        <div class="pt-top-actions"><button type="button" class="btn btn-primary" data-sync="on">${t('sync.enable')}</button></div>
+        <div class="pt-join"><div class="alert-input"><input id="pt-code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="${esc(t('sync.codePh'))}"></div>
+          <button type="button" class="btn" data-sync="join">${t('sync.join')}</button></div>
+        <p class="consent-small">${t('sync.privacy', { link: `<a href="${ctx.legalPrefix()}/confidentialite.html#demo">${t('alert.privacy')}</a>` })}</p></section>`;
+    }
+    const groups = board?.groups || [];
+    const pct = (v) => (isNum(v) ? ctx.pct(v) : ctx.ND);
+    return `<section class="card pt-sync"><h2>${t('sync.title')} <span class="pt-badge long">${t('sync.on')}</span></h2>
+      ${syncError ? `<p class="pt-note">${t('sync.error')}</p>` : ''}
+      <p>${t('sync.onText')}</p>
+      <p class="pt-label">${t('sync.code')}</p>
+      <div class="pt-code"><code>${esc(showCode(sync.code))}</code><button type="button" class="btn btn-sm" data-sync="copy">${t('sync.copy')}</button></div>
+      <p class="consent-small">${t('sync.codeNote')}</p>
+      <label class="pt-switch"><input type="checkbox" data-sync="notify" ${sync.notify ? 'checked' : ''}> ${t('sync.notify')}</label>
+      <h3>${t('lb.title')}</h3>
+      <div class="pt-join"><div class="alert-input"><input id="pt-pseudo" type="text" maxlength="20" autocomplete="nickname" value="${esc(board?.pseudo || '')}" placeholder="${esc(t('lb.pseudoPh'))}"></div>
+        <button type="button" class="btn" data-sync="pseudo">${t('lb.savePseudo')}</button></div>
+      ${groups.map((g) => `<div class="pt-board"><div class="pt-board-h"><strong>${esc(g.name)}</strong><span>${t('lb.code')} <code>${esc(g.code)}</code></span>
+          <button type="button" class="alert-del" data-leave="${esc(g.code)}" aria-label="${esc(t('lb.leave'))}">✕</button></div>
+        <ol>${g.members.map((m) => `<li class="${m.me ? 'me' : ''}"><span>${esc(m.pseudo || t('lb.anon'))}${m.me ? ` (${t('lb.me')})` : ''}</span>
+          <span class="${isNum(m.pnlPct) && m.pnlPct > 0 ? 'pos' : isNum(m.pnlPct) && m.pnlPct < 0 ? 'neg' : ''}">${pct(m.pnlPct)}</span><small>${m.trades} ${t('lb.trades')}</small></li>`).join('')}</ol></div>`).join('')}
+      ${board?.error ? `<p class="pt-note">${t('sync.error')}</p>` : ''}
+      <div class="pt-join"><div class="alert-input"><input id="pt-group" type="text" maxlength="30" autocomplete="off" placeholder="${esc(t('lb.groupPh'))}"></div>
+        <button type="button" class="btn" data-sync="gcreate">${t('lb.create')}</button><button type="button" class="btn" data-sync="gjoin">${t('lb.join')}</button></div>
+      <p class="consent-small">${t('lb.note')}</p>
+      <div class="pt-top-actions"><button type="button" class="btn btn-sm" data-sync="off">${t('sync.stop')}</button>
+        <button type="button" class="btn btn-sm" data-sync="delete">${t('sync.delete')}</button></div></section>`;
+  }
+  function bindSync(el) {
+    const busy = async (btn, fn) => {
+      btn.disabled = true;
+      try { await fn(); } catch (err) { ctx.toast(t(err.status === 404 ? 'sync.unknown' : err.status === 400 ? 'sync.invalid' : err.status === 409 ? 'lb.limit' : 'sync.error'), 'neg'); }
+      btn.disabled = false;
+      render(el);
+    };
+    el.querySelectorAll('[data-sync]').forEach((b) => b.addEventListener(b.type === 'checkbox' ? 'change' : 'click', () => {
+      const a = b.dataset.sync;
+      if (a === 'on') busy(b, async () => { await enableSync(); ctx.toast(t('sync.enabled')); });
+      if (a === 'join') busy(b, async () => { if (await joinSync(el.querySelector('#pt-code').value)) ctx.toast(t('sync.joined')); });
+      if (a === 'copy') { navigator.clipboard?.writeText(showCode(sync.code)).then(() => ctx.toast(t('sync.copied'))).catch(() => {}); }
+      if (a === 'notify') busy(b, async () => {
+        await ctx.linkDevice(sync.code, b.checked);
+        setSync({ ...sync, notify: b.checked });
+      });
+      if (a === 'pseudo') busy(b, async () => { await ctx.api('paper.pseudo', { code: sync.code, pseudo: el.querySelector('#pt-pseudo').value }); await loadBoard(); ctx.toast(t('lb.saved')); });
+      if (a === 'gcreate') busy(b, async () => { const r = await ctx.api('group.create', { code: sync.code, name: el.querySelector('#pt-group').value }); await loadBoard(); ctx.toast(t('lb.created', { c: r.code })); });
+      if (a === 'gjoin') busy(b, async () => { await ctx.api('group.join', { code: sync.code, group: el.querySelector('#pt-group').value }); await loadBoard(); ctx.toast(t('lb.joined')); });
+      if (a === 'off') busy(b, async () => { if (confirm(t('sync.stopConfirm'))) await stopSync(false); });
+      if (a === 'delete') busy(b, async () => { if (confirm(t('sync.deleteConfirm'))) await stopSync(true); });
+    }));
+    el.querySelectorAll('[data-leave]').forEach((b) => b.addEventListener('click', () => busy(b, async () => {
+      if (!confirm(t('lb.leaveConfirm'))) return;
+      await ctx.api('group.leave', { code: sync.code, group: b.dataset.leave });
+      await loadBoard();
+    })));
+    if (sync && !board) loadBoard().then(() => { if (el.isConnected && board) render(el); });
   }
 
   function closeManual(p, fraction) {
@@ -329,7 +439,7 @@ export function createPaper(ctx) {
       const s = f.trim().toLowerCase();
       if (!list.length) { ul.innerHTML = `<li class="pt-empty">${t('loading')}</li>`; return; }
       const items = list.filter((a) => !s || a.label.toLowerCase().includes(s) || (a.name || '').toLowerCase().includes(s)).slice(0, 120);
-      ul.innerHTML = items.length ? items.map((a, i) => `<li><button type="button" data-i="${list.indexOf(a)}">${ctx.logo(a, 24)}<span class="pk-l"><strong>${esc(a.label)}</strong><small>${esc(a.name || '')} · ${t(a.kind === 'c' ? 'fav.crypto' : a.kind === 'i' ? 'fav.index' : 'fav.stock')}</small></span>
+      ul.innerHTML = items.length ? items.map((a, i) => `<li><button type="button" data-i="${list.indexOf(a)}">${ctx.logo(a, 24)}<span class="pk-l"><strong>${esc(a.label)}</strong><small>${esc(a.name || '')} · ${t(a.kind === 'c' ? 'fav.crypto' : a.kind === 'i' ? 'fav.index' : a.kind === 'm' ? 'macro.kind' : 'fav.stock')}</small></span>
         <span class="pk-p">${isNum(a.price) ? px(a.price, a) : ctx.ND}<small class="${cls(a.chg)}">${ctx.pct(a.chg)}</small></span></button></li>`).join('')
         : `<li class="pt-empty">${t('pt.noMatch')}</li>`;
     };
@@ -578,7 +688,8 @@ export function createPaper(ctx) {
   }
 
   /** Données rafraîchies : moteur, puis mise à jour du ticket ouvert (cours). */
-  function onData() {
+  async function onData() {
+    await pull();
     const ev = run();
     if (picker && !modal.hidden) picker();
     if (ticket && !modal.hidden) {
@@ -615,6 +726,7 @@ export function createPaper(ctx) {
   }
 
   return {
+    isSynced: () => !!sync,
     liqOf,
     fxOf,
     forAsset,

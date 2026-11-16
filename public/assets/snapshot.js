@@ -1,9 +1,9 @@
-// Image PNG d'une heatmap (cryptos ou entreprises), dessinée dans un <canvas>.
+// Images PNG dessinées dans un <canvas> : heatmap (cryptos ou entreprises) et position du compte de démonstration.
 // Tout est local : les logos passent par le relais /api/logo du site (même origine,
 // donc le canvas reste exportable) et aucune donnée n'est envoyée à un tiers.
 
 const W = 1080, H = 1350, P = 44;
-const C = { bg: '#0b0f14', surface: '#121921', border: '#232d39', text: '#e8eef4', muted: '#8d9aab', up: '#22c55e', down: '#f05252' };
+const C = { bg: '#0b0f14', surface: '#121921', border: '#232d39', text: '#e8eef4', muted: '#8d9aab', up: '#22c55e', down: '#f05252', warn: '#f5b84a' };
 const FONT = '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif';
 const font = (weight, size) => `${weight} ${Math.round(size)}px ${FONT}`;
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -204,6 +204,133 @@ export async function makeSnapshot(opts) {
   ctx.fillStyle = C.muted;
   ctx.textAlign = 'right';
   fitText(ctx, opts.site, W - P, H - P, W - 2 * P - dw - 30, 600, 19, 11);
+
+  return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/png'));
+}
+
+/**
+ * Image carrée d'une position (ouverte ou clôturée) du compte de démonstration.
+ * opts : { title, when, demo, label, name, logo, side:'long'|'short', badge, status, pnlPct, pnl, cls,
+ *          line:[[ms, prix]], marks:[{value, text, color}] (le premier = prix d'entrée, toujours affiché), noLine, rows:[[clé, valeur]], sources, disclaimer, site }
+ */
+export async function makeTradeCard(opts) {
+  const S = 1080;
+  const canvas = document.createElement('canvas');
+  canvas.width = S; canvas.height = S;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = C.bg;
+  ctx.fillRect(0, 0, S, S);
+  const accent = colorOf(opts.cls) || C.text;
+
+  // En-tête
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = C.text;
+  ctx.font = font(800, 42);
+  ctx.fillText(opts.title, P, P + 38);
+  const titleW = ctx.measureText(opts.title).width;
+  ctx.fillStyle = C.muted;
+  ctx.textAlign = 'right';
+  fitText(ctx, opts.when, S - P, P + 36, S - 2 * P - titleW - 30, 600, 22, 13);
+  ctx.textAlign = 'left';
+  ctx.fillStyle = C.warn;
+  fitText(ctx, opts.demo, P, P + 76, S - 2 * P, 700, 22, 13);
+
+  // Actif
+  const ay = P + 110, logo = 96;
+  const img = opts.logo ? await loadImage(`/api/logo?u=${encodeURIComponent(opts.logo)}`) : null;
+  let lx = P;
+  if (img) { drawLogo(ctx, img, P + logo / 2, ay + logo / 2, logo); lx += logo + 24; }
+  ctx.fillStyle = C.text;
+  const ls = fitText(ctx, opts.label, lx, ay + 54, 520, 800, 56, 24);
+  ctx.font = font(800, ls);
+  const labW = Math.min(520, ctx.measureText(opts.label).width);
+  ctx.fillStyle = C.muted;
+  fitText(ctx, opts.name || '', lx, ay + 92, S - P - lx, 500, 26, 13);
+  // Badge LONG / SHORT
+  ctx.font = font(800, 24);
+  const bw = ctx.measureText(opts.badge).width + 28, bx = lx + labW + 18;
+  roundRect(ctx, bx, ay + 22, bw, 40, 10);
+  ctx.fillStyle = opts.side === 'long' ? 'rgba(34,197,94,.18)' : 'rgba(240,82,82,.18)'; ctx.fill();
+  ctx.fillStyle = opts.side === 'long' ? C.up : C.down;
+  ctx.textBaseline = 'middle';
+  ctx.fillText(opts.badge, bx + 14, ay + 43);
+  ctx.textBaseline = 'alphabetic';
+
+  // Résultat
+  const ry = ay + logo + 40;
+  ctx.fillStyle = C.muted;
+  fitText(ctx, opts.status, P, ry + 26, S - 2 * P, 600, 26, 13);
+  ctx.fillStyle = accent;
+  const ps = fitText(ctx, opts.pnlPct, P, ry + 150, S - 2 * P, 800, 128, 40);
+  ctx.font = font(800, ps);
+  const pw = ctx.measureText(opts.pnlPct).width;
+  fitText(ctx, opts.pnl, P + pw + 28, ry + 150, S - 3 * P - pw, 700, 44, 18);
+
+  // Courbe du cours (bougies réelles) avec entrée, TP et SL
+  const cy = ry + 186, ch = 262, cw = S - 2 * P;
+  roundRect(ctx, P, cy, cw, ch, 18);
+  ctx.fillStyle = C.surface; ctx.fill();
+  ctx.strokeStyle = C.border; ctx.lineWidth = 2; ctx.stroke();
+  const pts = (opts.line || []).filter((p) => Number.isFinite(p[1]));
+  if (pts.length >= 2) {
+    const marks = (opts.marks || []).filter((m) => Number.isFinite(m.value));
+    const vs = pts.map((p) => p[1]);
+    let lo = Math.min(...vs), hi = Math.max(...vs);
+    // Le prix d'entrée est toujours visible ; TP et SL seulement s'ils restent proches de la courbe.
+    const span0 = hi - lo;
+    marks.forEach((m, i) => { if (i === 0 || (m.value >= lo - span0 * 0.6 && m.value <= hi + span0 * 0.6)) { lo = Math.min(lo, m.value); hi = Math.max(hi, m.value); } });
+    if (hi === lo) { hi += 1; lo -= 1; }
+    const ix = P + 20, iw = cw - 210, iy = cy + 24, ih = ch - 48;
+    const t0 = pts[0][0], t1 = pts[pts.length - 1][0];
+    const X = (t) => ix + (t1 === t0 ? 0 : ((t - t0) / (t1 - t0)) * iw);
+    const Y = (v) => iy + ih - ((v - lo) / (hi - lo)) * ih;
+    ctx.save();
+    ctx.font = font(600, 19);
+    ctx.textBaseline = 'middle';
+    for (const m of marks) {
+      if (m.value < lo || m.value > hi) continue;
+      const y = Y(m.value);
+      ctx.strokeStyle = m.color; ctx.lineWidth = 2; ctx.setLineDash([10, 8]);
+      ctx.beginPath(); ctx.moveTo(ix, y); ctx.lineTo(ix + iw, y); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = m.color;
+      fitText(ctx, m.text, ix + iw + 14, y, 170, 600, 19, 11);
+    }
+    ctx.strokeStyle = C.text; ctx.lineWidth = 3; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    pts.forEach((p, i) => (i ? ctx.lineTo(X(p[0]), Y(p[1])) : ctx.moveTo(X(p[0]), Y(p[1]))));
+    ctx.stroke();
+    const last = pts[pts.length - 1];
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(X(last[0]), Y(last[1]), 8, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else {
+    ctx.fillStyle = C.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    fitText(ctx, opts.noLine || '', S / 2, cy + ch / 2, cw - 40, 500, 24, 12);
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+
+  // Détails (2 colonnes)
+  const gy = cy + ch + 26, colW = (S - 2 * P - 30) / 2;
+  opts.rows.slice(0, 6).forEach(([k, v], i) => {
+    const x = P + (i % 2) * (colW + 30), y = gy + Math.floor(i / 2) * 60;
+    ctx.fillStyle = C.muted;
+    fitText(ctx, String(k).toUpperCase(), x, y + 18, colW, 600, 17, 11);
+    ctx.fillStyle = C.text;
+    fitText(ctx, String(v), x, y + 50, colW, 700, 28, 13);
+  });
+
+  // Pied
+  ctx.fillStyle = C.muted;
+  fitText(ctx, opts.sources, P, S - P - 34, S - 2 * P, 500, 18, 11);
+  ctx.fillStyle = C.text;
+  ctx.font = font(600, 19);
+  ctx.fillText(opts.disclaimer, P, S - P);
+  const dw = ctx.measureText(opts.disclaimer).width;
+  ctx.fillStyle = C.muted;
+  ctx.textAlign = 'right';
+  fitText(ctx, opts.site, S - P, S - P, S - 2 * P - dw - 30, 600, 19, 11);
 
   return new Promise((resolve, reject) => canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/png'));
 }

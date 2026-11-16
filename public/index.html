@@ -17,6 +17,7 @@
   <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
   <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/theme.js"></script>
 </head>
 <body>
   <header class="topbar">
@@ -26,6 +27,14 @@
         <p id="subtitle" class="subtitle" data-i18n="loading">Chargement…</p>
       </div>
       <div class="top-actions">
+      <button id="search-open" class="icon-btn" type="button" aria-label="Rechercher un actif" data-i18n-aria="search.open">
+        <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+      </button>
+      <button id="theme-btn" class="icon-btn" type="button" aria-label="Thème : automatique">
+        <svg class="ic-auto" viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+        <svg class="ic-dark" viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        <svg class="ic-light" viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
       <select id="lang" class="lang-select" aria-label="Langue" data-i18n-aria="language"></select>
       <button id="refresh" class="icon-btn" type="button" aria-label="Rafraîchir" data-i18n-aria="refresh">
         <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
@@ -52,16 +61,20 @@
       <p class="fx-note" id="stocks-fx" hidden></p>
       <div class="stats" id="stocks-stats"></div>
       <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des entreprises cotées"></div>
+      <p class="fx-note" id="stocks-sector-src" hidden></p>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
       <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="stocks"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
     <section id="view-indices" class="view" data-tab="indices" aria-label="Indices" hidden>
       <div class="tools" id="indices-tools" role="toolbar" aria-label="Région" data-i18n-aria="tools.region"></div>
       <section class="market-clock" id="market-clock" aria-live="off"></section>
+      <section class="market-clock agenda" id="agenda" aria-live="off"></section>
       <div class="grid" id="grid-ameriques" hidden></div>
       <div class="grid" id="grid-europe" hidden></div>
       <div class="grid" id="grid-asie" hidden></div>
       <div class="grid" id="grid-afrique" hidden></div>
+      <div class="grid" id="grid-commo" hidden></div>
+      <div class="grid" id="grid-fx" hidden></div>
       <p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p>
     </section>
     <section id="view-compte" class="view" data-tab="compte" aria-label="Compte" hidden><div id="paper" class="paper"></div></section>
@@ -148,7 +161,11 @@
       <h2 id="alert-title"></h2>
       <p class="alert-now" id="alert-now"></p>
       <form id="alert-form" novalidate>
-        <label for="alert-target" data-i18n="alert.target">Me prévenir quand le cours atteint</label>
+        <div class="seg seg-wide alert-mode" role="group" id="alert-mode">
+          <button type="button" data-metric="price" aria-pressed="true" data-i18n="alert.mPrice">Prix</button>
+          <button type="button" data-metric="pct" aria-pressed="false" data-i18n="alert.mPct">Variation en %</button>
+        </div>
+        <label for="alert-target" id="alert-label" data-i18n="alert.target">Me prévenir quand le cours atteint</label>
         <div class="alert-input"><input id="alert-target" type="text" inputmode="decimal" autocomplete="off" enterkeyhint="done"><span id="alert-unit"></span></div>
         <p class="alert-note" id="alert-note"></p>
         <p class="alert-dir" id="alert-dir" aria-live="polite"></p>
@@ -160,6 +177,15 @@
       </form>
       <div id="alert-list"></div>
       <p class="snap-hint" id="alert-info"></p>
+    </div>
+  </div>
+
+  <div id="search" class="snap" role="dialog" aria-modal="true" aria-labelledby="search-title" hidden>
+    <div class="snap-card search-card">
+      <h2 id="search-title" data-i18n="search.title">Rechercher un actif</h2>
+      <div class="alert-input"><input id="search-q" type="search" autocomplete="off" enterkeyhint="search" data-i18n-ph="search.ph" placeholder="Apple, LVMH, Toyota, PEPE…"></div>
+      <div id="search-results" class="search-results"></div>
+      <div class="snap-actions"><button type="button" class="btn" id="search-close" data-i18n="snap.close">Fermer</button></div>
     </div>
   </div>
 
