@@ -93,6 +93,8 @@ export function createTradeChart(ctx) {
         <select id="tc-cmp-sel" class="lang-select"><option value="">${t('tc.cmpNone')}</option>${ctx.compareList().filter((x) => x.key !== keyOf(asset)).map((x) =>
           `<option value="${esc(x.key)}"${compareWith?.forKey === keyOf(asset) && compareWith.key === x.key ? ' selected' : ''}>${esc(x.label)}${x.name ? ` · ${esc(x.name)}` : ''}</option>`).join('')}</select>
         <span class="tc-cmp-l" id="tc-cmp-l"></span></div>
+      <div class="tc-draw" role="group" aria-label="${esc(t('draw.label'))}"><span>${t('draw.label')}</span>${[['h', t('draw.h')], ['t', t('draw.t')], ['f', t('draw.f')]].map(([k, l]) =>
+        `<button type="button" data-draw="${k}" aria-pressed="false">${l}</button>`).join('')}<button type="button" data-draw="clear">${t('draw.clear')}</button></div>
       <div class="tc-chart" id="tc-chart"><div class="msg">${t('chartLoading')}</div></div>
       <div class="tc-pop" id="tc-pop" hidden></div>
       <p class="tc-hint">${t('tc.hint')}</p>
@@ -102,6 +104,17 @@ export function createTradeChart(ctx) {
     cur = { asset, el, tf, lines: [], tap: null };
     el.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { ctx.setTf(b.dataset.tf); mount(el, asset); }));
     el.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => ctx.openTicket(asset, { side: b.dataset.side })));
+    el.querySelectorAll('[data-draw]').forEach((b) => b.addEventListener('click', () => {
+      if (!cur) return;
+      if (b.dataset.draw === 'clear') {
+        if (!ctx.getDraw(keyOf(asset)).length || !confirm(t('draw.clearConfirm'))) return;
+        ctx.setDraw(keyOf(asset), []); cur.drawMode = null; cur.drawP1 = null; renderDrawings(); setDrawButtons(); return;
+      }
+      cur.drawMode = cur.drawMode === b.dataset.draw ? null : b.dataset.draw;
+      cur.drawP1 = null;
+      setDrawButtons();
+      if (cur.drawMode) ctx.toast(t(cur.drawMode === 'h' ? 'draw.hintH' : 'draw.hint2'));
+    }));
     el.querySelector('#tc-cmp-sel').addEventListener('change', (e) => {
       const x = ctx.compareList().find((y) => y.key === e.target.value);
       compareWith = x ? { forKey: keyOf(asset), key: x.key, asset: x } : null;
@@ -148,6 +161,7 @@ export function createTradeChart(ctx) {
     Object.assign(cur, { chart, series, LWC, bars, prec, ind: {} });
     buildIndicators();
     applyCompare();
+    renderDrawings();
     el.querySelector('#tc-src').textContent = t('tc.src', { s: data.source });
     applyLive();
     drawLines();
@@ -311,8 +325,80 @@ export function createTradeChart(ctx) {
     chart.subscribeClick((param) => {
       if (Date.now() - suppressClick < 500 || !param.point) return;
       const price = series.coordinateToPrice(param.point.y);
+      if (cur.drawMode) return; // en mode tracé, les touchers sont gérés plus bas (pointerdown / pointerup)
       if (isNum(price) && price > 0) showPop(price);
     });
+    // Mode tracé : chaque toucher (sans glissement) pose un point. Géré ici plutôt que par subscribeClick,
+    // car deux touchers rapprochés y comptent pour un double toucher et le second serait perdu.
+    let tapStart = null;
+    box.addEventListener('pointerdown', (e) => { if (cur?.drawMode) tapStart = { x: e.clientX, y: e.clientY, at: Date.now() }; }, { capture: true });
+    box.addEventListener('pointerup', (e) => {
+      const st = tapStart; tapStart = null;
+      if (!cur?.drawMode || !st || Math.hypot(e.clientX - st.x, e.clientY - st.y) > 8 || Date.now() - st.at > 800) return;
+      const r = box.getBoundingClientRect();
+      const z = r.width / box.offsetWidth || 1; // zoom de l'interface (taille du texte)
+      const point = { x: (e.clientX - r.left) / z, y: (e.clientY - r.top) / z };
+      suppressClick = Date.now(); // ce toucher sert au tracé : pas de menu d'ordre
+      drawAt({ point, time: null }, series.coordinateToPrice(point.y));
+    }, { capture: true });
+  }
+
+  /* Tracés de l'utilisateur (par actif, mémorisés sur l'appareil) : ligne horizontale, tendance (2 points), Fibonacci (2 points). */
+  const FIB = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  function setDrawButtons() {
+    cur?.el.querySelectorAll('[data-draw]').forEach((b) => b.setAttribute('aria-pressed', String(cur.drawMode === b.dataset.draw)));
+  }
+  /** Date d'un point du graphique, y compris à droite de la dernière bougie (prolongement au pas de l'unité de temps). */
+  function timeFromX(x) {
+    const ts = cur.chart.timeScale();
+    const direct = ts.coordinateToTime(x);
+    if (direct != null) return direct;
+    const logical = ts.coordinateToLogical(x);
+    const bars = cur.bars;
+    if (logical == null || !bars.length) return null;
+    const i = Math.round(logical);
+    if (i < 0) return bars[0].time;
+    if (i < bars.length) return bars[i].time;
+    return bars[bars.length - 1].time + (i - (bars.length - 1)) * TF_SEC[cur.tf];
+  }
+  function drawAt(param, price) {
+    if (!isNum(price) || price <= 0) return;
+    const time = param.time ?? timeFromX(param.point.x);
+    const key = keyOf(cur.asset);
+    const list = ctx.getDraw(key);
+    if (cur.drawMode === 'h') list.push({ type: 'h', price });
+    else if (!cur.drawP1) { if (time == null) return; cur.drawP1 = { time, price }; ctx.toast(t('draw.hintNext')); return; }
+    else {
+      if (time == null || time === cur.drawP1.time) return;
+      list.push({ type: cur.drawMode, p1: cur.drawP1, p2: { time, price } });
+    }
+    ctx.setDraw(key, list.slice(-20));
+    cur.drawMode = null; cur.drawP1 = null;
+    setDrawButtons();
+    renderDrawings();
+  }
+  function renderDrawings() {
+    if (!cur?.chart) return;
+    const { chart, series, LWC } = cur;
+    for (const x of cur.drawObjs || []) { try { if (x.line) series.removePriceLine(x.line); else chart.removeSeries(x.series); } catch { /* déjà retiré */ } }
+    cur.drawObjs = [];
+    const color = '#b48cff', S = LWC.LineStyle;
+    for (const d of ctx.getDraw(keyOf(cur.asset))) {
+      if (d.type === 'h' && isNum(d.price)) {
+        cur.drawObjs.push({ line: series.createPriceLine({ price: d.price, color, lineStyle: S.Dashed, lineWidth: 1, axisLabelVisible: true, title: '' }) });
+      } else if (d.type === 't' && d.p1 && d.p2) {
+        const pts = [d.p1, d.p2].sort((a, b) => a.time - b.time).map((p) => ({ time: p.time, value: p.price }));
+        const ls = chart.addSeries(LWC.LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+        ls.setData(pts);
+        cur.drawObjs.push({ series: ls });
+      } else if (d.type === 'f' && d.p1 && d.p2) {
+        const hi = Math.max(d.p1.price, d.p2.price), lo = Math.min(d.p1.price, d.p2.price);
+        for (const r of FIB) {
+          const price = hi - (hi - lo) * r;
+          cur.drawObjs.push({ line: series.createPriceLine({ price, color, lineStyle: r === 0 || r === 1 ? S.Solid : S.Dotted, lineWidth: 1, axisLabelVisible: false, title: `Fib ${ctx.num(r * 100, 1)} %` }) });
+        }
+      }
+    }
   }
 
   function hidePop() {

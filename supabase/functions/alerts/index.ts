@@ -6,6 +6,7 @@
 //   list     { token }             → alertes de l'appareil
 //   create   { token, alert }      → nouvelle alerte (20 actives au plus par appareil, dont 10 techniques)
 //   summary.set { token, time, tz, assets } → résumé quotidien par notification (heure locale), ou désactivation (time null)
+//   moves.set { token, pct, assets } → alertes automatiques de forts mouvements (seuil en %), ou désactivation (pct null)
 //   delete   { token, id }         → supprime une alerte
 //   forget   { token }             → supprime l'appareil et toutes ses alertes
 //   paper.*  { code, … }            → compte de démonstration synchronisé (voir plus bas), groupes et classement
@@ -101,9 +102,10 @@ async function list(body: Record<string, any>) {
   const d = await device(body.token);
   if (!d) return json({ alerts: [], registered: false });
   const rows = await sql`select * from marches.alerts where device_id = ${d.id} order by created_at desc`;
-  const [dev] = await sql`select summary_time, tz, summary_assets from marches.devices where id = ${d.id}`;
+  const [dev] = await sql`select summary_time, tz, summary_assets, moves_pct, moves_assets from marches.devices where id = ${d.id}`;
   return json({ alerts: rows.map(publicAlert), registered: true,
-    summary: dev?.summary_time ? { time: dev.summary_time, tz: dev.tz, count: (dev.summary_assets || []).length } : null });
+    summary: dev?.summary_time ? { time: dev.summary_time, tz: dev.tz, count: (dev.summary_assets || []).length } : null,
+    moves: dev?.moves_pct ? { pct: dev.moves_pct, count: (dev.moves_assets || []).length } : null });
 }
 
 async function create(body: Record<string, any>) {
@@ -149,6 +151,24 @@ async function summarySet(body: Record<string, any>) {
       && typeof x.label === 'string' && x.label.length <= 64)
     .map((x: any) => ({ kind: x.kind, assetId: x.assetId, label: x.label }));
   await sql`update marches.devices set summary_time = ${body.time}, tz = ${body.tz}, summary_assets = ${sql.json(assets)} where id = ${d.id}`;
+  return json({ ok: true, count: assets.length });
+}
+
+/** Forts mouvements : seuil (1 à 50 %) et actifs suivis (30 au plus) ; pct null = désactivé. */
+async function movesSet(body: Record<string, any>) {
+  const d = await device(body.token);
+  if (!d) return json({ error: 'appareil non enregistré' }, 401);
+  if (body.pct == null) {
+    await sql`update marches.devices set moves_pct = null, moves_assets = null, moves_sent = null where id = ${d.id}`;
+    return json({ ok: true });
+  }
+  const pct = Number(body.pct);
+  if (!Number.isFinite(pct) || pct < 1 || pct > 50) return json({ error: 'réglage invalide' }, 400);
+  const assets = (Array.isArray(body.assets) ? body.assets : []).slice(0, 30)
+    .filter((x: any) => ['c', 's', 'i', 'm'].includes(x?.kind) && typeof x.assetId === 'string' && /^[\w.^=&:-]{1,64}$/.test(x.assetId)
+      && typeof x.label === 'string' && x.label.length <= 64)
+    .map((x: any) => ({ kind: x.kind, assetId: x.assetId, label: x.label }));
+  await sql`update marches.devices set moves_pct = ${pct}, moves_assets = ${sql.json(assets)} where id = ${d.id}`;
   return json({ ok: true, count: assets.length });
 }
 
@@ -234,6 +254,7 @@ const TEXT: Record<string, Record<string, string>> = {
     rsiAbove: '{l} : RSI 14 à {v} (seuil {t})', rsiBelow: '{l} : RSI 14 à {v} (seuil {t})', maUp: '{l} : la MM20 passe au-dessus de la MM50',
     maDown: '{l} : la MM20 passe en dessous de la MM50', vol: '{l} : volume du jour {v} × la moyenne de 20 jours',
     techBody: 'Bougies journalières · alerte créée sur Marchés — information, pas un conseil financier.',
+    moveUp: '{l} : forte hausse, {v} ({w})', moveDown: '{l} : forte baisse, {v} ({w})', moveBody: 'Seuil automatique : {t}. Information, pas un conseil financier.',
     sumTitle: 'Résumé Marchés · {d}', sumDemo: 'Compte démo {v}', sumNone: 'Aucune donnée disponible pour vos favoris (n/d).', loc: 'fr-FR' },
   en: { above: '{l} rose above {t}', below: '{l} fell below {t}', body: 'Price: {p}. Alert set on Markets — information only, not financial advice.',
     pctAbove: '{l}: change of {v} ({w})', pctBelow: '{l}: change of {v} ({w})', pctBody: 'Threshold: {t}. Alert set on Markets — information only, not financial advice.',
@@ -242,6 +263,7 @@ const TEXT: Record<string, Record<string, string>> = {
     rsiAbove: '{l}: RSI 14 at {v} (threshold {t})', rsiBelow: '{l}: RSI 14 at {v} (threshold {t})', maUp: '{l}: the 20-day MA crosses above the 50-day MA',
     maDown: '{l}: the 20-day MA crosses below the 50-day MA', vol: '{l}: today’s volume {v} × the 20-day average',
     techBody: 'Daily candles · alert set on Markets — information only, not financial advice.',
+    moveUp: '{l}: sharp rise, {v} ({w})', moveDown: '{l}: sharp fall, {v} ({w})', moveBody: 'Automatic threshold: {t}. Information only, not financial advice.',
     sumTitle: 'Markets summary · {d}', sumDemo: 'Demo account {v}', sumNone: 'No data available for your favorites (n/a).', loc: 'en-US' },
   zh: { above: '{l} 已升至 {t} 以上', below: '{l} 已跌至 {t} 以下', body: '价格：{p}。在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
     pctAbove: '{l}：涨跌幅 {v}（{w}）', pctBelow: '{l}：涨跌幅 {v}（{w}）', pctBody: '设定值：{t}。在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
@@ -250,6 +272,7 @@ const TEXT: Record<string, Record<string, string>> = {
     rsiAbove: '{l}：RSI 14 为 {v}（设定值 {t}）', rsiBelow: '{l}：RSI 14 为 {v}（设定值 {t}）', maUp: '{l}：20日均线上穿50日均线',
     maDown: '{l}：20日均线下穿50日均线', vol: '{l}：今日成交量为20日均量的 {v} 倍',
     techBody: '日K线 · 在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
+    moveUp: '{l}：大幅上涨 {v}（{w}）', moveDown: '{l}：大幅下跌 {v}（{w}）', moveBody: '自动阈值：{t}。仅供参考，不构成投资建议。',
     sumTitle: '市场行情摘要 · {d}', sumDemo: '模拟账户 {v}', sumNone: '您的自选暂无数据（n/d）。', loc: 'zh-CN' },
 };
 const fill = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
@@ -555,6 +578,34 @@ async function sendSummaries() {
   return { due: due.length, sent };
 }
 
+/* ---------- Forts mouvements ---------- */
+/** Une notification par actif et par jour (UTC) quand la variation dépasse le seuil de l'appareil. */
+async function sendMoves() {
+  const devs = await sql`select id, endpoint, p256dh, auth, lang, moves_pct, moves_assets, moves_sent from marches.devices where moves_pct is not null`;
+  if (!devs.length) return { devices: 0, sent: 0 };
+  const { quote } = await quoteBook(devs.flatMap((d) => d.moves_assets || []));
+  const today = new Date().toISOString().slice(0, 10);
+  let sent = 0;
+  for (const d of devs) {
+    const L = TEXT[d.lang] || TEXT.fr;
+    const done: Record<string, string> = { ...(d.moves_sent || {}) };
+    let changed = false;
+    for (const x of d.moves_assets || []) {
+      const q = quote(x);
+      const key = `${x.kind}:${x.assetId}`;
+      if (!q.ok || typeof q.chg !== 'number' || Math.abs(q.chg) < d.moves_pct || done[key] === today) continue;
+      const r = await pushTo(d, { title: fill(L[q.chg > 0 ? 'moveUp' : 'moveDown'], { l: x.label, v: pctFmt(q.chg, L.loc), w: x.kind === 'c' ? L.w24 : L.wDay }),
+        body: fill(L.moveBody, { t: `±${pctFmt(d.moves_pct, L.loc).replace(/^[+−]/, '')}` }), tag: `move-${key}`, url: '/#favoris' });
+      if (r === 'gone') break;
+      if (r === 'ok') sent++;
+      done[key] = today; changed = true;
+    }
+    for (const k of Object.keys(done)) if (done[k] !== today) { delete done[k]; changed = true; }
+    if (changed) await sql`update marches.devices set moves_sent = ${sql.json(done)} where id = ${d.id}`;
+  }
+  return { devices: devs.length, sent };
+}
+
 async function check() {
   const alerts = await checkAlerts();
   let paper: Record<string, unknown> = {};
@@ -564,14 +615,16 @@ async function check() {
             where equity is not null and month_key is distinct from to_char(now() at time zone 'UTC', 'YYYY-MM')`;
   let summaries: Record<string, unknown> = {};
   try { summaries = await sendSummaries(); } catch (err) { console.error('summary', err); summaries = { error: String(err) }; }
+  let moves: Record<string, unknown> = {};
+  try { moves = await sendMoves(); } catch (err) { console.error('moves', err); moves = { error: String(err) }; }
   // Conservation limitée : alertes déclenchées 30 jours ; appareils sans alerte ni compte lié, inactifs 90 jours ; comptes démo inactifs 1 an.
   await sql`delete from marches.alerts where triggered_at < now() - interval '30 days'`;
   await sql`delete from marches.devices d where last_seen < now() - interval '90 days'
             and not exists (select 1 from marches.alerts a where a.device_id = d.id and a.triggered_at is null)
-            and not exists (select 1 from marches.paper_devices p where p.device_id = d.id) and d.summary_time is null`;
+            and not exists (select 1 from marches.paper_devices p where p.device_id = d.id) and d.summary_time is null and d.moves_pct is null`;
   await sql`delete from marches.paper_accounts where last_seen < now() - interval '365 days'`;
   await sql`delete from marches.paper_groups g where not exists (select 1 from marches.paper_members m where m.group_code = g.code)`;
-  return json({ ...alerts, paper, summaries });
+  return json({ ...alerts, paper, summaries, moves });
 }
 
 Deno.serve(async (req) => {
@@ -594,6 +647,7 @@ Deno.serve(async (req) => {
       case 'delete': return await remove(body);
       case 'forget': return await forget(body);
       case 'summary.set': return await summarySet(body);
+      case 'moves.set': return await movesSet(body);
       case 'paper.put': return await paperPut(body);
       case 'paper.get': return await paperGet(body);
       case 'paper.delete': return await paperDelete(body);

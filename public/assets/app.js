@@ -5,11 +5,13 @@ import { makeSnapshot, makeTradeCard } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
 import { createTradeChart, INDICATORS, TIMEFRAMES } from './tradechart.js';
 import { rsi, sma, volumeRatio } from './indicators.js';
+import { createPortfolio } from './portfolio.js';
+import { GLOSSARY } from './glossary.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 18; // à garder égal à VERSION ('v18') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
+const APP_BUILD = 19; // à garder égal à VERSION ('v19') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (18/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
-const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
+const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
 const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS];
 const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
@@ -25,8 +27,8 @@ const store = {
 };
 
 // Réglages de l'utilisateur (mémorisés sur l'appareil).
-const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies' };
-const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
+const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies', cryptoView: 'coins', compteView: 'demo' };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors', 'screener'], cryptoView: ['coins', 'cats'], compteView: ['demo', 'real'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
 const prefs = { ...PREF_DEFAULT };
 for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
 { const r = regionOf(location.hash.slice(1)) || regionOf(store.get('tab')); if (r) prefs.region = r; }
@@ -44,7 +46,7 @@ function toggleFav(f) {
 let favLists = (store.get('favLists') || []).filter((x) => x && /^[a-z0-9]{4,12}$/.test(x.id) && typeof x.name === 'string').slice(0, 12);
 const favView = { list: 'all', sort: 'added', organize: false, ...(store.get('favView') || {}) };
 if (favView.list !== 'all' && !favLists.some((x) => x.id === favView.list)) favView.list = 'all';
-const saveFavView = () => store.set('favView', { list: favView.list, sort: favView.sort });
+const saveFavView = () => store.set('favView', { list: favView.list, sort: favView.sort, mode: favView.mode });
 /** Taille du classement d'entreprises à charger : 100 si une entreprise est en favori (pour la retrouver). */
 const stocksToLoad = () => (hasStockFav() || paper?.exposure().some((x) => x.kind === 's') ? 100 : prefs.nStocks);
 
@@ -352,6 +354,7 @@ function renderCrypto() {
   if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
   renderTools('crypto');
   statsEl.innerHTML = cryptoStats(data).map(statHTML).join('');
+  if (prefs.cryptoView === 'cats') return renderCryptoCats(map);
   renderTiles(map, cryptoItems(data), {
     maxAbs: PERIOD_MAX[prefs.period], period: t('period24h', { p: periodLabel() }), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
   });
@@ -384,6 +387,11 @@ function renderStocks() {
   if (!data?.companies?.length) return heatmapPlaceholder(statsEl, map);
   renderTools('stocks');
   statsEl.innerHTML = stocksStats(data).map(statHTML).join('');
+  const screen = prefs.stocksView === 'screener';
+  map.hidden = screen;
+  $('#stocks-movers').hidden = screen;
+  $('#screener').hidden = !screen;
+  if (screen) { $('#stocks-sector-src').hidden = true; if (!state.sectors) loadSectors(); return renderScreener($('#screener'), data); }
   const bySector = prefs.stocksView === 'sectors';
   if (bySector && !state.sectors) loadSectors();
   const sec = state.sectors?.sectors || {};
@@ -884,6 +892,7 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav
   $('#chart-sub').textContent = sub;
   $('#chart-stats').innerHTML = statsHTML;
   renderFacts(trade, token);
+  setupNews(trade || alert, token);
   link.hidden = true;
   const modeBox = $('#chart-mode');
   modeBox.hidden = !trade;
@@ -1347,29 +1356,30 @@ function renderAgenda() {
   const earnRow = (x) => {
     const c = stockById(x.symbol);
     const eps = isNum(x.eps) ? t('ag.eps', { v: getLang() === 'fr' ? `${NF2.format(x.eps)}\u00a0$` : `${x.eps < 0 ? '−' : ''}$${NF2.format(Math.abs(x.eps))}` }) : '';
-    return `<li${c ? ` class="ag-link" data-sym="${esc(x.symbol)}" tabindex="0" role="button"` : ''}>${c ? logoImg(c, 18, 'idx-logo') : '<span class="ag-badge earn">$</span>'}
+    const inner = `${c ? logoImg(c, 18, 'idx-logo') : '<span class="ag-badge earn">$</span>'}
       <span class="mc-name"><strong>${esc(x.symbol)} <small class="ag-co">${esc(x.name)}</small></strong><small>${[x.time ? t(`ag.${x.time}`) : '', eps].filter(Boolean).join(' · ')}</small></span>
-      <span class="ag-when"><b>${day(x.date)}</b><small>${inDays(x.date)}</small></span></li>`;
+      <span class="ag-when"><b>${day(x.date)}</b><small>${inDays(x.date)}</small></span>`;
+    return c ? `<li><button type="button" class="ag-item" data-sym="${esc(x.symbol)}">${inner}</button></li>` : `<li>${inner}</li>`;
   };
   const okNote = [!agenda.centralOk?.fed ? t('ag.fedNa') : '', !agenda.centralOk?.ecb ? t('ag.ecbNa') : ''].filter(Boolean).join(' ');
+  if (!econData) loadEcon();
+  if (!divData) loadDividends();
   box.innerHTML = `<h2>${t('ag.title')}</h2>
     <h3>${t('ag.banks')}</h3>
     ${banks.length ? `<ul>${banks.map(bankRow).join('')}</ul>` : `<p class="mc-note">${ND}</p>`}
     ${okNote ? `<p class="mc-note">${okNote}</p>` : ''}
     <h3>${t('ag.earnings')}</h3>
     ${agenda.earnings == null ? `<p class="mc-note">${t('ag.earnNa')}</p>` : shown.length ? `<ul>${shown.map(earnRow).join('')}</ul>` : `<p class="mc-note">${t('ag.earnNone')}</p>`}
+    ${econHTML(agendaExpanded)}
+    ${divHTML(agendaExpanded)}
     <button type="button" class="mc-more" aria-expanded="${agendaExpanded}">${t(agendaExpanded ? 'cd.less' : 'ag.more', { n: earn.length })}</button>
     ${agendaExpanded ? `<p class="mc-note">${t('ag.note', {
       fed: `<a href="${agenda.sources.fed}" target="_blank" rel="noopener noreferrer">${t('ag.fedLong')}</a>`,
       ecb: `<a href="${agenda.sources.ecb}" target="_blank" rel="noopener noreferrer">${t('ag.ecbLong')}</a>`,
       nasdaq: `<a href="${agenda.sources.earnings}" target="_blank" rel="noopener noreferrer">Nasdaq</a>`,
-    })}</p>` : ''}`;
+    })} ${t('econ.note')}</p>` : ''}`;
   box.querySelector('.mc-more').addEventListener('click', () => { agendaExpanded = !agendaExpanded; renderAgenda(); });
-  box.querySelectorAll('.ag-link').forEach((li) => {
-    const open = () => { const c = stockById(li.dataset.sym); if (c) openStockChart(c); };
-    li.addEventListener('click', open);
-    li.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
-  });
+  box.querySelectorAll('.ag-item').forEach((b) => b.addEventListener('click', () => { const c = stockById(b.dataset.sym); if (c) openStockRanked(c); }));
 }
 
 /* ---------- Rendu indices ---------- */
@@ -1488,12 +1498,14 @@ function renderFavTools() {
     <div class="fav-row"><label for="fav-sort" class="pt-label">${t('fav.sort')}</label>
       <select id="fav-sort" class="lang-select">${[['added', t('fav.sort.added')], ['chgDesc', t('fav.sort.chgDesc')], ['chgAsc', t('fav.sort.chgAsc')], ['name', t('fav.sort.name')]]
         .map(([v, l]) => `<option value="${v}"${favView.sort === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      <button type="button" class="btn btn-sm" data-fact="table" aria-pressed="${favView.mode === 'table'}">${t(favView.mode === 'table' ? 'fav.cards' : 'fav.table')}</button>
       <button type="button" class="btn btn-sm" data-fact="organize" aria-pressed="${favView.organize}">${t(favView.organize ? 'fav.done' : 'fav.organize')}</button></div>`;
   box.onclick = (e) => {
     const l = e.target.closest('[data-flist]');
     if (l) { favView.list = l.dataset.flist; saveFavView(); renderFavs(); return; }
     const a = e.target.closest('[data-fact]');
     if (a?.dataset.fact === 'organize') { favView.organize = !favView.organize; renderFavs(); }
+    else if (a?.dataset.fact === 'table') { favView.mode = favView.mode === 'table' ? 'cards' : 'table'; saveFavView(); renderFavs(); }
     else if (a?.dataset.fact === 'new') {
       if (favLists.length >= 12) { toast(t('fav.maxLists'), 'neg'); return; }
       const name = (prompt(t('fav.listName')) || '').trim().slice(0, 24);
@@ -1555,6 +1567,7 @@ function renderFavs() {
   if (favView.organize) return renderFavOrganize(grid);
   const shown = visibleFavs();
   if (!shown.length) { grid.innerHTML = `<div class="empty fav-empty">${t('fav.emptyList')}</div>`; grid.onclick = null; return; }
+  if (favView.mode === 'table') return renderFavTable(grid, shown);
   const field = PERIOD_FIELD[prefs.period];
   const actions = new Map();
   grid.innerHTML = shown.map((f) => {
@@ -1621,6 +1634,7 @@ function renderFavs() {
 
 function renderIndices(region) {
   if (MACRO_GROUPS.includes(region)) return renderMacro(region);
+  if (region === 'carte') return renderWorldMap($('#grid-carte'));
   const grid = $(`#grid-${region}`);
   const list = state.indices?.indices?.filter((i) => i.region === region);
   if (!list?.length) {
@@ -1684,7 +1698,10 @@ function render() {
   else if (state.tab === 'accueil') renderHome();
   else if (state.tab === 'actions') renderStocks();
   else if (state.tab === 'favoris') renderFavs();
-  else if (state.tab === 'compte') paper.render($('#paper'));
+  else if (state.tab === 'compte') {
+    $('#compte-mode').innerHTML = segHTML('compteView', [['demo', t('pf.demo')], ['real', t('pf.real')]], t('pf.mode'));
+    if (prefs.compteView === 'real') portfolio.render($('#paper')); else paper.render($('#paper'));
+  }
   else {
     for (const r of INDEX_TABS) $(`#grid-${r}`).hidden = r !== prefs.region;
     $('#indices-tools').innerHTML = segHTML('region', INDEX_TABS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
@@ -1790,7 +1807,9 @@ function renderTools(kind) {
   parts.push(segHTML(kind === 'crypto' ? 'nCrypto' : 'nStocks', [[25, '25'], [50, '50'], [100, '100']], t('tools.top'),
     `<span class="seg-label" aria-hidden="true">${t('tools.top')}</span>`));
   parts.push(segHTML('cur', [['USD', '$'], ['EUR', '€']], t('tools.cur')));
-  if (kind === 'stocks') parts.push(segHTML('stocksView', [['companies', t('view.companies')], ['sectors', t('view.sectors')]], t('tools.view')));
+  if (kind === 'stocks') parts.push(segHTML('stocksView', [['companies', t('view.companies')], ['sectors', t('view.sectors')], ['screener', t('view.screener')]], t('tools.view')));
+  if (kind === 'crypto') parts.push(segHTML('cryptoView', [['coins', t('view.coins')], ['cats', t('view.cats')]], t('tools.view')));
+  parts.push(`<button type="button" class="btn btn-sm tv-btn" data-tv="${kind}">${t('tv.btn')}</button>`);
   el.innerHTML = parts.join('');
   const note = $(`#${kind}-fx`);
   const fx = state.fx;
@@ -1901,6 +1920,7 @@ const paper = createPaper({
   share: (x, closed) => shareTrade(x, closed),
   lang: () => getLang(),
   locale: () => loc(),
+  gloss: (k) => glossBtn(k),
   duration: (ms) => fmtDuration(ms),
   num: (v, prec) => (isNum(v) ? new Intl.NumberFormat(loc(), { minimumFractionDigits: prec, maximumFractionDigits: prec }).format(v) : ND),
   fetchCandles: (a, tf) => fetchCandles(a, tf),
@@ -1930,6 +1950,13 @@ const tradeChart = createTradeChart({
   getTf: () => prefs.tcTf,
   getInd: () => { const v = store.get('tcInd'); return Array.isArray(v) ? v.filter((x) => INDICATORS.includes(x)) : ['ma20']; },
   setInd: (v) => store.set('tcInd', v),
+  getDraw: (k) => { const all = store.get('tcDraw') || {}; return Array.isArray(all[k]) ? all[k] : []; },
+  setDraw: (k, v) => {
+    const all = store.get('tcDraw') || {};
+    if (v.length) all[k] = v; else delete all[k];
+    const keys = Object.keys(all); if (keys.length > 50) delete all[keys[0]]; // 50 actifs au plus
+    store.set('tcDraw', all);
+  },
   setTf: (tf) => { prefs.tcTf = tf; store.set('prefs', prefs); },
   openTicket: (asset, pre) => paper.openTicket(asset, pre),
   openAlert: (price) => {
@@ -2039,12 +2066,14 @@ async function renderFacts(asset, token) {
     [t('facts.p1m'), pc(perf(nowS - 30 * DAY))], [t('facts.p3m'), pc(perf(nowS - 91 * DAY))],
     [t('facts.ytd'), pc(perf(jan1))], [t('facts.p1y'), pc(perf(nowS - 365 * DAY))],
     [t('facts.p5y'), pc(perf(nowS - 5 * 365 * DAY + 7 * DAY))],
-    [t('facts.rsi'), isNum(rsiV) ? NF1.format(rsiV) : ND],
-    [t('facts.ma50'), side(ma50)], [t('facts.ma200'), side(ma200)],
-    [t('facts.vol'), isNum(vr) ? `${NF1.format(vr)} ×` : ND],
+    [`${t('facts.rsi')} ${glossBtn('rsi')}`, isNum(rsiV) ? NF1.format(rsiV) : ND],
+    [`${t('facts.ma50')} ${glossBtn('ma')}`, side(ma50)], [t('facts.ma200'), side(ma200)],
+    [`${t('facts.vol')} ${glossBtn('vol')}`, isNum(vr) ? `${NF1.format(vr)} ×` : ND],
   ];
   if (sector) rows.push([t('facts.sector'), esc(sectorName(sector))]);
   if (earn) rows.push([t('facts.earnings'), `${fmtDay(dayMs(earn.date), 'UTC')}${earn.time ? ` · ${t(`ag.${earn.time}`)}` : ''}`]);
+  const div = asset.kind === 's' ? (divData?.items || []).find((x) => x.symbol === asset.assetId) : null;
+  if (div) rows.push([t('facts.div'), `${fmtDay(dayMs(div.exDate), 'UTC')}${isNum(div.amount) ? ` · ${fmtNative(div.amount, 'USD')}` : ''}`]);
   box.innerHTML = `<h3>${t('facts.title')}</h3><dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
     <p class="mc-note">${t('facts.note', { s: esc(d.source || ND), d: fmtDay(nowS * 1000) })}</p>`;
 }
@@ -2105,6 +2134,7 @@ function renderHome() {
       <p class="home-open">${clocks.length ? t('home.openNow', { n: openNow, m: clocks.length }) : ''}</p>
       ${idxRows.length ? `<ol class="mv-list">${idxRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
     <section class="card home-card"><h2>${t('home.others')}</h2>${otherRows.length ? `<ol class="mv-list">${otherRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
+    ${sentimentHTML()}
     <section class="card home-card"><h2>${t('movers.title')}</h2>
       <h3>${t('home.cryptos')} <small>${esc(periodLabel())}</small></h3><ol class="mv-list">${mvRows([...cm.up, ...cm.down], 'c') || `<li class="mv-none">${ND}</li>`}</ol>
       <h3>${t('home.stocks')} <small>${t('movers.session')}</small></h3><ol class="mv-list">${mvRows([...sm.up, ...sm.down], 's') || `<li class="mv-none">${ND}</li>`}</ol></section>
@@ -2120,8 +2150,12 @@ function renderHome() {
     <section class="card home-card"><h2>${t('tab.favoris')}</h2>${favRows ? `<ol class="mv-list">${favRows}</ol>` : `<p class="mc-note">${t('fav.empty')}</p>`}</section>
     <section class="card home-card"><h2>${t('home.tools')}</h2>
       <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
-        <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button></div>
-      ${summaryHTML()}</section>
+        <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button>
+        <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button></div>
+      <div class="home-summary"><h3>${t('ts.title')}</h3><div class="seg" role="group" aria-label="${esc(t('ts.title'))}">${TEXT_SCALES.map((z) =>
+        `<button type="button" data-ts="${z}" aria-pressed="${textScale() === z}">${Math.round(z * 100)} %</button>`).join('')}</div></div>
+      ${summaryHTML()}
+      ${movesHTML()}</section>
     <p class="consent-small">${t('home.note')}</p>`;
   box.onclick = (e) => {
     const r = e.target.closest('[data-home]'); if (r) { open.get(r.dataset.home)?.(); return; }
@@ -2129,8 +2163,11 @@ function renderHome() {
     const tl = e.target.closest('[data-tool]');
     if (tl?.dataset.tool === 'search') openSearch();
     else if (tl?.dataset.tool === 'conv') openConverter();
+    else if (tl?.dataset.tool === 'gloss') openGloss();
+    const ts = e.target.closest('[data-ts]'); if (ts) setTextScale(Number(ts.dataset.ts));
   };
   bindSummary(box);
+  bindMoves(box);
 }
 /** Graphique d'une crypto ou d'une entreprise avec son rang et sa part du top affiché (comme depuis la heatmap). */
 function openCryptoRanked(c) {
@@ -2244,6 +2281,378 @@ function closeConverter() {
   if ($('#chart').hidden) document.body.style.overflow = '';
 }
 
+
+/* ---------- Carte du monde des indices (variation du jour de l'indice principal de chaque pays) ---------- */
+// Code pays ISO 3166 numérique (Natural Earth) → indice affiché.
+const MAP_INDEX = { 840: 'spx', 124: 'tsx', 76: 'ibov', 484: 'ipc', 32: 'merval', 250: 'cac', 276: 'dax', 826: 'ftse', 724: 'ibex', 380: 'ftsemib',
+  528: 'aex', 756: 'smi', 56: 'bel20', 620: 'psi', 40: 'atx', 752: 'omx', 578: 'osebx', 616: 'wig20', 792: 'xu100', 156: 'sse', 344: 'hsi', 392: 'n225',
+  410: 'kospi', 158: 'taiex', 356: 'nifty', 702: 'sti', 360: 'jkse', 458: 'klci', 764: 'set', 36: 'asx200', 554: 'nz50', 682: 'tasi', 376: 'ta125', 710: 'jse40', 818: 'egx30' };
+let worldData = null, worldLoading = false;
+function renderWorldMap(box) {
+  if (!worldData) {
+    box.innerHTML = `<p class="mc-note">${t('loading')}</p>`;
+    if (!worldLoading) {
+      worldLoading = true;
+      fetch('/data/world.json').then((r) => (r.ok ? r.json() : null)).then((d) => { worldData = d || { error: true }; })
+        .catch(() => { worldData = { error: true }; }).finally(() => { worldLoading = false; if (state.tab === 'indices' && prefs.region === 'carte') renderWorldMap(box); });
+    }
+    return;
+  }
+  if (worldData.error) { box.innerHTML = `<p class="mc-note">${t('noData')}</p>`; return; }
+  const list = state.indices?.indices || [];
+  const ix = (num) => { const id = MAP_INDEX[Number(num)]; return id ? list.find((x) => x.id === id) : null; };
+  const fillOf = (x) => (x && !x.outdated && isNum(x.changePct) ? heat(x.changePct, 2.5) : null);
+  const label = (x) => `${country(x.country)} · ${indexName(x)} : ${x.outdated ? ND : fmtPct(x.changePct)}`;
+  const shapes = worldData.countries.map((c) => {
+    const x = ix(c.id), f = fillOf(x);
+    return x ? `<path d="${c.d}" class="wm-c on" style="fill:${f || 'var(--surface-2)'}" data-ix="${esc(x.id)}" tabindex="0" role="button" aria-label="${esc(label(x))}"><title>${esc(label(x))}</title></path>`
+      : `<path d="${c.d}" class="wm-c"/>`;
+  }).join('');
+  const dots = Object.entries(worldData.dots || {}).map(([id, [cx, cy]]) => {
+    const x = ix(id); if (!x) return '';
+    return `<circle cx="${cx}" cy="${cy}" r="6" class="wm-dot" style="fill:${fillOf(x) || 'var(--surface-2)'}" data-ix="${esc(x.id)}" tabindex="0" role="button" aria-label="${esc(label(x))}"><title>${esc(label(x))}</title></circle>`;
+  }).join('');
+  box.innerHTML = `<svg class="wm" viewBox="0 0 ${worldData.w} ${worldData.h}" role="group" aria-label="${esc(t('map.title'))}">${shapes}${dots}</svg>
+    <p class="legend">${t('map.legend')}</p><p class="consent-small">${t('map.src', { s: esc(worldData.source) })}</p>`;
+  const open = (e) => { const el = e.target.closest('[data-ix]'); const x = el && list.find((y) => y.id === el.dataset.ix); if (x) openIndexChart(x); };
+  box.onclick = open;
+  box.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(e); } };
+}
+
+/* ---------- Actualités d'un actif (écran graphique) : titres Yahoo Finance, lien vers l'article d'origine ---------- */
+function newsQuery(a) {
+  if (!a) return null;
+  if (a.kind === 'c') return `${a.label}-USD`;
+  if (a.kind === 's') return a.assetId;
+  return a.symbol || a.label;
+}
+function setupNews(asset, token) {
+  const box = $('#chart-news-box'), out = $('#chart-news');
+  const q = newsQuery(asset);
+  box.hidden = !q;
+  box.open = false;
+  out.innerHTML = '';
+  box.ontoggle = async () => {
+    if (!box.open || out.dataset.token === String(token)) return;
+    out.dataset.token = String(token);
+    out.innerHTML = `<p class="mc-note">${t('loading')}</p>`;
+    let d = null;
+    try { const r = await fetch(`/api/news?q=${encodeURIComponent(q)}`); d = r.ok ? await r.json() : null; } catch { /* n/d */ }
+    if (token !== chartToken) return;
+    if (!d?.items?.length) { out.innerHTML = `<p class="mc-note">${t('news.na')}</p>`; return; }
+    out.innerHTML = `<ul class="news">${d.items.map((n) => `<li><a href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">${esc(n.title)}</a>
+      <small>${esc(n.publisher || '')}${n.time ? ` · ${fmtDay(n.time)} ${fmtTime(n.time)}` : ''}</small></li>`).join('')}</ul>
+      <p class="mc-note">${t('news.note', { s: esc(d.source) })}</p>`;
+  };
+}
+
+/* ---------- Calendrier économique et dividendes (agenda de l'onglet Indices) ---------- */
+let econData = null, econLoading = false, divData = null, divLoading = false;
+async function loadEcon() {
+  if (econLoading) return; econLoading = true;
+  try { const r = await fetch('/api/econ'); econData = r.ok ? await r.json() : { error: true }; } catch { econData = { error: true }; }
+  econLoading = false;
+  if (state.tab === 'indices') renderAgenda();
+}
+async function loadDividends() {
+  if (divLoading) return; divLoading = true;
+  try { const r = await fetch('/api/dividends'); divData = r.ok ? await r.json() : { error: true }; } catch { divData = { error: true }; }
+  divLoading = false;
+  if (state.tab === 'indices') renderAgenda();
+}
+const ECON_CC = { 'United States': 'US', 'Euro Zone': 'EZ', France: 'FR', Germany: 'DE', 'United Kingdom': 'GB', Italy: 'IT', Spain: 'ES', China: 'CN', Japan: 'JP', Canada: 'CA', Switzerland: 'CH', Australia: 'AU' };
+function countryName(nasdaqName) {
+  const cc = ECON_CC[nasdaqName];
+  try { return cc ? new Intl.DisplayNames([loc()], { type: 'region' }).of(cc) : nasdaqName; } catch { return nasdaqName; }
+}
+function econHTML(expanded) {
+  if (!econData) return `<h3>${t('econ.title')}</h3><p class="mc-note">${t('loading')}</p>`;
+  if (econData.error || !econData.events) return `<h3>${t('econ.title')}</h3><p class="mc-note">${t('econ.na')}</p>`;
+  const now = Date.now();
+  const upcoming = econData.events.filter((e) => (e.at ?? dayMs(e.date)) >= now - 2 * 3600_000);
+  const shown = expanded ? upcoming.slice(0, 80) : upcoming.slice(0, 6);
+  if (!shown.length) return `<h3>${t('econ.title')}</h3><p class="mc-note">${t('econ.none')}</p>`;
+  const val = (k, v) => (v ? `${t(`econ.${k}`)} ${esc(v)}` : '');
+  return `<h3>${t('econ.title')}</h3><ul>${shown.map((e) => `<li><span class="ag-badge">${esc(ECON_CC[e.country] === 'EZ' ? 'EU' : ECON_CC[e.country] || '?')}</span>
+    <span class="mc-name"><strong>${esc(e.name)}</strong><small>${esc(countryName(e.country))}${[val('actual', e.actual), val('cons', e.consensus), val('prev', e.previous)].filter(Boolean).map((x) => ` · ${x}`).join('')}</small></span>
+    <span class="ag-when"><b>${e.at ? fmtTime(e.at) : ND}</b><small>${e.at ? fmtDay(e.at) : fmtDay(dayMs(e.date), 'UTC')}</small></span></li>`).join('')}</ul>`;
+}
+function divHTML(expanded) {
+  if (!divData) return '';
+  if (divData.error || !divData.items) return `<h3>${t('div.title')}</h3><p class="mc-note">${t('div.na')}</p>`;
+  const tracked = new Set([...(state.stocks?.companies || []).map((c) => c.id), ...favs.filter((f) => f.t === 's').map((f) => f.id)]);
+  const items = divData.items.filter((x) => tracked.has(x.symbol) && x.exDate).sort((a, b) => a.exDate.localeCompare(b.exDate));
+  const shown = expanded ? items : items.slice(0, 4);
+  if (!shown.length) return `<h3>${t('div.title')}</h3><p class="mc-note">${t('div.none')}</p>`;
+  return `<h3>${t('div.title')}</h3><ul>${shown.map((x) => {
+    const c = stockById(x.symbol);
+    const inner = `${c ? logoImg(c, 18, 'idx-logo') : '<span class="ag-badge earn">$</span>'}
+      <span class="mc-name"><strong>${esc(x.symbol)} <small class="ag-co">${esc(x.name)}</small></strong><small>${isNum(x.amount) ? t('div.amount', { v: fmtNative(x.amount, 'USD') }) : ''}${x.payDate ? ` · ${t('div.pay', { d: fmtDay(dayMs(x.payDate), 'UTC') })}` : ''}</small></span>
+      <span class="ag-when"><b>${fmtDay(dayMs(x.exDate), 'UTC')}</b><small>${inDays(x.exDate)}</small></span>`;
+    return c ? `<li><button type="button" class="ag-item" data-sym="${esc(x.symbol)}">${inner}</button></li>` : `<li>${inner}</li>`;
+  }).join('')}</ul>`;
+}
+
+/* ---------- Sentiment : Fear & Greed des cryptos (alternative.me) et VIX ---------- */
+let sentiment = null, sentimentAt = 0, sentimentLoading = false;
+async function loadSentiment() {
+  if (sentimentLoading) return; sentimentLoading = true;
+  try { const r = await fetch('/api/sentiment'); sentiment = r.ok ? await r.json() : { error: true }; } catch { sentiment = { error: true }; }
+  sentimentAt = Date.now(); sentimentLoading = false;
+  if (state.tab === 'accueil') renderHome();
+}
+const FNG_KEYS = { 'Extreme Fear': 'xfear', Fear: 'fear', Neutral: 'neutral', Greed: 'greed', 'Extreme Greed': 'xgreed' };
+function sentimentHTML() {
+  if (!sentiment || Date.now() - sentimentAt > 15 * 60_000) loadSentiment();
+  const head = `<section class="card home-card"><h2>${t('sent.title')} ${glossBtn('fng')}</h2>`;
+  if (!sentiment) return `${head}<p class="mc-note">${t('loading')}</p></section>`;
+  if (sentiment.error) return `${head}<p class="mc-note">${t('sent.na')}</p></section>`;
+  const f = sentiment.fng, v = sentiment.vix;
+  const hist = f?.history || [];
+  const spark = hist.length > 1 ? `<svg class="fng-spark" viewBox="0 0 100 24" preserveAspectRatio="none" aria-hidden="true"><path d="${hist.map((p, i) => `${i ? 'L' : 'M'}${(i / (hist.length - 1) * 100).toFixed(1)},${(24 - p.value / 100 * 24).toFixed(1)}`).join('')}"/></svg>` : '';
+  return `${head}
+    ${f ? `<div class="fng"><div class="fng-top"><span>${t('sent.fng')}</span><b>${f.now.value}</b><span class="fng-lbl">${esc(t(`sent.${FNG_KEYS[f.now.label] || 'neutral'}`))}</span></div>
+      <div class="fng-bar" role="img" aria-label="${esc(`${t('sent.fng')} ${f.now.value}/100`)}"><i style="left:${f.now.value}%"></i></div>
+      <div class="fng-scale"><span>${t('sent.xfear')}</span><span>${t('sent.xgreed')}</span></div>${spark}
+      <p class="mc-note">${t('sent.fngNote', { s: esc(f.source), d: fmtDay(f.now.time) })}</p></div>` : `<p class="mc-note">${t('sent.fng')} : ${ND}</p>`}
+    ${v ? `<p class="home-line"><b>VIX</b> ${NF2.format(v.price)} <span class="${signClass(v.changePct)}">${fmtPct(v.changePct)}</span> ${glossBtn('vix')}<small>${t('sent.vixNote', { s: esc(v.source) })}</small></p>` : `<p class="mc-note">VIX : ${ND}</p>`}
+  </section>`;
+}
+
+/* ---------- Filtre d'actions (screener) sur le top des entreprises chargé ---------- */
+const screen = { sector: '', country: '', move: 'all', sort: 'cap', ...(store.get('screen') || {}) };
+function renderScreener(box, data) {
+  const all = stockItems(data);
+  const sec = state.sectors?.sectors || {};
+  const sectors = [...new Set(all.map((c) => sec[c.id]).filter(Boolean))].sort();
+  const countries = [...new Set(all.map((c) => c.country).filter(Boolean))].sort((a, b) => country(a).localeCompare(country(b)));
+  let rows = all.filter((c) => (!screen.sector || sec[c.id] === screen.sector) && (!screen.country || c.country === screen.country)
+    && (screen.move === 'all' || (screen.move === 'up' ? c.changePct > 0 : screen.move === 'down' ? c.changePct < 0 : Math.abs(c.changePct) >= 2)));
+  const by = { cap: (a, b) => (b.marketCap || 0) - (a.marketCap || 0), chgDesc: (a, b) => (b.changePct ?? -1e9) - (a.changePct ?? -1e9),
+    chgAsc: (a, b) => (a.changePct ?? 1e9) - (b.changePct ?? 1e9), name: (a, b) => a.label.localeCompare(b.label) };
+  rows = rows.sort(by[screen.sort] || by.cap);
+  const opt = (v, l, cur) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`;
+  box.innerHTML = `<div class="scr-filters">
+      <label>${t('scr.sector')}<select class="lang-select" data-scr="sector">${opt('', t('scr.all'), screen.sector)}${sectors.map((x) => opt(x, sectorName(x), screen.sector)).join('')}</select></label>
+      <label>${t('scr.country')}<select class="lang-select" data-scr="country">${opt('', t('scr.all'), screen.country)}${countries.map((x) => opt(x, country(x), screen.country)).join('')}</select></label>
+      <label>${t('scr.move')}<select class="lang-select" data-scr="move">${[['all', t('scr.all')], ['up', t('scr.up')], ['down', t('scr.down')], ['big', t('scr.big')]].map(([v, l]) => opt(v, l, screen.move)).join('')}</select></label>
+      <label>${t('fav.sort')}<select class="lang-select" data-scr="sort">${[['cap', t('scr.byCap')], ['chgDesc', t('fav.sort.chgDesc')], ['chgAsc', t('fav.sort.chgAsc')], ['name', t('fav.sort.name')]].map(([v, l]) => opt(v, l, screen.sort)).join('')}</select></label>
+    </div>
+    <p class="mc-note">${t('scr.count', { n: rows.length, m: all.length })}</p>
+    <div class="table-wrap"><table class="scr-table"><thead><tr><th>${t('scr.company')}</th><th>${t('scr.sector')}</th><th class="num">${t('price')}</th><th class="num">${t('scr.chg')}</th><th class="num">${t('cap')}</th></tr></thead>
+    <tbody>${rows.map((c) => `<tr data-id="${esc(c.id)}" tabindex="0"><td>${logoImg(c, 18, 'mv-logo')}<b>${esc(c.label)}</b><small>${esc(c.name)}${c.country ? ` · ${esc(country(c.country))}` : ''}</small></td>
+      <td>${esc(sec[c.id] ? sectorName(sec[c.id]) : ND)}</td><td class="num">${fmtStockPrice(c.price, c.currency)}</td>
+      <td class="num ${signClass(c.changePct)}">${fmtPct(c.changePct)}</td><td class="num">${fmtCap(c.marketCap)}</td></tr>`).join('')}</tbody></table></div>`;
+  box.onchange = (e) => { const s = e.target.closest('[data-scr]'); if (!s) return; screen[s.dataset.scr] = s.value; store.set('screen', screen); renderScreener(box, data); };
+  const open = (e) => { const tr = e.target.closest('tr[data-id]'); const c = tr && all.find((x) => x.id === tr.dataset.id); if (c) openStockRanked(c); };
+  box.onclick = open;
+  box.onkeydown = (e) => { if (e.key === 'Enter') open(e); };
+}
+
+/* ---------- Catégories de cryptos (CoinGecko) en heatmap ---------- */
+let catsData = null, catsAt = 0, catsLoading = false;
+async function loadCats() {
+  if (catsLoading) return; catsLoading = true;
+  try { const r = await fetch('/api/cryptocats'); catsData = r.ok ? await r.json() : { error: true }; } catch { catsData = { error: true }; }
+  catsAt = Date.now(); catsLoading = false;
+  if (state.tab === 'crypto') renderCrypto();
+}
+function renderCryptoCats(map) {
+  if (!catsData || Date.now() - catsAt > 10 * 60_000) loadCats();
+  $('#crypto-movers').innerHTML = '';
+  if (!catsData || catsData.error) {
+    map.style.height = '420px';
+    map.innerHTML = `<div class="empty" style="position:absolute;inset:0;display:grid;place-items:center">${t(catsData ? 'cats.na' : 'loading')}</div>`;
+    return;
+  }
+  const items = catsData.categories.map((c) => ({ ...c, label: c.name, price: c.marketCap }));
+  renderTiles(map, items, {
+    maxAbs: 6, period: t('over24h'), priceText: (c) => fmtCap(c.marketCap),
+    onOpen: (c) => toast(t('cats.toast', { n: c.name, c: fmtCap(c.marketCap), p: fmtPct(c.changePct), top: c.top.map((id) => coinById(id)?.symbol || id).join(', ') })),
+  });
+  $('#crypto-movers').innerHTML = `<p class="mc-note">${t('cats.note', { s: esc(catsData.source) })}</p>`;
+}
+
+/* ---------- Favoris : tableau des performances (1 j, 1 sem., 1 mois, depuis le 1er janvier, 1 an) ---------- */
+const perfCache = new Map(); // clé → { at, perf }
+function favAsset(f) {
+  if (f.t === 'i') { const x = state.indices?.indices?.find((y) => y.id === f.id); return x?.symbol ? { kind: 'i', assetId: f.id, label: f.label, symbol: x.symbol } : null; }
+  if (f.t === 'm') { const m = macroById(f.id); return m?.symbol ? { kind: 'm', assetId: f.id, label: f.label, symbol: m.symbol } : null; }
+  return { kind: f.t, assetId: f.id, label: f.label };
+}
+async function favPerf(f) {
+  const key = favKey(f);
+  const hit = perfCache.get(key);
+  if (hit && Date.now() - hit.at < 30 * 60_000) return hit.perf;
+  const a = favAsset(f);
+  let perf = null;
+  if (a) {
+    try {
+      const d = await fetchCandles(a, '1d');
+      const c = (d.candles || []).filter((x) => isNum(x[4]));
+      if (c.length > 5) {
+        const last = c[c.length - 1], nowS = last[0], close = last[4];
+        const at = (sec) => { let v = null; for (const x of c) { if (x[0] <= sec) v = x[4]; else break; } return c[0][0] <= sec && isNum(v) ? (close / v - 1) * 100 : null; };
+        perf = { w1: at(nowS - 7 * 86400), m1: at(nowS - 30 * 86400), ytd: at(Date.UTC(new Date(nowS * 1000).getUTCFullYear(), 0, 1) / 1000), y1: at(nowS - 365 * 86400) };
+      }
+    } catch { /* n/d */ }
+  }
+  perfCache.set(key, { at: Date.now(), perf });
+  return perf;
+}
+function renderFavTable(grid, list) {
+  const cell = (v) => `<td class="num ${signClass(v)}">${isNum(v) ? fmtPct(v, 1) : '…'}</td>`;
+  const row = (f, p) => {
+    const q = quoteOf({ kind: f.t, assetId: f.id, label: f.label });
+    const pc = (k) => (p === undefined ? '<td class="num">…</td>' : p && isNum(p[k]) ? cell(p[k]) : `<td class="num">${ND}</td>`);
+    return `<tr data-key="${esc(favKey(f))}" tabindex="0"><td>${logoImg(f, 18, 'mv-logo')}<b>${esc(f.label)}</b></td>${isNum(q.chg) ? cell(q.chg) : `<td class="num">${ND}</td>`}${pc('w1')}${pc('m1')}${pc('ytd')}${pc('y1')}</tr>`;
+  };
+  const draw = (perfs) => {
+    grid.innerHTML = `<div class="table-wrap fav-table"><table class="scr-table"><thead><tr><th>${t('scr.asset')}</th><th class="num">${t('perf.d1')}</th><th class="num">${t('perf.w1')}</th>
+      <th class="num">${t('perf.m1')}</th><th class="num">${t('perf.ytd')}</th><th class="num">${t('perf.y1')}</th></tr></thead>
+      <tbody>${list.map((f) => row(f, perfs.get(favKey(f)))).join('')}</tbody></table></div><p class="mc-note">${t('perf.note')}</p>`;
+  };
+  const perfs = new Map();
+  draw(perfs);
+  const queue = [...list];
+  const worker = async () => { while (queue.length) { const f = queue.shift(); perfs.set(favKey(f), await favPerf(f)); if (grid.isConnected && favView.mode === 'table') draw(perfs); } };
+  Promise.all([worker(), worker(), worker()]);
+  grid.onclick = (e) => { const tr = e.target.closest('tr[data-key]'); const f = tr && favs.find((x) => favKey(x) === tr.dataset.key); if (f) openFav(f); };
+  grid.onkeydown = (e) => { if (e.key === 'Enter') grid.onclick(e); };
+}
+
+
+/* ---------- Mon portefeuille réel (saisie manuelle, valorisé aux cours de l'app) ---------- */
+const portfolio = createPortfolio({
+  t, store, esc, isNum, ND,
+  quote: quoteOf, usdPer,
+  money: (usd) => (prefs.cur === 'EUR' && eurRate() ? fmtNative(usd / eurRate(), 'EUR').replace(/\sEUR$/, ' €') : fmtNative(usd, 'USD')),
+  price: priceIn, qty: (v) => (isNum(v) ? qtyNF().format(v) : ND), pct: (v) => fmtPct(v), NF1: () => NF1, pctSign,
+  unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy === 'USX' ? '¢' : ccy),
+  logo: (a, size) => logoImg(a, size, 'pt-logo'), toast, parse: parseAmount, fmtInput, lang: () => getLang(),
+  assets: allAssets,
+});
+
+/* ---------- Lexique ---------- */
+function glossBtn(key) {
+  const g = (GLOSSARY[getLang()] || GLOSSARY.fr)[key];
+  return g ? `<button type="button" class="gl-btn" data-gl="${key}" aria-label="${esc(t('gl.what', { t: g[0] }))}">?</button>` : '';
+}
+function openGloss(key) {
+  const dict = GLOSSARY[getLang()] || GLOSSARY.fr;
+  let dlg = $('#gloss');
+  if (!dlg) {
+    dlg = document.createElement('div');
+    dlg.id = 'gloss'; dlg.className = 'snap'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-labelledby', 'gloss-title');
+    document.body.append(dlg);
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) closeGloss(); });
+  }
+  const entries = key && dict[key] ? [[key, dict[key]]] : Object.entries(dict).sort((a, b) => a[1][0].localeCompare(b[1][0]));
+  dlg.innerHTML = `<div class="snap-card alert-card"><h2 id="gloss-title">${key ? esc(dict[key][0]) : t('gl.title')}</h2>
+    <dl class="gloss">${entries.map(([, [term, def]]) => `${key ? '' : `<dt>${esc(term)}</dt>`}<dd>${esc(def)}</dd>`).join('')}</dl>
+    <p class="consent-small">${t('gl.note')}</p>
+    <div class="snap-actions">${key ? `<button type="button" class="btn" data-gl-all>${t('gl.all')}</button>` : ''}<button type="button" class="btn btn-primary" data-gl-close>${t('snap.close')}</button></div></div>`;
+  dlg.querySelector('[data-gl-close]').onclick = closeGloss;
+  dlg.querySelector('[data-gl-all]')?.addEventListener('click', () => openGloss());
+  dlg.hidden = false;
+  dlg.dataset.prevOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  dlg.querySelector('[data-gl-close]').focus();
+}
+function closeGloss() {
+  const d = $('#gloss'); if (!d || d.hidden) return;
+  d.hidden = true;
+  document.body.style.overflow = d.dataset.prevOverflow || '';
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-gl]');
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  openGloss(b.dataset.gl);
+}, true);
+
+/* ---------- Taille du texte (zoom de l'interface, appliqué tôt par theme.js) ---------- */
+const TEXT_SCALES = [0.9, 1, 1.15, 1.3];
+const textScale = () => { const v = store.get('textScale'); return TEXT_SCALES.includes(v) ? v : 1; };
+function setTextScale(z) {
+  if (!TEXT_SCALES.includes(z)) return;
+  store.set('textScale', z);
+  document.documentElement.style.zoom = z === 1 ? '' : String(z);
+  render();
+}
+
+/* ---------- Alertes automatiques de forts mouvements (favoris, seuil en %) ---------- */
+function movesHTML() {
+  const cur = alertsCache?.moves;
+  return `<div class="home-summary"><h3>${t('mv.title')}</h3><p class="consent-small">${t('mv.intro')}</p>
+    <div class="pt-join"><div class="alert-input"><input id="mv-pct" type="text" inputmode="decimal" value="${esc(cur ? NF1.format(cur.pct) : '5')}" aria-label="${esc(t('mv.pct'))}"><span>%</span></div>
+      <button type="button" class="btn" data-mv-set="on">${t(cur ? 'sum.update' : 'sum.on')}</button>
+      ${cur ? `<button type="button" class="btn" data-mv-set="off">${t('sum.off')}</button>` : ''}</div>
+    <p class="consent-small">${cur ? t('mv.active', { p: NF1.format(cur.pct), n: cur.count }) : ''} <a href="${legalPrefix()}/confidentialite.html#resume">${t('alert.privacy')}</a></p></div>`;
+}
+function bindMoves(root) {
+  root.querySelectorAll('[data-mv-set]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      if (b.dataset.mvSet === 'off') await alertsApi('moves.set', { token: store.get(ALERT_TOKEN), pct: null });
+      else {
+        const pct = parseAmount(root.querySelector('#mv-pct').value);
+        if (!(isNum(pct) && pct >= 1 && pct <= 50)) { toast(t('mv.invalid'), 'neg'); b.disabled = false; return; }
+        const sup = pushSupport();
+        if (sup !== 'ok') { toast(t(sup === 'ios' ? 'alert.ios' : 'alert.unsupported'), 'neg'); b.disabled = false; return; }
+        const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+        if (perm !== 'granted') { toast(t('alert.denied'), 'neg'); b.disabled = false; return; }
+        const token = await ensureDevice();
+        await alertsApi('moves.set', { token, pct, assets: favs.slice(0, 30).map((f) => ({ kind: f.t, assetId: f.id, label: f.label })) });
+        toast(t('mv.saved'));
+      }
+      await loadAlerts(true);
+    } catch { toast(t('alert.error'), 'neg'); }
+    if (state.tab === 'accueil') renderHome();
+  }));
+}
+
+/* ---------- Mode plein écran / TV : heatmap seule, mise à jour automatique, rotation Crypto ↔ Actions ---------- */
+let tvTimer = 0, tvWake = null;
+async function enterTV(kind) {
+  setTab(kind === 'crypto' ? 'crypto' : 'actions');
+  document.body.classList.add('tv');
+  let bar = $('#tv-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'tv-bar'; bar.className = 'tv-bar';
+    document.body.append(bar);
+  }
+  bar.innerHTML = `<strong>${t('appName')}</strong><span id="tv-clock"></span>
+    <label class="pt-switch"><input type="checkbox" id="tv-rotate" ${store.get('tvRotate') ? 'checked' : ''}> ${t('tv.rotate')}</label>
+    <button type="button" class="btn btn-sm" id="tv-exit">${t('tv.exit')}</button>`;
+  bar.querySelector('#tv-exit').onclick = exitTV;
+  bar.querySelector('#tv-rotate').onchange = (e) => store.set('tvRotate', e.target.checked);
+  try { await document.documentElement.requestFullscreen?.(); } catch { /* plein écran refusé : le mode reste actif dans la fenêtre */ }
+  try { tvWake = await navigator.wakeLock?.request('screen'); } catch { tvWake = null; }
+  let n = 0;
+  clearInterval(tvTimer);
+  const tick = () => {
+    const c = $('#tv-clock'); if (c) c.textContent = `${fmtDay(Date.now())} ${fmtTime(Date.now(), true)}`;
+    if (++n % 30 === 0 && store.get('tvRotate')) setTab(state.tab === 'crypto' ? 'actions' : 'crypto');
+  };
+  tick();
+  tvTimer = setInterval(tick, 1000);
+  render();
+}
+function exitTV() {
+  if (!document.body.classList.contains('tv')) return;
+  document.body.classList.remove('tv');
+  clearInterval(tvTimer);
+  $('#tv-bar')?.remove();
+  try { tvWake?.release(); } catch { /* rien */ }
+  tvWake = null;
+  if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+  render();
+}
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && document.body.classList.contains('tv')) exitTV(); });
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-tv]'); if (b) enterTV(b.dataset.tv); });
+
 /* ---------- Navigation ---------- */
 function setTab(tab) {
   if (!TABS.includes(tab) || tab === state.tab) return;
@@ -2265,6 +2674,9 @@ document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#search').hidden) closeSearch();
   else if ($('#conv') && !$('#conv').hidden) closeConverter();
+  else if ($('#gloss') && !$('#gloss').hidden) closeGloss();
+  else if (portfolio.isOpen()) portfolio.close();
+  else if (document.body.classList.contains('tv')) exitTV();
   else if (paper.isOpen()) paper.closeModal();
   else if (!$('#alert').hidden) closeAlert();
   else if (!$('#snap').hidden) closeSnapshot();

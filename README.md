@@ -36,6 +36,19 @@ Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 - **Compte démo** : stop suiveur, ordres liés (OCO), plusieurs comptes (5 au plus), notes sur les trades, journal (pire baisse, résultats par actif et par heure), export CSV, simulateur d'achats programmés (DCA), défi mensuel dans les groupes.
 - **Tablette et ordinateur** : navigation latérale et contenu sur plusieurs colonnes à partir de 900 px.
 - **Raccourcis** sur l'icône de l'app (En bref, Crypto, Compte, Rechercher) et **convertisseur** devises / cryptos.
+- **Actualités** par actif (écran graphique, repliable) : titres Yahoo Finance avec lien vers l'article (`/api/news`).
+- **Calendrier économique** (Nasdaq, heures converties de New York vers l'heure locale) et **dividendes** (dates de détachement des entreprises suivies et des favoris) dans l'agenda : `/api/econ`, `/api/dividends`.
+- **Sentiment** (En bref) : Fear & Greed des cryptos (alternative.me) et VIX : `/api/sentiment`.
+- **Carte du monde** des indices (région « Carte ») : `public/data/world.json`, généré par `scripts/worldmap.mjs` (Natural Earth, world-atlas).
+- **Filtre d'actions** (Actions → Filtre) par secteur, pays, variation, tri ; **catégories de cryptos** (Crypto → Catégories, CoinGecko : `/api/cryptocats`).
+- **Tableau de performances** des favoris : 1 j, 1 sem., 1 mois, depuis le 1er janvier, 1 an.
+- **Tracés** sur le graphique de trading : horizontale, tendance, Fibonacci (mémorisés par actif).
+- **Test de stratégie** (RSI, croisements MM20/50 et MM50/200) sur bougies journalières, comparé à l'achat-conservation.
+- **Mon portefeuille réel** (Compte → Mon portefeuille) : saisie manuelle, valeur, plus-values, répartition, export CSV — uniquement sur l'appareil (`public/assets/portfolio.js`).
+- **Alertes de forts mouvements** sur les favoris (seuil en %, une par actif et par jour).
+- **Sauvegarde / restauration** du compte démo dans un fichier JSON.
+- **Lexique** (`public/assets/glossary.js`) avec boutons « ? » ; **taille du texte** (90 à 130 %) ; audit d'accessibilité axe-core (WCAG 2.1 AA) sans violation sur tous les onglets.
+- **Mode plein écran / TV** : heatmap seule, horloge, rotation Crypto / Actions, écran maintenu allumé.
 - Bouton rafraîchir, tirer-pour-rafraîchir, rafraîchissement automatique toutes les 60 s quand l'app est visible, balayage gauche/droite entre onglets.
 - Hors ligne : la coquille de l'app et les dernières données restent en cache (service worker + localStorage), avec une bannière qui donne l'heure des données.
 - Une donnée indisponible s'affiche « n/d ». Aucune valeur n'est jamais inventée.
