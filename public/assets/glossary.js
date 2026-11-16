@@ -22,6 +22,9 @@ export const GLOSSARY = {
     vix: ['VIX', 'Indice de volatilité attendue du S&P 500 sur 30 jours, calculé par le CBOE à partir des options. Il monte souvent quand les marchés baissent.'],
     ex: ['Date de détachement (ex-dividende)', 'À partir de cette date, l’acheteur d’une action ne touche plus le prochain dividende.'],
     etf: ['ETF', 'Fonds coté en bourse qui suit un indice, un secteur ou une matière première.'],
+    curve: ['Courbe des taux', 'Taux d’intérêt des emprunts d’État selon leur durée (3 mois à 30 ans). Normalement, plus la durée est longue, plus le taux est élevé ; quand les taux courts dépassent les taux longs, la courbe est dite « inversée ».'],
+    halving: ['Halving (Bitcoin)', 'Division par deux de la récompense des mineurs, tous les 210 000 blocs (environ tous les 4 ans). Il ralentit la création de nouveaux bitcoins.'],
+    corr: ['Corrélation', 'Mesure (de −1 à 1) de la tendance de deux actifs à varier ensemble. Proche de 1 : ils montent et baissent ensemble ; proche de −1 : en sens inverse ; proche de 0 : sans lien.'],
   },
   en: {
     cap: ['Market capitalisation', 'Total market value of an asset: price × number of shares or tokens outstanding.'],
@@ -45,6 +48,9 @@ export const GLOSSARY = {
     vix: ['VIX', 'Expected 30-day volatility of the S&P 500, computed by Cboe from options. It often rises when markets fall.'],
     ex: ['Ex-dividend date', 'From this date, a buyer of the share no longer receives the next dividend.'],
     etf: ['ETF', 'Exchange-traded fund tracking an index, a sector or a commodity.'],
+    curve: ['Yield curve', 'Government bond yields by maturity (3 months to 30 years). Normally, the longer the maturity, the higher the yield; when short rates exceed long rates, the curve is “inverted”.'],
+    halving: ['Halving (Bitcoin)', 'The miners’ reward is cut in half every 210,000 blocks (about every 4 years), slowing the creation of new bitcoins.'],
+    corr: ['Correlation', 'Measure (from −1 to 1) of how two assets tend to move together. Near 1: they rise and fall together; near −1: opposite; near 0: unrelated.'],
   },
   zh: {
     cap: ['市值', '资产的市场总价值：价格 × 流通股数或代币数量。'],
@@ -68,5 +74,8 @@ export const GLOSSARY = {
     vix: ['VIX', '芝加哥期权交易所根据期权计算的标普 500 未来 30 天预期波动率。市场下跌时通常上升。'],
     ex: ['除息日', '自该日起买入股票者不再获得下一次股息。'],
     etf: ['ETF', '跟踪指数、行业或大宗商品的交易所交易基金。'],
+    curve: ['收益率曲线', '不同期限（3个月至30年）国债的利率。通常期限越长利率越高；短期利率高于长期利率时，称为曲线“倒挂”。'],
+    halving: ['减半（比特币）', '每 210,000 个区块（约每4年）矿工奖励减半，使新比特币的产生速度放缓。'],
+    corr: ['相关性', '衡量两个资产同向变动程度的指标（−1 到 1）。接近 1：同涨同跌；接近 −1：反向变动；接近 0：无关。'],
   },
 };

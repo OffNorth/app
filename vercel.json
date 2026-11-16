@@ -36,6 +36,18 @@
     {
       "source": "/api/quote",
       "destination": "/api/feeds?r=quote"
+    },
+    {
+      "source": "/api/rates",
+      "destination": "/api/feeds?r=rates"
+    },
+    {
+      "source": "/api/events",
+      "destination": "/api/feeds?r=events"
+    },
+    {
+      "source": "/api/btc",
+      "destination": "/api/feeds?r=btc"
     }
   ],
   "headers": [

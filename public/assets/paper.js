@@ -880,6 +880,15 @@ export function createPaper(ctx) {
     return r;
   }
 
+  /** Rappel du plan de trading enregistré pour l'actif (écran graphique → « Mon plan »). */
+  function planBox(a, aq) {
+    const p = ctx.plan?.(a);
+    if (!p) return '';
+    const bits = [isNum(p.target) ? `${t('plan.target')} ${px(p.target, aq)}` : '', isNum(p.stop) ? `${t('plan.stop')} ${px(p.stop, aq)}` : ''].filter(Boolean).join(' · ');
+    return `<div class="plan-box"><strong>${t('plan.title')}</strong>${bits ? ` <span>${bits}</span>` : ''}${p.note ? `<p>${esc(p.note)}</p>` : ''}
+      ${isNum(p.target) || isNum(p.stop) ? `<button type="button" class="btn btn-sm" data-plan-use>${t('plan.use')}</button>` : ''}</div>`;
+  }
+
   function drawTicket() {
     const k = ticket, a = k.asset, q = ctx.quote(a);
     const unit = k.mode === 'usd' ? '$' : esc(a.label);
@@ -891,6 +900,7 @@ export function createPaper(ctx) {
       ${q.ok ? '' : `<p class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }))}</p>`}
       ${q.ok && q.closed ? `<p class="pt-note">${esc(t('pt.closedNote', { d: q.lastTime ? `${ctx.day(q.lastTime)} ${ctx.time(q.lastTime)}` : ctx.ND }))} ${q.clock?.kind === 'open' ? ctx.cd(q.clock) : ''}</p>` : ''}
       ${q.ok && q.ccy && q.ccy !== 'USD' ? `<p class="pt-fx">${esc(t(a.kind === 'i' ? 'pt.fxIndex' : 'pt.fxNote', { c: q.ccy, r: ctx.fxText(q.fx, q.ccy) }))}</p>` : ''}
+      ${planBox(a, aq)}
       ${segHTML('side', [['long', t('pt.buy'), 'buy'], ['short', t('pt.sell'), 'sell']], k.side, 'trade-side')}
       ${segHTML('type', [['market', t('pt.market')], ['limit', t('pt.limit')], ['stop', t('pt.stop')]], k.type)}
       ${k.type === 'market' ? '' : `<label for="tr-price">${t(k.type === 'limit' ? 'pt.limitPrice' : 'pt.stopPrice')}</label>
@@ -898,7 +908,8 @@ export function createPaper(ctx) {
       <label for="tr-amount">${t(k.mode === 'usd' ? 'pt.amountUsd' : 'pt.qty')}</label>
       <div class="trade-amount"><div class="alert-input"><input id="tr-amount" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.amount)}"><span>${unit}</span></div>
         ${segHTML('mode', [['usd', '$'], ['qty', t('pt.qtyShort')]], k.mode)}</div>
-      <div class="trade-quick">${[10, 25, 50, 100].map((p) => `<button type="button" class="btn btn-sm" data-pct="${p}">${p} %</button>`).join('')}</div>
+      <div class="trade-quick">${[10, 25, 50, 100].map((p) => `<button type="button" class="btn btn-sm" data-pct="${p}">${p} %</button>`).join('')}
+        ${ctx.openCalc ? `<button type="button" class="btn btn-sm" data-risk>${t('calc.fromRisk')}</button>` : ''}</div>
       <label>${t('pt.lev')} ${ctx.gloss('lev')}</label>
       ${segHTML('lev', LEVERAGES.map((l) => [l, `${l}×`]), k.lev)}
       <div class="trade-tpsl">
@@ -937,6 +948,30 @@ export function createPaper(ctx) {
       updateTicket();
     }));
     card.querySelectorAll('input').forEach((i) => i.addEventListener('input', () => { readTicket(); updateTicket(); }));
+    // Plan de trading de l'actif : objectif → take profit, invalidation → stop loss.
+    card.querySelector('[data-plan-use]')?.addEventListener('click', () => {
+      readTicket();
+      const p = ctx.plan?.(k.asset);
+      if (p && isNum(p.target)) k.tp = ctx.fmtInput(p.target);
+      if (p && isNum(p.stop)) k.sl = ctx.fmtInput(p.stop);
+      drawTicket();
+    });
+    // Taille de position selon le risque : capital = valeur du compte, stop = SL saisi (ou invalidation du plan).
+    card.querySelector('[data-risk]')?.addEventListener('click', () => {
+      readTicket();
+      const r = computeTicket();
+      const p = ctx.plan?.(k.asset);
+      ctx.openCalc({
+        mode: 'pos', capital: Math.round(isNum(summary().equity) ? summary().equity : acct.cash), unitCap: '$', fx: r.q.fx,
+        entry: isNum(r.entry) ? r.entry : r.q.price, stop: isNum(r.sl) ? r.sl : p?.stop, target: isNum(r.tp) ? r.tp : p?.target,
+        onUse: (qty) => {
+          k.mode = 'qty'; k.amount = ctx.fmtInput(Number(trim(qty, 8)));
+          const pl = qty > 0 && isNum(r.entry) && isNum(r.q.fx) ? qty * r.entry * r.q.fx : null;
+          if (isNum(pl) && pl > acct.cash * k.lev) ctx.toast(t('calc.tooBig'), 'neg');
+          drawTicket();
+        },
+      });
+    });
     card.querySelector('[data-x]').addEventListener('click', closeModal);
     card.querySelector('#tr-go').addEventListener('click', submitTicket);
     updateTicket();

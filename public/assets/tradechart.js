@@ -10,7 +10,7 @@ const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
 const C = { up: '#22c55e', down: '#f05252', entry: '#7cc4ff', liq: '#f5b84a', order: '#b0b8c4', tap: '#e8eef4' };
 const C_LIGHT = { ...C, entry: '#0a66c2', liq: '#a15c07', order: '#566372', tap: '#101820' };
 const lines = () => (document.documentElement.dataset.theme === 'light' ? C_LIGHT : C);
-export const INDICATORS = ['ma20', 'ma50', 'vol', 'rsi', 'macd'];
+export const INDICATORS = ['ma20', 'ma50', 'vol', 'rsi', 'macd', 'ev']; // ev : repères des dividendes et résultats (actions)
 /** Couleurs du graphique selon le thème (variables CSS de la page). */
 function themeOpts() {
   const v = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -87,7 +87,7 @@ export function createTradeChart(ctx) {
       <div class="tc-bar"><div class="seg" role="group" aria-label="${esc(t('tc.tf'))}">${TIMEFRAMES.map((x) =>
         `<button type="button" data-tf="${x}" aria-pressed="${x === tf}">${t(`tc.tf.${x}`)}</button>`).join('')}</div>
         <span class="tc-src" id="tc-src"></span></div>
-      <div class="tc-ind" role="group" aria-label="${esc(t('tc.ind'))}">${INDICATORS.map((k) =>
+      <div class="tc-ind" role="group" aria-label="${esc(t('tc.ind'))}">${INDICATORS.filter((k) => k !== 'ev' || asset.kind === 's').map((k) =>
         `<button type="button" data-ind="${k}" aria-pressed="${ctx.getInd().includes(k)}">${t(`tc.ind.${k}`)}</button>`).join('')}</div>
       <div class="tc-cmp"><label for="tc-cmp-sel">${t('tc.cmp')}</label>
         <select id="tc-cmp-sel" class="lang-select"><option value="">${t('tc.cmpNone')}</option>${ctx.compareList().filter((x) => x.key !== keyOf(asset)).map((x) =>
@@ -229,6 +229,41 @@ export function createTradeChart(ctx) {
     }
     try { chart.panes().forEach((p, i) => { if (i > 0) p.setHeight(80); }); } catch { /* ancienne version */ }
     updateIndicators();
+    applyEvents(on.has('ev'));
+  }
+
+  /* ---------- Repères : détachements de dividende (D) et publications de résultats (R), actions seulement ---------- */
+  const eventsCache = new Map(); // symbole → { at, d }
+  async function applyEvents(show) {
+    if (!cur?.series) return;
+    const c = cur;
+    if (!show || c.asset.kind !== 's' || !ctx.fetchEvents) { c.markers?.setMarkers([]); return; }
+    const sym = c.asset.assetId;
+    let hit = eventsCache.get(sym);
+    if (!hit || Date.now() - hit.at > 6 * 3600_000) {
+      let d = null;
+      try { d = await ctx.fetchEvents(sym); } catch { /* aucun repère */ }
+      hit = { at: Date.now(), d };
+      eventsCache.set(sym, hit);
+    }
+    if (cur !== c || !hit.d) return;
+    const times = c.bars.map((b) => b.time);
+    // Bougie qui contient l'événement : la dernière dont l'ouverture est antérieure ou égale à sa date.
+    const snap = (ms) => {
+      const tl = local(Math.floor(ms / 1000));
+      if (!times.length || tl < times[0] || tl > times[times.length - 1] + TF_SEC[c.tf]) return null;
+      let lo = 0, hi = times.length - 1;
+      while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= tl) lo = mid; else hi = mid - 1; }
+      return times[lo];
+    };
+    const marks = [];
+    for (const x of hit.d.dividends || []) { const tm = snap(x.time); if (tm != null) marks.push({ time: tm, position: 'belowBar', color: '#22c55e', shape: 'circle', text: t('tc.evDiv'), size: 1 }); }
+    for (const x of hit.d.earnings || []) { const tm = snap(x.time); if (tm != null) marks.push({ time: tm, position: 'aboveBar', color: '#b48cff', shape: 'square', text: t('tc.evEarn'), size: 1 }); }
+    marks.sort((a, b) => a.time - b.time);
+    try {
+      if (!c.markers) c.markers = c.LWC.createSeriesMarkers(c.series, marks);
+      else c.markers.setMarkers(marks);
+    } catch { /* version sans marqueurs */ }
   }
   function updateIndicators() {
     if (!cur?.chart) return;

@@ -7,13 +7,15 @@ import { createTradeChart, INDICATORS, TIMEFRAMES } from './tradechart.js';
 import { rsi, sma, volumeRatio } from './indicators.js';
 import { createPortfolio } from './portfolio.js';
 import { GLOSSARY } from './glossary.js';
+import { createAnalysis } from './analysis.js';
+import { createComfort } from './comfort.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 20; // à garder égal à VERSION ('v20') dans /sw.js
+const APP_BUILD = 21; // à garder égal à VERSION ('v21') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
-const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS];
+const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS, 'taux']; // + courbe des taux américains
 const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
 // Anciens liens #europe, #asie… : onglet Indices sur la région demandée.
 const regionOf = (x) => (REGIONS.includes(x) ? x : LEGACY_REGIONS[x]);
@@ -27,8 +29,8 @@ const store = {
 };
 
 // Réglages de l'utilisateur (mémorisés sur l'appareil).
-const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies', cryptoView: 'coins', compteView: 'demo' };
-const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors', 'screener'], cryptoView: ['coins', 'cats'], compteView: ['demo', 'real'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
+const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies', cryptoView: 'coins', compteView: 'demo', idxView: 'cards' };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors', 'screener'], cryptoView: ['coins', 'cats'], compteView: ['demo', 'real'], idxView: ['cards', 'perf'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
 const prefs = { ...PREF_DEFAULT };
 for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
 { const r = regionOf(location.hash.slice(1)) || regionOf(store.get('tab')); if (r) prefs.region = r; }
@@ -131,7 +133,8 @@ const stockItems = (data) => (data?.companies || []).slice(0, prefs.nStocks);
 function fmtTime(ms, withSec = false) { return isNum(ms) ? (withSec ? timeSecFmt : timeFmt).format(ms) : ND; }
 function fmtDay(ms, tz) {
   if (!isNum(ms)) return ND;
-  const opts = { weekday: 'short', day: 'numeric', month: 'short' };
+  // Année affichée seulement si ce n'est pas l'année en cours (halving, achats anciens…).
+  const opts = { weekday: 'short', day: 'numeric', month: 'short', ...(new Date(ms).getFullYear() !== new Date().getFullYear() ? { year: 'numeric' } : {}) };
   try { return new Intl.DateTimeFormat(loc(), tz ? { ...opts, timeZone: tz } : opts).format(ms); }
   catch { return new Intl.DateTimeFormat(loc(), opts).format(ms); }
 }
@@ -354,7 +357,8 @@ function renderCrypto() {
   if (!data?.coins?.length) return heatmapPlaceholder(statsEl, map);
   renderTools('crypto');
   statsEl.innerHTML = cryptoStats(data).map(statHTML).join('');
-  if (prefs.cryptoView === 'cats') return renderCryptoCats(map);
+  if (prefs.cryptoView === 'cats') { $('#btc-net').innerHTML = ''; return renderCryptoCats(map); }
+  analysis.renderBtc($('#btc-net'));
   renderTiles(map, cryptoItems(data), {
     maxAbs: PERIOD_MAX[prefs.period], period: t('period24h', { p: periodLabel() }), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
   });
@@ -893,6 +897,7 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav
   $('#chart-stats').innerHTML = statsHTML;
   renderFacts(trade, token);
   setupNews(trade || alert, token);
+  setupAnalyses(trade, token);
   link.hidden = true;
   const modeBox = $('#chart-mode');
   modeBox.hidden = !trade;
@@ -1499,14 +1504,16 @@ function renderFavTools() {
     <div class="fav-row"><label for="fav-sort" class="pt-label">${t('fav.sort')}</label>
       <select id="fav-sort" class="lang-select">${[['added', t('fav.sort.added')], ['chgDesc', t('fav.sort.chgDesc')], ['chgAsc', t('fav.sort.chgAsc')], ['name', t('fav.sort.name')]]
         .map(([v, l]) => `<option value="${v}"${favView.sort === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
-      <button type="button" class="btn btn-sm" data-fact="table" aria-pressed="${favView.mode === 'table'}">${t(favView.mode === 'table' ? 'fav.cards' : 'fav.table')}</button>
+      <div class="seg" role="group" aria-label="${esc(t('tools.view'))}">${[['cards', t('fav.cards')], ['table', t('fav.table')], ['corr', t('corr.btn')]].map(([v, l]) =>
+        `<button type="button" data-fmode="${v}" aria-pressed="${(favView.mode || 'cards') === v}">${esc(l)}</button>`).join('')}</div>
       <button type="button" class="btn btn-sm" data-fact="organize" aria-pressed="${favView.organize}">${t(favView.organize ? 'fav.done' : 'fav.organize')}</button></div>`;
   box.onclick = (e) => {
     const l = e.target.closest('[data-flist]');
     if (l) { favView.list = l.dataset.flist; saveFavView(); renderFavs(); return; }
     const a = e.target.closest('[data-fact]');
     if (a?.dataset.fact === 'organize') { favView.organize = !favView.organize; renderFavs(); }
-    else if (a?.dataset.fact === 'table') { favView.mode = favView.mode === 'table' ? 'cards' : 'table'; saveFavView(); renderFavs(); }
+    const fm = e.target.closest('[data-fmode]');
+    if (fm) { favView.mode = fm.dataset.fmode; saveFavView(); renderFavs(); return; }
     else if (a?.dataset.fact === 'new') {
       if (favLists.length >= 12) { toast(t('fav.maxLists'), 'neg'); return; }
       const name = (prompt(t('fav.listName')) || '').trim().slice(0, 24);
@@ -1569,6 +1576,10 @@ function renderFavs() {
   const shown = visibleFavs();
   if (!shown.length) { grid.innerHTML = `<div class="empty fav-empty">${t('fav.emptyList')}</div>`; grid.onclick = null; return; }
   if (favView.mode === 'table') return renderFavTable(grid, shown);
+  if (favView.mode === 'corr') {
+    grid.onclick = null;
+    return analysis.corrRender(grid, shown.map((f) => ({ label: f.label, asset: favAsset(f) })), () => state.tab === 'favoris' && favView.mode === 'corr' && !favView.organize);
+  }
   const field = PERIOD_FIELD[prefs.period];
   const actions = new Map();
   grid.innerHTML = shown.map((f) => {
@@ -1636,12 +1647,18 @@ function renderFavs() {
 function renderIndices(region) {
   if (MACRO_GROUPS.includes(region)) return renderMacro(region);
   if (region === 'carte') return renderWorldMap($('#grid-carte'));
+  if (region === 'taux') return analysis.renderRates($('#grid-taux'));
   const grid = $(`#grid-${region}`);
   const list = state.indices?.indices?.filter((i) => i.region === region);
   if (!list?.length) {
     grid.innerHTML = state.loading ? Array.from({ length: 4 }, () => '<div class="idx skeleton"></div>').join('')
       : `<div class="empty" style="grid-column:1/-1">${t('noData')}</div>`;
     return;
+  }
+  if (prefs.idxView === 'perf') {
+    return renderPerfTable(grid, list.map((ix) => ({ key: `i:${ix.id}`, label: indexName(ix), sub: country(ix.country), logo: ix, chg: ix.outdated ? null : ix.changePct,
+      asset: ix.symbol ? { kind: 'i', assetId: ix.id, label: ix.name, symbol: ix.symbol } : null, open: () => openIndexChart(ix) })),
+      () => state.tab === 'indices' && prefs.region === region && prefs.idxView === 'perf');
   }
   grid.innerHTML = list.map((ix) => indexCardHTML(ix)).join('');
   grid.onclick = (e) => {
@@ -1669,7 +1686,8 @@ function renderChrome() {
 
   const banner = $('#banner');
   let msg = '';
-  if (state.offline[key] && data) msg = t('offlineData', { d: fmtDay(data.fetchedAt), t: fmtTime(data.fetchedAt) });
+  if (!navigator.onLine) msg = data ? t('off.now', { d: fmtDay(data.fetchedAt), t: fmtTime(data.fetchedAt) }) : t('offlineNone');
+  else if (state.offline[key] && data) msg = t('offlineData', { d: fmtDay(data.fetchedAt), t: fmtTime(data.fetchedAt) });
   else if (state.offline[key]) msg = t('offlineNone');
   else if (data?.stale) msg = t('staleBanner', { t: fmtTime(data.fetchedAt) });
   banner.textContent = msg;
@@ -1690,6 +1708,7 @@ function renderChrome() {
 }
 
 function render() {
+  comfort.renderTicker();
   for (const t of TABS) {
     $(`#view-${t}`).hidden = t !== state.tab;
     document.querySelector(`.tabbar [data-tab="${t}"]`).setAttribute('aria-current', t === state.tab ? 'page' : 'false');
@@ -1705,7 +1724,8 @@ function render() {
   }
   else {
     for (const r of INDEX_TABS) $(`#grid-${r}`).hidden = r !== prefs.region;
-    $('#indices-tools').innerHTML = segHTML('region', INDEX_TABS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
+    $('#indices-tools').innerHTML = segHTML('region', INDEX_TABS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'))
+      + (REGIONS.includes(prefs.region) && prefs.region !== 'carte' ? segHTML('idxView', [['cards', t('fav.cards')], ['perf', t('view.perf')]], t('tools.view')) : '');
     renderMarketClock();
     renderAgenda();
     renderIndices(prefs.region);
@@ -1930,6 +1950,8 @@ const paper = createPaper({
   toast,
   changed: () => { tradeChart.refresh(); if (state.tab === 'compte') render(); if ((state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks(); },
   assets: allAssets,
+  plan: (a) => analysis.getPlan(`${a.kind}:${a.assetId}`),
+  openCalc: (o) => analysis.openCalc(o),
 });
 
 /** Nombre pour un champ de saisie (sans séparateur de milliers, décimale de la langue). */
@@ -1967,6 +1989,7 @@ const tradeChart = createTradeChart({
     updateAlertDir();
   },
   fetchCandles,
+  fetchEvents: async (sym) => { const r = await fetch(`/api/events?sym=${encodeURIComponent(sym)}`); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); },
   compareList: () => allAssets().map((a) => ({ ...a, key: `${a.kind}:${a.assetId}` })),
 });
 
@@ -2064,7 +2087,7 @@ async function renderFacts(asset, token) {
   const rows = [
     [t('facts.hi52'), `${p(hi)} <small>${pc((close / hi - 1) * 100)}</small>`],
     [t('facts.lo52'), `${p(lo)} <small>${pc((close / lo - 1) * 100)}</small>`],
-    [t('facts.p1m'), pc(perf(nowS - 30 * DAY))], [t('facts.p3m'), pc(perf(nowS - 91 * DAY))],
+    [t('facts.p1w'), pc(perf(nowS - 7 * DAY))], [t('facts.p1m'), pc(perf(nowS - 30 * DAY))], [t('facts.p3m'), pc(perf(nowS - 91 * DAY))],
     [t('facts.ytd'), pc(perf(jan1))], [t('facts.p1y'), pc(perf(nowS - 365 * DAY))],
     [t('facts.p5y'), pc(perf(nowS - 5 * 365 * DAY + 7 * DAY))],
     [`${t('facts.rsi')} ${glossBtn('rsi')}`, isNum(rsiV) ? NF1.format(rsiV) : ND],
@@ -2134,7 +2157,8 @@ function renderHome() {
     <section class="card home-card"><h2>${t('home.now')} <small>${fmtDay(Date.now())}</small></h2>
       <p class="home-open">${clocks.length ? t('home.openNow', { n: openNow, m: clocks.length }) : ''}</p>
       ${idxRows.length ? `<ol class="mv-list">${idxRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
-    <section class="card home-card"><h2>${t('home.others')}</h2>${otherRows.length ? `<ol class="mv-list">${otherRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
+    <section class="card home-card"><h2>${t('home.others')}</h2>${otherRows.length ? `<ol class="mv-list">${otherRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}
+      ${analysis.homeRatesHTML()}${analysis.rates() ? `<button type="button" class="btn btn-sm" data-go-rates>${t('rt.see')}</button>` : ''}</section>
     ${sentimentHTML()}
     <section class="card home-card"><h2>${t('movers.title')}</h2>
       <h3>${t('home.cryptos')} <small>${esc(periodLabel())}</small></h3><ol class="mv-list">${mvRows([...cm.up, ...cm.down], 'c') || `<li class="mv-none">${ND}</li>`}</ol>
@@ -2152,11 +2176,15 @@ function renderHome() {
     <section class="card home-card"><h2>${t('home.tools')}</h2>
       <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
         <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button>
-        <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button></div>
+        <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button>
+        <button type="button" class="btn" data-tool="calc">${t('calc.title')}</button>
+        <button type="button" class="btn" data-tool="tour">${t('tour.replay')}</button></div>
+      <label class="home-switch"><input type="checkbox" data-ticker ${comfort.tickerOn() ? 'checked' : ''}> ${t('tk.toggle')}</label>
       <div class="home-summary"><h3>${t('ts.title')}</h3><div class="seg" role="group" aria-label="${esc(t('ts.title'))}">${TEXT_SCALES.map((z) =>
         `<button type="button" data-ts="${z}" aria-pressed="${textScale() === z}">${Math.round(z * 100)} %</button>`).join('')}</div></div>
       ${summaryHTML()}
-      ${movesHTML()}</section>
+      ${movesHTML()}
+      ${notifHTML()}</section>
     <p class="consent-small">${t('home.note')}</p>`;
   box.onclick = (e) => {
     const r = e.target.closest('[data-home]'); if (r) { open.get(r.dataset.home)?.(); return; }
@@ -2165,10 +2193,16 @@ function renderHome() {
     if (tl?.dataset.tool === 'search') openSearch();
     else if (tl?.dataset.tool === 'conv') openConverter();
     else if (tl?.dataset.tool === 'gloss') openGloss();
+    else if (tl?.dataset.tool === 'calc') analysis.openCalc();
+    else if (tl?.dataset.tool === 'tour') comfort.startTour();
+    if (e.target.closest('[data-go-rates]')) { prefs.region = 'taux'; store.set('prefs', prefs); setTab('indices'); return; }
     const ts = e.target.closest('[data-ts]'); if (ts) setTextScale(Number(ts.dataset.ts));
   };
   bindSummary(box);
   bindMoves(box);
+  bindNotif(box);
+  box.querySelector('[data-ticker]')?.addEventListener('change', (e) => comfort.setTicker(e.target.checked));
+  analysis.loadRates(() => { if (state.tab === 'accueil') renderHome(); });
 }
 /** Graphique d'une crypto ou d'une entreprise avec son rang et sa part du top affiché (comme depuis la heatmap). */
 function openCryptoRanked(c) {
@@ -2347,6 +2381,27 @@ function setupNews(asset, token) {
   };
 }
 
+/* ---------- Analyses de l'écran graphique : saisonnalité, simulateur, mon plan ---------- */
+let anaTab = 'season';
+function setupAnalyses(asset, token) {
+  const box = $('#chart-ana-box'), out = $('#chart-ana');
+  box.hidden = !asset;
+  box.open = false;
+  out.innerHTML = '';
+  if (!asset) { box.ontoggle = null; return; }
+  const draw = async () => {
+    out.innerHTML = `<div class="seg seg-wide ana-tabs" role="group" aria-label="${esc(t('ana.title'))}">${[['season', t('ss.title')], ['sim', t('sim.title')], ['plan', t('plan.title')]].map(([k, l]) =>
+      `<button type="button" data-ana="${k}" aria-pressed="${anaTab === k}">${esc(l)}</button>`).join('')}</div><div id="ana-body"><p class="mc-note">${t('loading')}</p></div>`;
+    out.querySelectorAll('[data-ana]').forEach((b) => b.addEventListener('click', () => { anaTab = b.dataset.ana; draw(); }));
+    const body = out.querySelector('#ana-body');
+    if (anaTab === 'plan') { const q = quoteOf(asset); analysis.planSetup(body, asset, unitOf(asset.kind, q.ccy)); return; }
+    if (anaTab === 'sim') { analysis.simSetup(body, asset); return; }
+    const html = await analysis.seasonHTML(asset);
+    if (token === chartToken && body.isConnected) body.innerHTML = html;
+  };
+  box.ontoggle = () => { if (box.open && out.dataset.token !== String(token)) { out.dataset.token = String(token); draw(); } };
+}
+
 /* ---------- Calendrier économique et dividendes (agenda de l'onglet Indices) ---------- */
 let econData = null, econLoading = false, divData = null, divLoading = false;
 async function loadEcon() {
@@ -2398,7 +2453,7 @@ function divHTML(expanded) {
 let sentiment = null, sentimentAt = 0, sentimentLoading = false;
 async function loadSentiment() {
   if (sentimentLoading) return; sentimentLoading = true;
-  try { const r = await fetch('/api/sentiment'); sentiment = r.ok ? await r.json() : { error: true }; } catch { sentiment = { error: true }; }
+  try { const r = await fetch('/api/sentiment'); sentiment = r.ok ? await r.json() : { error: true }; if (r.ok) sentiment.offline = r.headers.get('X-SW-Cache') === '1'; } catch { sentiment = { error: true }; }
   sentimentAt = Date.now(); sentimentLoading = false;
   if (state.tab === 'accueil') renderHome();
 }
@@ -2417,6 +2472,7 @@ function sentimentHTML() {
       <div class="fng-scale"><span>${t('sent.xfear')}</span><span>${t('sent.xgreed')}</span></div>${spark}
       <p class="mc-note">${t('sent.fngNote', { s: esc(f.source), d: fmtDay(f.now.time) })}</p></div>` : `<p class="mc-note">${t('sent.fng')} : ${ND}</p>`}
     ${v ? `<p class="home-line"><b>VIX</b> ${NF2.format(v.price)} <span class="${signClass(v.changePct)}">${fmtPct(v.changePct)}</span> ${glossBtn('vix')}<small>${t('sent.vixNote', { s: esc(v.source) })}</small></p>` : `<p class="mc-note">VIX : ${ND}</p>`}
+    ${sentiment.offline ? `<p class="mc-note neg">${t('off.cached', { d: fmtDay(sentiment.fetchedAt), t: fmtTime(sentiment.fetchedAt) })}</p>` : ''}
   </section>`;
 }
 
@@ -2481,11 +2537,11 @@ function favAsset(f) {
   if (f.t === 'm') { const m = macroById(f.id); return m?.symbol ? { kind: 'm', assetId: f.id, label: f.label, symbol: m.symbol } : null; }
   return { kind: f.t, assetId: f.id, label: f.label };
 }
-async function favPerf(f) {
-  const key = favKey(f);
+const favPerf = (f) => perfOf(favKey(f), favAsset(f));
+/** Performances 1 semaine, 1 mois, depuis le 1er janvier et 1 an, d'après les bougies journalières (cache 30 min). */
+async function perfOf(key, a) {
   const hit = perfCache.get(key);
   if (hit && Date.now() - hit.at < 30 * 60_000) return hit.perf;
-  const a = favAsset(f);
   let perf = null;
   if (a) {
     try {
@@ -2502,23 +2558,27 @@ async function favPerf(f) {
   return perf;
 }
 function renderFavTable(grid, list) {
+  renderPerfTable(grid, list.map((f) => ({ key: favKey(f), label: f.label, logo: f, chg: quoteOf({ kind: f.t, assetId: f.id, label: f.label }).chg, asset: favAsset(f), open: () => openFav(f) })),
+    () => grid.isConnected && state.tab === 'favoris' && favView.mode === 'table');
+}
+/** Tableau de performances (favoris, indices d'une région) : variation du jour, 1 semaine, 1 mois, depuis le 1er janvier, 1 an. */
+function renderPerfTable(grid, rows, isActive) {
   const cell = (v) => `<td class="num ${signClass(v)}">${isNum(v) ? fmtPct(v, 1) : '…'}</td>`;
-  const row = (f, p) => {
-    const q = quoteOf({ kind: f.t, assetId: f.id, label: f.label });
+  const row = (r, p) => {
     const pc = (k) => (p === undefined ? '<td class="num">…</td>' : p && isNum(p[k]) ? cell(p[k]) : `<td class="num">${ND}</td>`);
-    return `<tr data-key="${esc(favKey(f))}" tabindex="0"><td>${logoImg(f, 18, 'mv-logo')}<b>${esc(f.label)}</b></td>${isNum(q.chg) ? cell(q.chg) : `<td class="num">${ND}</td>`}${pc('w1')}${pc('m1')}${pc('ytd')}${pc('y1')}</tr>`;
+    return `<tr data-key="${esc(r.key)}" tabindex="0"><td>${logoImg(r.logo, 18, 'mv-logo')}<b>${esc(r.label)}</b>${r.sub ? ` <small>${esc(r.sub)}</small>` : ''}</td>${isNum(r.chg) ? cell(r.chg) : `<td class="num">${ND}</td>`}${pc('w1')}${pc('m1')}${pc('ytd')}${pc('y1')}</tr>`;
   };
   const draw = (perfs) => {
     grid.innerHTML = `<div class="table-wrap fav-table"><table class="scr-table"><thead><tr><th>${t('scr.asset')}</th><th class="num">${t('perf.d1')}</th><th class="num">${t('perf.w1')}</th>
       <th class="num">${t('perf.m1')}</th><th class="num">${t('perf.ytd')}</th><th class="num">${t('perf.y1')}</th></tr></thead>
-      <tbody>${list.map((f) => row(f, perfs.get(favKey(f)))).join('')}</tbody></table></div><p class="mc-note">${t('perf.note')}</p>`;
+      <tbody>${rows.map((r) => row(r, perfs.get(r.key))).join('')}</tbody></table></div><p class="mc-note">${t('perf.note')}</p>`;
   };
   const perfs = new Map();
   draw(perfs);
-  const queue = [...list];
-  const worker = async () => { while (queue.length) { const f = queue.shift(); perfs.set(favKey(f), await favPerf(f)); if (grid.isConnected && favView.mode === 'table') draw(perfs); } };
+  const queue = [...rows];
+  const worker = async () => { while (queue.length) { const r = queue.shift(); perfs.set(r.key, r.asset ? await perfOf(r.key, r.asset) : null); if (isActive()) draw(perfs); } };
   Promise.all([worker(), worker(), worker()]);
-  grid.onclick = (e) => { const tr = e.target.closest('tr[data-key]'); const f = tr && favs.find((x) => favKey(x) === tr.dataset.key); if (f) openFav(f); };
+  grid.onclick = (e) => { const tr = e.target.closest('tr[data-key]'); rows.find((r) => r.key === tr?.dataset.key)?.open(); };
   grid.onkeydown = (e) => { if (e.key === 'Enter') grid.onclick(e); };
 }
 
@@ -2531,7 +2591,30 @@ const portfolio = createPortfolio({
   price: priceIn, qty: (v) => (isNum(v) ? qtyNF().format(v) : ND), pct: (v) => fmtPct(v), NF1: () => NF1, pctSign,
   unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy === 'USX' ? '¢' : ccy),
   logo: (a, size) => logoImg(a, size, 'pt-logo'), toast, parse: parseAmount, fmtInput, lang: () => getLang(),
-  assets: allAssets,
+  assets: allAssets, store, fetchCandles, day: (ms) => fmtDay(ms),
+  fetchEvents: async (sym) => { const r = await fetch(`/api/events?sym=${encodeURIComponent(sym)}`); if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); },
+});
+
+/* ---------- Analyses : courbe des taux, réseau Bitcoin, saisonnalité, simulateur, corrélations, calculatrices, plans ---------- */
+const unitOf = (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy === 'USX' ? '¢' : ccy);
+const analysis = createAnalysis({
+  t, esc, isNum, ND, store, toast, signClass, pctSign, loc, getJSON, fetchCandles, fmtInput,
+  pct: (v, d) => fmtPct(v, d),
+  num: (v, p) => (isNum(v) ? new Intl.NumberFormat(loc(), { minimumFractionDigits: p, maximumFractionDigits: p }).format(v) : ND),
+  day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
+  gloss: (k) => glossBtn(k), parse: parseAmount, native: (v, c) => fmtNative(v, c),
+  qty: (v) => (isNum(v) ? qtyNF().format(v) : ND),
+});
+
+/* ---------- Confort : bandeau des favoris, visite guidée, connexion ---------- */
+const comfort = createComfort({
+  t, esc, store, toast,
+  tickerItems: () => favs.map((f) => {
+    const q = quoteOf({ kind: f.t, assetId: f.id, label: f.label });
+    return { key: favKey(f), label: f.label, price: isNum(q.price) ? priceIn(q.price, f.t, q.ccy) : ND, pct: fmtPct(q.chg), cls: signClass(q.chg) };
+  }),
+  openKey: (k) => { const f = favs.find((x) => favKey(x) === k); if (f) openFav(f); },
+  onNetwork: (on) => { renderChrome(); if (on) refresh(); },
 });
 
 /* ---------- Lexique ---------- */
@@ -2613,6 +2696,40 @@ function bindMoves(root) {
   }));
 }
 
+/* ---------- Rappels du calendrier (la veille) et résumé hebdomadaire (samedi), par notification ---------- */
+function notifHTML() {
+  const rem = alertsCache?.remind, wk = alertsCache?.weekly;
+  const row = (key, cur, activeText) => `<div class="home-summary"><h3>${t(`${key}.title`)}</h3><p class="consent-small">${t(`${key}.intro`)}</p>
+    <div class="pt-join"><button type="button" class="btn" data-nt="${key}:on">${t(cur ? 'sum.update' : 'sum.on')}</button>
+      ${cur ? `<button type="button" class="btn" data-nt="${key}:off">${t('sum.off')}</button>` : ''}</div>
+    <p class="consent-small">${cur ? activeText : ''} <a href="${legalPrefix()}/confidentialite.html#resume">${t('alert.privacy')}</a></p></div>`;
+  return row('rem', rem, rem ? t('rem.active', { n: rem.count }) : '') + row('wk', wk, wk ? t('wk.active', { n: wk.count }) : '');
+}
+function bindNotif(root) {
+  root.querySelectorAll('[data-nt]').forEach((b) => b.addEventListener('click', async () => {
+    const [key, mode] = b.dataset.nt.split(':');
+    const action = key === 'rem' ? 'remind.set' : 'weekly.set';
+    b.disabled = true;
+    try {
+      if (mode === 'off') await alertsApi(action, { token: store.get(ALERT_TOKEN), on: false });
+      else {
+        const sup = pushSupport();
+        if (sup !== 'ok') { toast(t(sup === 'ios' ? 'alert.ios' : 'alert.unsupported'), 'neg'); b.disabled = false; return; }
+        const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+        if (perm !== 'granted') { toast(t('alert.denied'), 'neg'); b.disabled = false; return; }
+        const token = await ensureDevice();
+        let tz = 'UTC';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { /* UTC */ }
+        if (key === 'rem') await alertsApi(action, { token, on: true, tz, syms: favs.filter((f) => f.t === 's').map((f) => f.id).filter((x) => /^[A-Z0-9.-]{1,12}$/.test(x)).slice(0, 30) });
+        else await alertsApi(action, { token, on: true, tz, assets: favs.slice(0, 30).map((f) => { const a = favAsset(f); return a ? { kind: a.kind, assetId: a.assetId, label: f.label, ...(a.symbol ? { symbol: a.symbol } : {}) } : null; }).filter(Boolean) });
+        toast(t(`${key}.saved`));
+      }
+      await loadAlerts(true);
+    } catch { toast(t('alert.error'), 'neg'); }
+    if (state.tab === 'accueil') renderHome();
+  }));
+}
+
 /* ---------- Mode plein écran / TV : heatmap seule, mise à jour automatique, rotation Crypto ↔ Actions ---------- */
 let tvTimer = 0, tvWake = null;
 async function enterTV(kind) {
@@ -2673,7 +2790,9 @@ if (new URLSearchParams(location.search).get('action') === 'search') setTimeout(
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('#search').hidden) closeSearch();
+  if (comfort.tourOpen()) comfort.endTour();
+  else if (analysis.calcOpen()) analysis.closeCalc();
+  else if (!$('#search').hidden) closeSearch();
   else if ($('#conv') && !$('#conv').hidden) closeConverter();
   else if ($('#gloss') && !$('#gloss').hidden) closeGloss();
   else if (portfolio.isOpen()) portfolio.close();
@@ -2812,3 +2931,6 @@ applyStatic();
 $('#app-version').textContent = `${t('version')} ${APP_VERSION}`;
 render();
 refresh();
+comfort.bindTicker();
+comfort.bindNetwork();
+comfort.maybeTour();

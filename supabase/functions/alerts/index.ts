@@ -6,6 +6,8 @@
 //   list     { token }             → alertes de l'appareil
 //   create   { token, alert }      → nouvelle alerte (20 actives au plus par appareil, dont 10 techniques)
 //   summary.set { token, time, tz, assets } → résumé quotidien par notification (heure locale), ou désactivation (time null)
+//   remind.set { token, on, tz, syms } → rappels la veille (18 h locale) : décisions Fed / BCE et résultats des actions suivies
+//   weekly.set { token, on, tz, assets } → résumé de la semaine le samedi (10 h locale) : variations sur 7 jours des favoris
 //   moves.set { token, pct, assets } → alertes automatiques de forts mouvements (seuil en %), ou désactivation (pct null)
 //   delete   { token, id }         → supprime une alerte
 //   forget   { token }             → supprime l'appareil et toutes ses alertes
@@ -102,10 +104,12 @@ async function list(body: Record<string, any>) {
   const d = await device(body.token);
   if (!d) return json({ alerts: [], registered: false });
   const rows = await sql`select * from marches.alerts where device_id = ${d.id} order by created_at desc`;
-  const [dev] = await sql`select summary_time, tz, summary_assets, moves_pct, moves_assets from marches.devices where id = ${d.id}`;
+  const [dev] = await sql`select summary_time, tz, summary_assets, moves_pct, moves_assets, remind_on, remind_syms, weekly_on, weekly_assets from marches.devices where id = ${d.id}`;
   return json({ alerts: rows.map(publicAlert), registered: true,
     summary: dev?.summary_time ? { time: dev.summary_time, tz: dev.tz, count: (dev.summary_assets || []).length } : null,
-    moves: dev?.moves_pct ? { pct: dev.moves_pct, count: (dev.moves_assets || []).length } : null });
+    moves: dev?.moves_pct ? { pct: dev.moves_pct, count: (dev.moves_assets || []).length } : null,
+    remind: dev?.remind_on ? { count: (dev.remind_syms || []).length } : null,
+    weekly: dev?.weekly_on ? { count: (dev.weekly_assets || []).length } : null });
 }
 
 async function create(body: Record<string, any>) {
@@ -169,6 +173,37 @@ async function movesSet(body: Record<string, any>) {
       && typeof x.label === 'string' && x.label.length <= 64)
     .map((x: any) => ({ kind: x.kind, assetId: x.assetId, label: x.label }));
   await sql`update marches.devices set moves_pct = ${pct}, moves_assets = ${sql.json(assets)} where id = ${d.id}`;
+  return json({ ok: true, count: assets.length });
+}
+
+/** Rappels du calendrier : on = true/false, fuseau de l'appareil, symboles d'actions suivis (30 au plus). */
+async function remindSet(body: Record<string, any>) {
+  const d = await device(body.token);
+  if (!d) return json({ error: 'appareil non enregistré' }, 401);
+  if (!body.on) {
+    await sql`update marches.devices set remind_on = false, remind_syms = null, remind_sent = null where id = ${d.id}`;
+    return json({ ok: true });
+  }
+  if (!validTz(body.tz)) return json({ error: 'réglage invalide' }, 400);
+  const syms = [...new Set((Array.isArray(body.syms) ? body.syms : []).filter((x: unknown) => typeof x === 'string' && /^[A-Z0-9.-]{1,12}$/.test(x)))].slice(0, 30);
+  await sql`update marches.devices set remind_on = true, tz = ${body.tz}, remind_syms = ${sql.json(syms)} where id = ${d.id}`;
+  return json({ ok: true, count: syms.length });
+}
+
+/** Résumé hebdomadaire : on = true/false, fuseau, favoris suivis (30 au plus ; symbole Yahoo pour indices et matières). */
+async function weeklySet(body: Record<string, any>) {
+  const d = await device(body.token);
+  if (!d) return json({ error: 'appareil non enregistré' }, 401);
+  if (!body.on) {
+    await sql`update marches.devices set weekly_on = false, weekly_assets = null, weekly_sent = null where id = ${d.id}`;
+    return json({ ok: true });
+  }
+  if (!validTz(body.tz)) return json({ error: 'réglage invalide' }, 400);
+  const assets = (Array.isArray(body.assets) ? body.assets : []).slice(0, 30)
+    .filter((x: any) => ['c', 's', 'i', 'm'].includes(x?.kind) && typeof x.assetId === 'string' && /^[\w.^=&:-]{1,64}$/.test(x.assetId)
+      && typeof x.label === 'string' && x.label.length <= 64 && (!['i', 'm'].includes(x.kind) || validSymbol(x.symbol)))
+    .map((x: any) => ({ kind: x.kind, assetId: x.assetId, label: x.label, ...(['i', 'm'].includes(x.kind) ? { symbol: x.symbol } : {}) }));
+  await sql`update marches.devices set weekly_on = true, tz = ${body.tz}, weekly_assets = ${sql.json(assets)} where id = ${d.id}`;
   return json({ ok: true, count: assets.length });
 }
 
@@ -255,7 +290,7 @@ const TEXT: Record<string, Record<string, string>> = {
     maDown: '{l} : la MM20 passe en dessous de la MM50', vol: '{l} : volume du jour {v} × la moyenne de 20 jours',
     techBody: 'Bougies journalières · alerte créée sur Marchés — information, pas un conseil financier.',
     moveUp: '{l} : forte hausse, {v} ({w})', moveDown: '{l} : forte baisse, {v} ({w})', moveBody: 'Seuil automatique : {t}. Information, pas un conseil financier.',
-    sumTitle: 'Résumé Marchés · {d}', sumDemo: 'Compte démo {v}', sumNone: 'Aucune donnée disponible pour vos favoris (n/d).', loc: 'fr-FR' },
+    sumTitle: 'Résumé Marchés · {d}', sumDemo: 'Compte démo {v}', sumNone: 'Aucune donnée disponible pour vos favoris (n/d).', remBank: 'Demain : décision de taux de la {b}', remBankBody: 'Agenda des marchés · {d}. Information, pas un conseil financier.', remEarn: 'Demain : résultats de {s}{w}', remEarnBody: '{n} · calendrier Nasdaq. Information, pas un conseil financier.', pre: ' (avant l’ouverture)', post: ' (après la clôture)', fed: 'Fed', ecb: 'BCE', weekTitle: 'Votre semaine · {d}', weekDemo: 'Compte démo {v} au total', weekNone: 'Aucune variation disponible pour vos favoris cette semaine (n/d).', loc: 'fr-FR' },
   en: { above: '{l} rose above {t}', below: '{l} fell below {t}', body: 'Price: {p}. Alert set on Markets — information only, not financial advice.',
     pctAbove: '{l}: change of {v} ({w})', pctBelow: '{l}: change of {v} ({w})', pctBody: 'Threshold: {t}. Alert set on Markets — information only, not financial advice.',
     w24: 'over 24h', wDay: 'on the session', filled: 'Demo: order filled on {l}', tp: 'Demo: TP hit on {l}', sl: 'Demo: SL triggered on {l}', liq: 'Demo: position liquidated on {l}',
@@ -264,7 +299,7 @@ const TEXT: Record<string, Record<string, string>> = {
     maDown: '{l}: the 20-day MA crosses below the 50-day MA', vol: '{l}: today’s volume {v} × the 20-day average',
     techBody: 'Daily candles · alert set on Markets — information only, not financial advice.',
     moveUp: '{l}: sharp rise, {v} ({w})', moveDown: '{l}: sharp fall, {v} ({w})', moveBody: 'Automatic threshold: {t}. Information only, not financial advice.',
-    sumTitle: 'Markets summary · {d}', sumDemo: 'Demo account {v}', sumNone: 'No data available for your favorites (n/a).', loc: 'en-US' },
+    sumTitle: 'Markets summary · {d}', sumDemo: 'Demo account {v}', sumNone: 'No data available for your favorites (n/a).', remBank: 'Tomorrow: {b} rate decision', remBankBody: 'Markets calendar · {d}. Information only, not financial advice.', remEarn: 'Tomorrow: {s} earnings{w}', remEarnBody: '{n} · Nasdaq calendar. Information only, not financial advice.', pre: ' (before the open)', post: ' (after the close)', fed: 'Fed', ecb: 'ECB', weekTitle: 'Your week · {d}', weekDemo: 'Demo account {v} overall', weekNone: 'No weekly change available for your favorites (n/a).', loc: 'en-US' },
   zh: { above: '{l} 已升至 {t} 以上', below: '{l} 已跌至 {t} 以下', body: '价格：{p}。在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
     pctAbove: '{l}：涨跌幅 {v}（{w}）', pctBelow: '{l}：涨跌幅 {v}（{w}）', pctBody: '设定值：{t}。在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
     w24: '24小时', wDay: '当日', filled: '模拟：{l} 订单已成交', tp: '模拟：{l} 触发止盈', sl: '模拟：{l} 触发止损', liq: '模拟：{l} 已强平',
@@ -273,7 +308,7 @@ const TEXT: Record<string, Record<string, string>> = {
     maDown: '{l}：20日均线下穿50日均线', vol: '{l}：今日成交量为20日均量的 {v} 倍',
     techBody: '日K线 · 在“市场行情”中设置的提醒——仅供参考，不构成投资建议。',
     moveUp: '{l}：大幅上涨 {v}（{w}）', moveDown: '{l}：大幅下跌 {v}（{w}）', moveBody: '自动阈值：{t}。仅供参考，不构成投资建议。',
-    sumTitle: '市场行情摘要 · {d}', sumDemo: '模拟账户 {v}', sumNone: '您的自选暂无数据（n/d）。', loc: 'zh-CN' },
+    sumTitle: '市场行情摘要 · {d}', sumDemo: '模拟账户 {v}', sumNone: '您的自选暂无数据（n/d）。', remBank: '明天：{b} 利率决议', remBankBody: '市场日程 · {d}。仅供参考，不构成投资建议。', remEarn: '明天：{s} 发布财报{w}', remEarnBody: '{n} · 纳斯达克日历。仅供参考，不构成投资建议。', pre: '（开盘前）', post: '（收盘后）', fed: '美联储', ecb: '欧洲央行', weekTitle: '本周回顾 · {d}', weekDemo: '模拟账户累计 {v}', weekNone: '本周您的自选暂无涨跌数据（n/d）。', loc: 'zh-CN' },
 };
 const fill = (s: string, v: Record<string, string>) => s.replace(/\{(\w+)\}/g, (_, k) => v[k] ?? '');
 function money(v: number, currency: string | null, loc: string) {
@@ -578,6 +613,94 @@ async function sendSummaries() {
   return { due: due.length, sent };
 }
 
+/* ---------- Rappels du calendrier (la veille, à partir de 18 h locale) ---------- */
+async function sendReminders() {
+  const devs = await sql`select id, endpoint, p256dh, auth, lang, tz, remind_syms, remind_sent from marches.devices where remind_on`;
+  const due = devs.filter((d) => validTz(d.tz) && localNow(d.tz).hm >= '18:00');
+  if (!due.length) return { devices: devs.length, sent: 0 };
+  const cal = await getJSON('/api/calendar');
+  let sent = 0;
+  for (const d of due) {
+    const L = TEXT[d.lang] || TEXT.fr;
+    const today = localNow(d.tz).day;
+    const tomorrow = new Date(Date.parse(`${today}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+    const done: Record<string, string> = { ...(d.remind_sent || {}) };
+    let changed = false;
+    const dayTxt = new Intl.DateTimeFormat(L.loc, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${tomorrow}T12:00:00Z`));
+    const msgs: { key: string; title: string; body: string }[] = [];
+    for (const c of cal.central || []) {
+      if (c.date === tomorrow && (c.bank === 'fed' || c.bank === 'ecb')) msgs.push({ key: `${c.bank}:${c.date}`, title: fill(L.remBank, { b: L[c.bank] }), body: fill(L.remBankBody, { d: dayTxt }) });
+    }
+    const syms = new Set(d.remind_syms || []);
+    for (const e of cal.earnings || []) {
+      if (e.date === tomorrow && syms.has(e.symbol)) msgs.push({ key: `earn:${e.symbol}:${e.date}`, title: fill(L.remEarn, { s: e.symbol, w: e.time === 'pre' ? L.pre : e.time === 'post' ? L.post : '' }), body: fill(L.remEarnBody, { n: e.name || e.symbol }) });
+    }
+    for (const m of msgs) {
+      if (done[m.key]) continue;
+      const r = await pushTo(d, { title: m.title, body: m.body, tag: `remind-${m.key}`, url: '/#indices' });
+      if (r === 'gone') break;
+      if (r === 'ok') sent++;
+      done[m.key] = today; changed = true;
+    }
+    // On oublie les rappels de plus de 14 jours.
+    for (const k of Object.keys(done)) if (Date.parse(`${done[k]}T12:00:00Z`) < Date.now() - 14 * 864e5) { delete done[k]; changed = true; }
+    if (changed) await sql`update marches.devices set remind_sent = ${sql.json(done)} where id = ${d.id}`;
+  }
+  return { devices: devs.length, due: due.length, sent };
+}
+
+/* ---------- Résumé hebdomadaire (samedi, à partir de 10 h locale) ---------- */
+async function sendWeekly() {
+  const devs = await sql`select id, endpoint, p256dh, auth, lang, tz, weekly_assets, weekly_sent from marches.devices where weekly_on`;
+  const due = devs.filter((d) => {
+    if (!validTz(d.tz)) return false;
+    const n = localNow(d.tz);
+    const wd = new Intl.DateTimeFormat('en-US', { timeZone: d.tz, weekday: 'short' }).format(new Date());
+    const sent = d.weekly_sent ? new Date(d.weekly_sent).toISOString().slice(0, 10) : null;
+    return wd === 'Sat' && n.hm >= '10:00' && sent !== n.day;
+  });
+  if (!due.length) return { devices: devs.length, sent: 0 };
+  const all: Asset[] = due.flatMap((d) => d.weekly_assets || []);
+  const { quote } = await quoteBook(all.filter((a) => a.kind === 'c'));
+  // Variation sur 7 jours : dernière clôture journalière / clôture d'il y a 7 jours (bougies réelles du site).
+  const perf = new Map<string, number | null>();
+  for (const a of all as Record<string, any>[]) {
+    const key = `${a.kind}:${a.assetId}`;
+    if (perf.has(key)) continue;
+    const symbol = a.kind === 'c' ? a.label : a.kind === 's' ? a.assetId : a.symbol;
+    const q = new URLSearchParams({ kind: a.kind, symbol: symbol || '', tf: '1d' });
+    if (a.kind === 'c') { q.set('id', a.assetId); const ref = quote(a as Asset).price; if (ref) q.set('ref', String(ref)); }
+    let v: number | null = null;
+    try {
+      const d = await getJSON(`/api/candles?${q}`);
+      const c = (d.candles || []).filter((x: number[]) => Number.isFinite(x[4]) && x[4] > 0);
+      const last = c.at(-1);
+      if (last && Date.now() / 1000 - last[0] < 5 * 86400) {
+        const ref = [...c].reverse().find((x: number[]) => x[0] <= last[0] - 7 * 86400);
+        if (ref) v = (last[4] / ref[4] - 1) * 100;
+      }
+    } catch { /* n/d */ }
+    perf.set(key, v);
+  }
+  let sent = 0;
+  for (const d of due) {
+    const L = TEXT[d.lang] || TEXT.fr;
+    const items = (d.weekly_assets || []).map((x: Record<string, string>) => ({ x, v: perf.get(`${x.kind}:${x.assetId}`) }))
+      .filter((r: any) => typeof r.v === 'number').sort((a: any, b: any) => Math.abs(b.v) - Math.abs(a.v)).slice(0, 6)
+      .map((r: any) => `${r.x.label} ${pctFmt(r.v, L.loc)}`);
+    const [acct] = await sql`select p.pnl_pct from marches.paper_devices pd join marches.paper_accounts p on p.id = pd.account_id
+      where pd.device_id = ${d.id} and p.pnl_pct is not null limit 1`;
+    const parts = [...items];
+    if (acct) parts.push(fill(L.weekDemo, { v: pctFmt(acct.pnl_pct, L.loc) }));
+    const day = localNow(d.tz).day;
+    const title = fill(L.weekTitle, { d: new Intl.DateTimeFormat(L.loc, { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${day}T12:00:00Z`)) });
+    const r = await pushTo(d, { title, body: parts.length ? parts.join(' · ') : L.weekNone, tag: `weekly-${day}`, url: '/#favoris' });
+    if (r === 'ok') sent++;
+    if (r !== 'gone') await sql`update marches.devices set weekly_sent = ${day} where id = ${d.id}`;
+  }
+  return { devices: devs.length, due: due.length, sent };
+}
+
 /* ---------- Forts mouvements ---------- */
 /** Une notification par actif et par jour (UTC) quand la variation dépasse le seuil de l'appareil. */
 async function sendMoves() {
@@ -617,14 +740,18 @@ async function check() {
   try { summaries = await sendSummaries(); } catch (err) { console.error('summary', err); summaries = { error: String(err) }; }
   let moves: Record<string, unknown> = {};
   try { moves = await sendMoves(); } catch (err) { console.error('moves', err); moves = { error: String(err) }; }
+  let reminders: Record<string, unknown> = {};
+  try { reminders = await sendReminders(); } catch (err) { console.error('remind', err); reminders = { error: String(err) }; }
+  let weekly: Record<string, unknown> = {};
+  try { weekly = await sendWeekly(); } catch (err) { console.error('weekly', err); weekly = { error: String(err) }; }
   // Conservation limitée : alertes déclenchées 30 jours ; appareils sans alerte ni compte lié, inactifs 90 jours ; comptes démo inactifs 1 an.
   await sql`delete from marches.alerts where triggered_at < now() - interval '30 days'`;
   await sql`delete from marches.devices d where last_seen < now() - interval '90 days'
             and not exists (select 1 from marches.alerts a where a.device_id = d.id and a.triggered_at is null)
-            and not exists (select 1 from marches.paper_devices p where p.device_id = d.id) and d.summary_time is null and d.moves_pct is null`;
+            and not exists (select 1 from marches.paper_devices p where p.device_id = d.id) and d.summary_time is null and d.moves_pct is null and not d.remind_on and not d.weekly_on`;
   await sql`delete from marches.paper_accounts where last_seen < now() - interval '365 days'`;
   await sql`delete from marches.paper_groups g where not exists (select 1 from marches.paper_members m where m.group_code = g.code)`;
-  return json({ ...alerts, paper, summaries, moves });
+  return json({ ...alerts, paper, summaries, moves, reminders, weekly });
 }
 
 Deno.serve(async (req) => {
@@ -648,6 +775,8 @@ Deno.serve(async (req) => {
       case 'forget': return await forget(body);
       case 'summary.set': return await summarySet(body);
       case 'moves.set': return await movesSet(body);
+      case 'remind.set': return await remindSet(body);
+      case 'weekly.set': return await weeklySet(body);
       case 'paper.put': return await paperPut(body);
       case 'paper.get': return await paperGet(body);
       case 'paper.delete': return await paperDelete(body);

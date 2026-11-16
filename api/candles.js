@@ -12,6 +12,8 @@ const TF = {
   '1h': { interval: '60m', range: '3mo', ttl: 60_000, gecko: 7 },
   '4h': { interval: '60m', range: '1y', ttl: 120_000, group: 4, gecko: 30 },
   '1d': { interval: '1d', range: '5y', ttl: 600_000, gecko: 365 },
+  // Mensuel sur 10 ans (saisonnalité, simulateur) : Yahoo seulement (CoinGecko gratuit limité à 365 jours).
+  '1mo': { interval: '1mo', range: '10y', ttl: 6 * 3600_000, gecko: null },
 };
 const MAX = 1500;
 const r8 = (v) => Number(v.toPrecision(8)); // précision largement suffisante, réponse plus légère
@@ -80,7 +82,7 @@ export async function GET(request) {
       } catch (err) {
         errors.push(String(err.message || err));
       }
-      if (!id) throw new Error(errors.join(' | '));
+      if (!id || !tf.gecko) throw new Error(errors.join(' | '));
       return gecko(id, tf);
     });
     return json({ ...data, tf: tfKey }, 200, Math.round(tf.ttl / 1000));

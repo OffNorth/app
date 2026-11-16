@@ -42,6 +42,7 @@
       </div>
     </div>
     <div id="banner" class="banner" hidden></div>
+    <div id="ticker" class="ticker" role="marquee" hidden></div>
   </header>
 
   <div id="ptr" class="ptr" aria-hidden="true"><div class="ptr-spinner"></div></div>
@@ -55,6 +56,7 @@
       <div class="stats" id="crypto-stats"></div>
       <div class="treemap" id="treemap" role="list" aria-label="Heatmap des cryptos"></div>
       <div class="movers" id="crypto-movers"></div>
+      <div class="btc-net" id="btc-net"></div>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down24">Baisse 24 h</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.up24">Hausse 24 h</span> <span data-i18n="legend.cryptoTail">· taille = capitalisation (BTC réduit) · hors stablecoins · touchez une tuile pour son graphique</span></p>
       <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="crypto"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
@@ -80,6 +82,7 @@
       <div class="worldmap" id="grid-carte" hidden></div>
       <div class="grid" id="grid-commo" hidden></div>
       <div class="grid" id="grid-fx" hidden></div>
+      <div class="rates-box" id="grid-taux" hidden></div>
       <p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p>
     </section>
     <section id="view-compte" class="view" data-tab="compte" aria-label="Compte" hidden><div class="compte-mode" id="compte-mode"></div><div id="paper" class="paper"></div></section>
@@ -148,6 +151,7 @@
     <p class="chart-note" id="chart-note" hidden></p>
     <details class="chart-facts" id="chart-facts-box" hidden><summary data-i18n="facts.title">Fiche</summary><div id="chart-facts"></div></details>
     <details class="chart-facts" id="chart-news-box" hidden><summary data-i18n="news.title">Actualités</summary><div id="chart-news"></div></details>
+    <details class="chart-facts" id="chart-ana-box" hidden><summary data-i18n="ana.title">Analyses : saisonnalité, simulateur, mon plan</summary><div id="chart-ana"></div></details>
     <div class="chart-bottom">
       <button id="chart-trade" class="btn btn-trade" type="button" hidden data-i18n="pt.trade">Trader (démo)</button>
       <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>

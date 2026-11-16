@@ -10,8 +10,11 @@ import { GET as calendar } from './_calendar.js';
 import { GET as macro } from './_macro.js';
 import { GET as search } from './_search.js';
 import { GET as quote } from './_quote.js';
+import { GET as rates } from './_rates.js';
+import { GET as events } from './_events.js';
+import { GET as btc } from './_btc.js';
 
-export const ROUTES = { news, sentiment, cryptocats, econ, dividends, calendar, macro, search, quote };
+export const ROUTES = { news, sentiment, cryptocats, econ, dividends, calendar, macro, search, quote, rates, events, btc };
 
 export function GET(request) {
   const r = new URL(request.url).searchParams.get('r');
