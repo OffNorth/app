@@ -420,7 +420,7 @@ export function createPaper(ctx) {
       <div class="trade-head">${ctx.logo(a, 32)}<div class="th-l"><h2 id="trade-title">${esc(a.label)}</h2><p>${esc(a.name || '')}</p></div>
         <div class="th-p"><strong>${isNum(q.price) ? px(q.price, aq) : ctx.ND}</strong><small class="${cls(q.chg)}">${ctx.pct(q.chg)}</small></div></div>
       ${q.ok ? '' : `<p class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }))}</p>`}
-      ${q.ok && q.closed ? `<p class="pt-note">${esc(t('pt.closedNote', { d: q.lastTime ? `${ctx.day(q.lastTime)} ${ctx.time(q.lastTime)}` : ctx.ND }))}</p>` : ''}
+      ${q.ok && q.closed ? `<p class="pt-note">${esc(t('pt.closedNote', { d: q.lastTime ? `${ctx.day(q.lastTime)} ${ctx.time(q.lastTime)}` : ctx.ND }))} ${q.clock?.kind === 'open' ? ctx.cd(q.clock) : ''}</p>` : ''}
       ${q.ok && q.ccy && q.ccy !== 'USD' ? `<p class="pt-fx">${esc(t(a.kind === 'i' ? 'pt.fxIndex' : 'pt.fxNote', { c: q.ccy, r: ctx.fxText(q.fx, q.ccy) }))}</p>` : ''}
       ${segHTML('side', [['long', t('pt.buy'), 'buy'], ['short', t('pt.sell'), 'sell']], k.side, 'trade-side')}
       ${segHTML('type', [['market', t('pt.market')], ['limit', t('pt.limit')], ['stop', t('pt.stop')]], k.type)}

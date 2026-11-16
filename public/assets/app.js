@@ -5,7 +5,7 @@ import { makeSnapshot } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
 import { createTradeChart, TIMEFRAMES } from './tradechart.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 15; // à garder égal à VERSION ('v15') dans /sw.js
+const APP_BUILD = 16; // à garder égal à VERSION ('v16') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
 const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
@@ -281,7 +281,7 @@ function statHTML(s) {
     ? s.value.map((g) => (g.cls ? `<span class="${g.cls}">${esc(g.text)}</span>` : esc(g.text))).join('')
     : esc(s.value);
   return `<div class="stat"><div class="stat-label">${esc(s.label)}</div>
-      <div class="stat-value">${value}</div><div class="stat-sub ${s.cls || ''}">${esc(s.sub || '')}</div></div>`;
+      <div class="stat-value">${value}</div><div class="stat-sub ${s.cls || ''}">${s.clock ? cdHTML(s.clock, 'stat-cd') : esc(s.sub || '')}</div></div>`;
 }
 function upDown(list) {
   const up = list.filter((c) => isNum(c.changePct) && c.changePct > 0).length;
@@ -327,7 +327,7 @@ function stocksStats(data) {
   const usState = us ? statusOf(us) : null;
   return [
     { label: t('top25cap', { n: list.length }), value: fmtCap(total), sub: t('hourly') },
-    { label: t('wallStreet'), value: usState ? usState.chip : ND, sub: usState ? usState.foot : '' },
+    { label: t('wallStreet'), value: usState ? usState.chip : ND, sub: usState ? usState.foot : '', clock: us ? marketClock(us) : null },
     upDown(list),
     updated(data),
   ];
@@ -874,6 +874,91 @@ $('#chart-close').addEventListener('click', () => {
 });
 window.addEventListener('popstate', closeChart);
 
+/* ---------- Horaires des bourses : décompte d'ouverture / de fermeture ---------- */
+// Week-end local (0 = dimanche) : vendredi-samedi en Arabie saoudite et en Égypte, samedi-dimanche ailleurs.
+const WEEKEND = { 'Asia/Riyadh': [5, 6], 'Africa/Cairo': [5, 6] };
+const WD = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+function tzParts(ms, tz) {
+  const o = {};
+  for (const p of new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', weekday: 'short', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(ms)) o[p.type] = p.value;
+  return o;
+}
+const tzOffsetMin = (ms, tz) => { const o = tzParts(ms, tz); return (Date.UTC(+o.year, o.month - 1, +o.day, +o.hour, +o.minute) - Math.floor(ms / 60000) * 60000) / 60000; };
+/**
+ * Prochain événement de séance d'un marché, d'après la séance du jour donnée par Yahoo.
+ * Séance à venir ou en cours : horaires Yahoo. Séance du jour terminée : prochain jour ouvré à la même
+ * heure locale (heure d'été comprise), sans connaître les jours fériés → estimated = true.
+ */
+function marketClock(item, now = Date.now()) {
+  const ses = item?.session, tz = item?.timezone;
+  if (!ses || !isNum(ses.start) || !isNum(ses.end) || !tz) return null;
+  if (now < ses.start) return { kind: 'open', at: ses.start, estimated: false };
+  if (now < ses.end && item.state !== 'closed') return { kind: 'close', at: ses.end, estimated: false };
+  const weekend = WEEKEND[tz] || [6, 0];
+  let t = ses.start;
+  try {
+    for (let i = 0; i < 10 && (t <= now || weekend.includes(WD[tzParts(t, tz).weekday])); i++) {
+      const next = t + 86400_000;
+      t = next + (tzOffsetMin(t, tz) - tzOffsetMin(next, tz)) * 60_000; // même heure locale malgré l'heure d'été
+    }
+  } catch { return null; }
+  return t > now ? { kind: 'open', at: t, estimated: true } : null;
+}
+/** Durée lisible : « 2 j 3 h », « 7 h 05 min », « 4 min 12 s ». */
+function fmtDuration(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const U = (k) => t(`cd.${k}`);
+  if (d) return `${d}\u00a0${U('d')} ${h}\u00a0${U('h')}`;
+  if (h) return `${h}\u00a0${U('h')} ${String(m).padStart(2, '0')}\u00a0${U('min')}`;
+  return `${m}\u00a0${U('min')} ${String(sec).padStart(2, '0')}\u00a0${U('s')}`;
+}
+function cdText(c) {
+  if (!c) return '';
+  const left = c.at - Date.now();
+  if (left <= 0) return t(c.kind === 'open' ? 'cd.opening' : 'cd.closing');
+  return t(c.kind === 'open' ? 'cd.opensIn' : 'cd.closesIn', { d: `${c.estimated ? '≈\u00a0' : ''}${fmtDuration(left)}` });
+}
+/** Élément HTML d'un décompte, mis à jour chaque seconde. */
+function cdHTML(c, cls = 'cd') {
+  if (!c) return '';
+  return `<span class="${cls} ${c.kind}" data-cd="${c.at}" data-cdk="${c.kind}" data-cde="${c.estimated ? 1 : 0}">${esc(cdText(c))}</span>`;
+}
+let cdRefreshAsked = 0;
+setInterval(() => {
+  if (document.hidden) return;
+  let passed = false;
+  for (const el of document.querySelectorAll('[data-cd]')) {
+    const c = { at: Number(el.dataset.cd), kind: el.dataset.cdk, estimated: el.dataset.cde === '1' };
+    el.textContent = cdText(c);
+    if (c.at <= Date.now()) passed = true;
+  }
+  // Ouverture ou fermeture atteinte : on recharge les données (au plus une fois par minute) pour mettre le statut à jour.
+  if (passed && Date.now() - cdRefreshAsked > 60_000) { cdRefreshAsked = Date.now(); setTimeout(refresh, 15_000); }
+}, 1000);
+
+// Grandes places affichées dans le panneau « Ouverture des bourses » (un indice représentatif par place).
+const CLOCK_MARKETS = ['spx', 'tsx', 'ibov', 'ftse', 'cac', 'dax', 'smi', 'n225', 'hsi', 'sse', 'kospi', 'nifty', 'asx200', 'tasi', 'jse40'];
+let clockExpanded = false;
+function renderMarketClock() {
+  const box = $('#market-clock');
+  const list = (state.indices?.indices || []);
+  const rows = CLOCK_MARKETS.map((id) => list.find((i) => i.id === id)).filter(Boolean)
+    .map((ix) => ({ ix, c: marketClock(ix) }))
+    .filter((r) => r.c)
+    .sort((a, b) => (a.c.kind === b.c.kind ? a.c.at - b.c.at : a.c.kind === 'close' ? -1 : 1));
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const shown = clockExpanded ? rows : rows.slice(0, 5);
+  box.innerHTML = `<h2>${t('cd.title')}</h2>
+    <ul>${shown.map(({ ix, c }) => `<li class="${c.kind === 'close' ? 'is-open' : ''}">
+      <span class="mc-dot" aria-hidden="true"></span>${logoImg(ix, 18, 'idx-logo')}
+      <span class="mc-name"><strong>${esc(country(ix.country))}</strong><small>${esc(indexName(ix))}</small></span>
+      ${cdHTML(c, 'mc-cd')}</li>`).join('')}</ul>
+    ${rows.length > 5 ? `<button type="button" class="mc-more" aria-expanded="${clockExpanded}">${t(clockExpanded ? 'cd.less' : 'cd.more', { n: rows.length })}</button>` : ''}
+    ${clockExpanded ? `<p class="mc-note">${t('cd.note')}</p>` : ''}`;
+  box.querySelector('.mc-more')?.addEventListener('click', () => { clockExpanded = !clockExpanded; renderMarketClock(); });
+}
+
 /* ---------- Rendu indices ---------- */
 function sparkSVG(spark, prev) {
   const pts = spark?.points;
@@ -915,11 +1000,12 @@ function indexCardHTML(ix, dataId = ix.id) {
       <div class="idx-chg">${fmtPct(ix.changePct)} <span>(${fmtSigned(ix.change)})</span></div>
       ${sparkSVG(ix.spark, ix.prevClose)}
       <div class="idx-foot">${st.foot}</div>
+      ${cdHTML(marketClock(ix), 'idx-cd')}
     </article>`;
 }
 
 /** Carte d'un favori crypto ou entreprise (même présentation que les indices). */
-function assetCardHTML({ key, kicker, f, title, chip, price, pct, maxAbs, foot }) {
+function assetCardHTML({ key, kicker, f, title, chip, price, pct, maxAbs, foot, clock }) {
   return `<article class="idx" data-id="${esc(key)}" tabindex="0" role="button" aria-label="${esc(`${f.name} (${title}) : ${price}, ${fmtPct(pct)}. ${t('openChart')}`)}" style="background-color:${heat(pct, maxAbs)}">
       <div class="idx-country">${logoImg(f, 20, 'idx-logo')}<span>${esc(kicker)}</span></div>
       <div class="idx-top"><h3>${esc(title)}</h3>${chip ? `<span class="chip ${chip.cls}">${chip.chip}</span>` : ''}</div>
@@ -927,6 +1013,7 @@ function assetCardHTML({ key, kicker, f, title, chip, price, pct, maxAbs, foot }
       <div class="idx-level">${price}</div>
       <div class="idx-chg">${fmtPct(pct)}</div>
       <div class="idx-foot">${foot}</div>
+      ${cdHTML(clock, 'idx-cd')}
     </article>`;
 }
 
@@ -974,7 +1061,7 @@ function renderFavs() {
     actions.set(key, () => openStockChart(c, i + 1, i < top.length ? total : null, top.length));
     const st = statusOf(c);
     return assetCardHTML({ key, kicker: `${c.country ? country(c.country) : t('fav.stock')} · ${t('rank', { n: i + 1 })}`, f: c, title: c.label, chip: st,
-      price: fmtStockPrice(c.price, c.currency), pct: c.changePct, maxAbs: 4, foot: st.foot });
+      price: fmtStockPrice(c.price, c.currency), pct: c.changePct, maxAbs: 4, foot: st.foot, clock: marketClock(c) });
   }).join('');
   grid.onclick = (e) => {
     const card = e.target.closest('.idx');
@@ -1056,6 +1143,7 @@ function render() {
   else {
     for (const r of REGIONS) $(`#grid-${r}`).hidden = r !== prefs.region;
     $('#indices-tools').innerHTML = segHTML('region', REGIONS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
+    renderMarketClock();
     renderIndices(prefs.region);
   }
 }
@@ -1206,7 +1294,7 @@ function quoteOf(x) {
   const fx = usdPer(ccy);
   const fresh = !state.offline[key] && !state[key].stale && !item.outdated;
   const closed = item.state !== 'open';
-  const base = { price: item.price, chg: item.changePct, ccy, fx, closed, lastTime: item.lastTime };
+  const base = { price: item.price, chg: item.changePct, ccy, fx, closed, lastTime: item.lastTime, clock: marketClock(item) };
   if (!fresh) return { ...base, ok: false, reason: 'stale' };
   if (!fx) return { ...base, ok: false, reason: 'fx' };
   return { ...base, ok: true, reason: null };
@@ -1232,6 +1320,7 @@ const paper = createPaper({
   quote: quoteOf,
   money: (v) => fmtNative(v, 'USD'),
   price: priceIn,
+  cd: (c) => cdHTML(c, 'pt-cd'),
   unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy),
   fxText: (fx, ccy) => (isNum(fx) ? (fx >= 0.1 ? `1 ${ccy} = ${fmtNative(fx, 'USD')}` : `1 $ = ${NF2.format(1 / fx)} ${ccy}`) : ND),
   pct: (v) => fmtPct(v),
