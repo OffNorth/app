@@ -333,10 +333,14 @@ export function createPaper(ctx) {
   }
 
   /* Ticket d'ordre */
-  function openTicket(asset) {
+  /** Ticket d'ordre ; `pre` peut fixer le sens, le type et le prix (ordre passé depuis le graphique). */
+  function openTicket(asset, pre = {}) {
     picker = null;
     if (!acct) { create(CAPITALS[1]); ctx.toast(t('pt.t.created', { c: money(CAPITALS[1]) })); }
-    ticket = { asset: assetOf(asset), side: 'long', type: 'market', mode: 'usd', lev: 1, price: '', amount: '', tp: '', sl: '' };
+    ticket = {
+      asset: assetOf(asset), side: pre.side === 'short' ? 'short' : 'long', type: ['limit', 'stop'].includes(pre.type) ? pre.type : 'market',
+      mode: 'usd', lev: 1, price: isNum(pre.price) ? ctx.fmtInput(pre.price) : '', amount: '', tp: '', sl: '',
+    };
     drawTicket();
     showModal();
   }
@@ -518,8 +522,8 @@ export function createPaper(ctx) {
       <dl class="pt-kv"><div><dt>${t('pt.marginReq')}</dt><dd>${money(p.margin)}</dd></div><div><dt>${t('pt.liq')}</dt><dd>${liq != null ? money(liq) : '—'}</dd></div>
         <div><dt>${t('pt.openedAt')}</dt><dd>${ctx.day(p.openedAt)} ${ctx.time(p.openedAt)}</dd></div><div><dt>${t('pt.feesShort')}</dt><dd>${money(p.fees)}</dd></div></dl>
       <div class="trade-tpsl">
-        <div><label for="mg-tp">${t('pt.tp')}</label><div class="alert-input"><input id="mg-tp" type="text" inputmode="decimal" value="${p.tp != null ? p.tp : ''}"><span>$</span></div></div>
-        <div><label for="mg-sl">${t('pt.sl')}</label><div class="alert-input"><input id="mg-sl" type="text" inputmode="decimal" value="${p.sl != null ? p.sl : ''}"><span>$</span></div></div>
+        <div><label for="mg-tp">${t('pt.tp')}</label><div class="alert-input"><input id="mg-tp" type="text" inputmode="decimal" value="${p.tp != null ? ctx.fmtInput(p.tp) : ''}"><span>$</span></div></div>
+        <div><label for="mg-sl">${t('pt.sl')}</label><div class="alert-input"><input id="mg-sl" type="text" inputmode="decimal" value="${p.sl != null ? ctx.fmtInput(p.sl) : ''}"><span>$</span></div></div>
       </div>
       <p class="alert-msg" id="mg-msg" hidden></p>
       <button type="button" class="btn" id="mg-save">${t('pt.saveTpSl')}</button>
@@ -564,7 +568,33 @@ export function createPaper(ctx) {
     return ev;
   }
 
+  /** Positions et ordres en attente sur un actif (graphique de trading). */
+  function forAsset(a) {
+    const same = (x) => x.kind === a.kind && x.assetId === a.assetId;
+    return { positions: acct ? acct.positions.filter(same) : [], orders: acct ? acct.orders.filter(same) : [] };
+  }
+
+  /** Modifie le TP ou le SL d'une position (glisser sur le graphique). Renvoie un message d'erreur ou null. */
+  function setLevel(id, type, price) {
+    const p = acct?.positions.find((x) => x.id === id);
+    if (!p || !isNum(price) || price <= 0) return t('pt.err.price');
+    const d = dirOf(p.side), q = ctx.quote(p);
+    const ref = isNum(q.price) ? q.price : p.entry;
+    const liq = liqPrice(p.side, p.entry, p.lev);
+    if (type === 'tp' && (price - ref) * d <= 0) return t('pt.err.tpNow');
+    if (type === 'sl' && (price - ref) * d >= 0) return t('pt.err.slNow');
+    if (type === 'sl' && liq != null && (price - liq) * d <= 0) return t('pt.err.slLiq', { p: money(liq) });
+    const v = Number(price.toPrecision(8));
+    if (type === 'tp') p.tp = v; else p.sl = v;
+    save();
+    ctx.toast(t(type === 'tp' ? 'pt.t.tpSet' : 'pt.t.slSet', { l: p.label, p: money(v) }));
+    ctx.changed();
+    return null;
+  }
+
   return {
+    forAsset,
+    setLevel,
     render,
     run,
     onData,

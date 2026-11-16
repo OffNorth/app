@@ -82,6 +82,7 @@ def mentions(lang):
       <li>Taux de change EUR/USD (affichage en euros) : Yahoo Finance, repli {a("https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.fr.html", "Banque centrale européenne")}.</li>
       <li>Classement des entreprises par capitalisation : {a("https://companiesmarketcap.com/", "companiesmarketcap.com")}.</li>
       <li>Graphiques interactifs et logos des indices : {a("https://www.tradingview.com/", "TradingView")} (graphiques affichés uniquement avec votre accord).</li>
+      <li>Graphique du mode « Trading (démo) » : TradingView Lightweight Charts™, Copyright © 2026 TradingView, Inc., {a("https://www.tradingview.com/", "tradingview.com")}, sous licence Apache 2.0 ({a("/vendor/lightweight-charts/LICENSE.txt", "texte de la licence", False)}) ; bibliothèque servie par le site, sans appel à TradingView. Bougies : Yahoo Finance, repli CoinGecko.</li>
     </ul>
 
     <h2>Propriété intellectuelle</h2>
@@ -125,6 +126,7 @@ def mentions(lang):
       <li>EUR/USD exchange rate (display in euros): Yahoo Finance, fallback {a("https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html", "European Central Bank")}.</li>
       <li>Ranking of companies by market capitalisation: {a("https://companiesmarketcap.com/", "companiesmarketcap.com")}.</li>
       <li>Interactive charts and index logos: {a("https://www.tradingview.com/", "TradingView")} (charts displayed only with your consent).</li>
+      <li>“Trading (demo)” chart: TradingView Lightweight Charts™, Copyright © 2026 TradingView, Inc., {a("https://www.tradingview.com/", "tradingview.com")}, licensed under Apache 2.0 ({a("/vendor/lightweight-charts/LICENSE.txt", "license text", False)}); library served by the website, with no call to TradingView. Candles: Yahoo Finance, fallback CoinGecko.</li>
     </ul>
 
     <h2>Intellectual property</h2>
@@ -167,6 +169,7 @@ def mentions(lang):
       <li>欧元/美元汇率（以欧元显示时）：Yahoo Finance，备用来源{a("https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html", "欧洲中央银行")}。</li>
       <li>公司市值排名：{a("https://companiesmarketcap.com/", "companiesmarketcap.com")}。</li>
       <li>交互式图表与指数标志：{a("https://www.tradingview.com/", "TradingView")}（仅在您同意后显示图表）。</li>
+      <li>“模拟交易图表”：TradingView Lightweight Charts™，Copyright © 2026 TradingView, Inc.，{a("https://www.tradingview.com/", "tradingview.com")}，采用 Apache 2.0 许可（{a("/vendor/lightweight-charts/LICENSE.txt", "许可文本", False)}）；该库由本网站提供，不调用 TradingView。K线：Yahoo Finance，备用 CoinGecko。</li>
     </ul>
 
     <h2>知识产权</h2>
@@ -308,7 +311,7 @@ def cookies(lang):
             th=("Nom", "Finalité", "Durée"),
             rows=[("<code>marches:crypto</code>, <code>marches:indices</code>, <code>marches:stocks</code>", "Dernières données de marché, pour un affichage immédiat et hors connexion", "Jusqu’à la prochaine mise à jour ou effacement"),
                   ("<code>marches:fx</code>", "Dernier taux EUR/USD, pour l’affichage en euros", "Jusqu’à la prochaine mise à jour ou effacement"),
-                  ("<code>marches:tab</code>, <code>marches:lang</code>, <code>marches:prefs</code>", "Mémoriser l’onglet, la langue et les réglages affichés (période, top, devise)", "Jusqu’à effacement"),
+                  ("<code>marches:tab</code>, <code>marches:lang</code>, <code>marches:prefs</code>", "Mémoriser l’onglet, la langue et les réglages affichés (période, top, devise, type de graphique, unité de temps)", "Jusqu’à effacement"),
                   ("<code>marches:favs</code>", "Mémoriser vos favoris", "Jusqu’à effacement"),
                   ("<code>marches:paper</code>", "Uniquement si vous ouvrez le compte de démonstration : solde fictif, positions, ordres et historique du papertrading", "Jusqu’à « Réinitialiser le compte » ou effacement"),
                   ("<code>marches:alertsToken</code>, abonnement aux notifications du navigateur", "Uniquement si vous créez une alerte de prix : identifiant aléatoire de l’appareil pour gérer vos alertes, et abonnement permettant de recevoir les notifications", "Jusqu’à « Tout supprimer et désactiver les notifications » ou effacement"),
@@ -327,7 +330,7 @@ def cookies(lang):
             th=("Name", "Purpose", "Duration"),
             rows=[("<code>marches:crypto</code>, <code>marches:indices</code>, <code>marches:stocks</code>", "Latest market data, for instant and offline display", "Until the next update or deletion"),
                   ("<code>marches:fx</code>", "Latest EUR/USD rate, for display in euros", "Until the next update or deletion"),
-                  ("<code>marches:tab</code>, <code>marches:lang</code>, <code>marches:prefs</code>", "Remember the tab, language and settings displayed (period, top, currency)", "Until deletion"),
+                  ("<code>marches:tab</code>, <code>marches:lang</code>, <code>marches:prefs</code>", "Remember the tab, language and settings displayed (period, top, currency, chart type, timeframe)", "Until deletion"),
                   ("<code>marches:favs</code>", "Remember your favorites", "Until deletion"),
                   ("<code>marches:paper</code>", "Only if you open the demo account: play-money balance, positions, orders and paper trading history", "Until “Reset account” or deletion"),
                   ("<code>marches:alertsToken</code>, browser notification subscription", "Only if you create a price alert: random device identifier to manage your alerts, and subscription used to receive notifications", "Until “Delete everything and turn off notifications” or deletion"),
@@ -346,7 +349,7 @@ def cookies(lang):
             th=("名称", "用途", "期限"),
             rows=[("<code>marches:crypto</code>、<code>marches:indices</code>、<code>marches:stocks</code>", "最新市场数据，用于即时和离线显示", "直至下次更新或删除"),
                   ("<code>marches:fx</code>", "最新欧元/美元汇率，用于以欧元显示", "直至下次更新或删除"),
-                  ("<code>marches:tab</code>、<code>marches:lang</code>、<code>marches:prefs</code>", "记住所显示的标签页、语言和设置（时间段、排名数量、货币）", "直至删除"),
+                  ("<code>marches:tab</code>、<code>marches:lang</code>、<code>marches:prefs</code>", "记住所显示的标签页、语言和设置（时间段、排名数量、货币、图表类型、时间周期）", "直至删除"),
                   ("<code>marches:favs</code>", "记住您的自选", "直至删除"),
                   ("<code>marches:paper</code>", "仅在您开设模拟账户时：虚拟余额、持仓、订单和模拟交易历史", "直至“重置账户”或删除"),
                   ("<code>marches:alertsToken</code>、浏览器通知订阅", "仅在您创建价格提醒时：用于管理提醒的设备随机标识符，以及接收通知所需的订阅", "直至“全部删除并关闭通知”或删除"),
