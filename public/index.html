@@ -63,6 +63,7 @@
       <p class="fx-note" id="stocks-fx" hidden></p>
       <div class="stats" id="stocks-stats"></div>
       <div class="treemap" id="treemap-stocks" role="list" aria-label="Heatmap des entreprises cotées"></div>
+      <div class="screener" id="screener" hidden></div>
       <p class="fx-note" id="stocks-sector-src" hidden></p>
       <div class="movers" id="stocks-movers"></div>
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
@@ -76,11 +77,12 @@
       <div class="grid" id="grid-europe" hidden></div>
       <div class="grid" id="grid-asie" hidden></div>
       <div class="grid" id="grid-afrique" hidden></div>
+      <div class="worldmap" id="grid-carte" hidden></div>
       <div class="grid" id="grid-commo" hidden></div>
       <div class="grid" id="grid-fx" hidden></div>
       <p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p>
     </section>
-    <section id="view-compte" class="view" data-tab="compte" aria-label="Compte" hidden><div id="paper" class="paper"></div></section>
+    <section id="view-compte" class="view" data-tab="compte" aria-label="Compte" hidden><div class="compte-mode" id="compte-mode"></div><div id="paper" class="paper"></div></section>
 
     <div id="install" class="install" hidden></div>
 
@@ -145,6 +147,7 @@
     <div class="chart-frame" id="chart-frame"></div>
     <p class="chart-note" id="chart-note" hidden></p>
     <details class="chart-facts" id="chart-facts-box" hidden><summary data-i18n="facts.title">Fiche</summary><div id="chart-facts"></div></details>
+    <details class="chart-facts" id="chart-news-box" hidden><summary data-i18n="news.title">Actualités</summary><div id="chart-news"></div></details>
     <div class="chart-bottom">
       <button id="chart-trade" class="btn btn-trade" type="button" hidden data-i18n="pt.trade">Trader (démo)</button>
       <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>

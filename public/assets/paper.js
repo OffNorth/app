@@ -5,6 +5,7 @@
 // frais et P&L en dollars US, convertis au taux de change du moment (fx = dollars pour 1 unité de devise).
 
 import * as E from './paper-engine.js';
+import { rsi, sma } from './indicators.js';
 import { CAPITALS, FEE, LEVERAGES, MAX_ORDERS, MAX_OPEN, dirOf, liqPrice, trailLevel, validTrail } from './paper-engine.js';
 
 export { liqPrice };
@@ -339,13 +340,126 @@ export function createPaper(ctx) {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
+  /* ---------- Sauvegarde du compte actif dans un fichier (JSON) et restauration ---------- */
+  function backupSave() {
+    const a = accounts.find((x) => x.id === active);
+    const blob = new Blob([JSON.stringify({ app: 'marches', type: 'paper', v: 1, name: acctName(a), exportedAt: new Date().toISOString(), account: acct }, null, 1)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `marches-compte-demo-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 5000);
+  }
+  async function backupLoad(file, el) {
+    if (!file) return;
+    try {
+      if (file.size > 2_000_000) throw new Error('size');
+      const d = JSON.parse(await file.text());
+      const a = d?.app === 'marches' && d?.type === 'paper' ? E.normalize(d.account) : null;
+      if (!a) throw new Error('format');
+      if (!confirm(t('bk.confirm'))) return;
+      acct = a;
+      save();
+      ctx.toast(t('bk.loaded'));
+      ctx.changed();
+    } catch { ctx.toast(t('bk.invalid'), 'neg'); }
+    if (el.isConnected) render(el);
+  }
+
+  /* ---------- Test d'une stratégie sur l'historique (bougies journalières réelles) ----------
+   * Achat de tout le capital au signal d'entrée, vente au signal de sortie, au cours de clôture ; frais simulés 0,1 % par ordre ;
+   * achat seulement (pas de vente à découvert ni de levier). Comparaison avec « acheter et conserver » sur la même période. */
+  let bt = { asset: null, strat: 'rsi', years: 3, result: null, busy: false };
+  const STRATS = ['rsi', 'ma2050', 'ma50200'];
+  function btHTML() {
+    const list = ctx.assets();
+    const r = bt.result;
+    return `<h2 class="pt-h">${t('bt.title')}</h2>
+      <div class="card pt-dca">
+        <p class="consent-small">${t('bt.intro')}</p>
+        <label for="bt-asset">${t('dca.asset')}</label>
+        <select id="bt-asset" class="lang-select dca-select">${list.slice(0, 400).map((a, i) => `<option value="${i}"${bt.asset && a.kind === bt.asset.kind && a.assetId === bt.asset.assetId ? ' selected' : ''}>${esc(a.label)} · ${esc(a.name || '')}</option>`).join('')}</select>
+        <label for="bt-strat">${t('bt.strat')}</label>
+        <select id="bt-strat" class="lang-select dca-select">${STRATS.map((k) => `<option value="${k}"${bt.strat === k ? ' selected' : ''}>${t(`bt.s.${k}`)}</option>`).join('')}</select>
+        <label>${t('dca.since')}</label>${segHTML('btYears', [[1, t('dca.y', { n: 1 })], [3, t('dca.y', { n: 3 })], [5, t('dca.y', { n: 5 })]], bt.years)}
+        <button type="button" class="btn btn-primary" data-bt ${bt.busy ? 'disabled' : ''}>${t(bt.busy ? 'loading' : 'bt.run')}</button>
+        ${r?.error ? `<p class="pt-note">${t(r.error === 'short' ? 'bt.short' : 'dca.na')}</p>` : ''}
+        ${r && !r.error ? `<dl class="pt-kv">
+          <div><dt>${t('bt.ret')}</dt><dd class="${cls(r.ret)}">${ctx.pct(r.ret)}</dd></div>
+          <div><dt>${t('bt.hold')}</dt><dd class="${cls(r.hold)}">${ctx.pct(r.hold)}</dd></div>
+          <div><dt>${t('bt.trades')}</dt><dd>${r.trades}</dd></div>
+          <div><dt>${t('pt.winrate')}</dt><dd>${r.trades ? `${ctx.NF1().format(r.win)}${ctx.pctSign()}` : ctx.ND}</dd></div>
+          <div><dt>${t('pt.maxDd')}</dt><dd class="neg">−${ctx.NF1().format(r.dd)}${ctx.pctSign()}</dd></div>
+          <div><dt>${t('bt.exposure')}</dt><dd>${ctx.NF1().format(r.exposure)}${ctx.pctSign()}</dd></div></dl>
+          ${btSVG(r)}
+          <p class="consent-small">${t('bt.note', { s: esc(r.source || ctx.ND), d: ctx.day(r.from) })}</p>` : ''}
+      </div>`;
+  }
+  function btSVG(r) {
+    const W = 320, H = 70, pts = r.curve;
+    if (pts.length < 2) return '';
+    const x0 = pts[0][0], x1 = pts[pts.length - 1][0], ys = pts.flatMap((p) => [p[1], p[2]]);
+    const y0 = Math.min(...ys), y1 = Math.max(...ys);
+    const X = (x) => ((x - x0) / (x1 - x0 || 1)) * W, Y = (y) => H - 4 - ((y - y0) / (y1 - y0 || 1)) * (H - 8);
+    const path = (i) => pts.map((p, k) => `${k ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[i]).toFixed(1)}`).join('');
+    return `<svg class="pt-curve ${r.ret >= 0 ? 'up' : 'down'}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t('bt.chart'))}">
+      <path d="${path(2)}" class="bench b-spx"/><path d="${path(1)}" class="line"/></svg>
+      <div class="pt-bench"><span class="pt-bench-i"><i class="sw sw-acct"></i>${t('bt.stratShort')}</span><span class="pt-bench-i"><i class="sw sw-spx"></i>${t('bt.hold')}</span></div>`;
+  }
+  async function runBacktest(el) {
+    const a = ctx.assets()[Number(el.querySelector('#bt-asset')?.value)] || bt.asset;
+    bt.strat = el.querySelector('#bt-strat')?.value || bt.strat;
+    if (!a) return;
+    bt.asset = a; bt.busy = true; render(el);
+    try {
+      const d = await ctx.fetchCandles(a, '1d');
+      const all = (d.candles || []).map((x) => ({ time: x[0] * 1000, close: x[4] })).filter((x) => isNum(x.close) && x.close > 0);
+      const from = Date.now() - bt.years * 365.25 * 86_400_000;
+      const start = all.findIndex((x) => x.time >= from);
+      if (start < 0 || all[0].time > from + 7 * 86_400_000) throw Object.assign(new Error('court'), { code: 'short' });
+      // Indicateurs calculés sur tout l'historique disponible (pour avoir des valeurs dès le début de la période testée).
+      const ind = new Map();
+      if (bt.strat === 'rsi') rsi(all).forEach((p) => ind.set(p.time, { a: p.value }));
+      else {
+        const [n1, n2] = bt.strat === 'ma2050' ? [20, 50] : [50, 200];
+        const s2 = new Map(sma(all, n2).map((p) => [p.time, p.value]));
+        sma(all, n1).forEach((p) => { if (s2.has(p.time)) ind.set(p.time, { a: p.value, b: s2.get(p.time) }); });
+      }
+      if (!ind.has(all[start].time) && bt.strat !== 'rsi') throw Object.assign(new Error('court'), { code: 'short' });
+      let cash = 10000, units = 0, entry = 0, trades = 0, wins = 0, inDays = 0, prev = null, peak = 10000, dd = 0;
+      const curve = [];
+      const first = all[start].close;
+      for (let i = start; i < all.length; i++) {
+        const { time, close } = all[i];
+        const v = ind.get(time);
+        if (v && prev) {
+          const buy = bt.strat === 'rsi' ? prev.a >= 30 && v.a < 30 : prev.a <= prev.b && v.a > v.b;
+          const sell = bt.strat === 'rsi' ? prev.a <= 70 && v.a > 70 : prev.a >= prev.b && v.a < v.b;
+          if (buy && units === 0) { units = (cash * (1 - FEE)) / close; entry = cash; cash = 0; }
+          else if (sell && units > 0) { cash = units * close * (1 - FEE); units = 0; trades++; if (cash > entry) wins++; }
+        }
+        if (v) prev = v;
+        if (units > 0) inDays++;
+        const eq = cash + units * close;
+        peak = Math.max(peak, eq); dd = Math.max(dd, (1 - eq / peak) * 100);
+        curve.push([time, eq, (10000 * close) / first]);
+      }
+      const last = curve[curve.length - 1];
+      if (units > 0) { trades++; if (last[1] > entry) wins++; } // position encore ouverte : comptée à sa valeur actuelle
+      bt.result = { ret: (last[1] / 10000 - 1) * 100, hold: (last[2] / 10000 - 1) * 100, trades, win: trades ? (wins / trades) * 100 : 0, dd,
+        exposure: (inDays / curve.length) * 100, curve: curve.filter((_, k) => k % Math.ceil(curve.length / 200) === 0 || k === curve.length - 1), source: d.source, from: all[start].time };
+    } catch (err) { bt.result = { error: err.code === 'short' ? 'short' : 'na' }; }
+    bt.busy = false;
+    if (el.isConnected) render(el);
+  }
+
   /* ---------- Simulateur d'achats programmés (DCA) : bougies journalières réelles, sans frais ---------- */
   let dca = { asset: null, amount: '100', every: 'week', years: 1, result: null, busy: false };
   function dcaHTML() {
     const list = ctx.assets();
     const r = dca.result;
     const unit = r ? (r.ccy === 'USD' || !r.ccy ? '$' : r.ccy) : '$';
-    return `<h2 class="pt-h">${t('dca.title')}</h2>
+    return `<h2 class="pt-h">${t('dca.title')} ${ctx.gloss('dca')}</h2>
       <div class="card pt-dca">
         <p class="consent-small">${t('dca.intro')}</p>
         <label for="dca-asset">${t('dca.asset')}</label>
@@ -491,6 +605,10 @@ export function createPaper(ctx) {
       <dl class="pt-kv pt-stats">${stats().map(([k, v, c]) => `<div><dt>${k}</dt><dd class="${v === ctx.ND ? '' : c || ''}">${v}</dd></div>`).join('')}</dl>
       ${journalHTML()}
       ${dcaHTML()}
+      ${btHTML()}
+      <div class="pt-top-actions"><button type="button" class="btn btn-sm" data-backup="save">${t('bk.save')}</button>
+        <label class="btn btn-sm pt-file">${t('bk.load')}<input type="file" accept="application/json,.json" data-backup="load" hidden></label></div>
+      <p class="consent-small">${t('bk.note')}</p>
 
       ${syncHTML()}
       <p class="consent-small pt-disc">${t('pt.disclaimer')}</p>
@@ -526,7 +644,15 @@ export function createPaper(ctx) {
       render(el);
     }));
     el.querySelector('[data-dca]')?.addEventListener('click', () => runDca(el));
-    el.querySelectorAll('.pt-dca [data-k]').forEach((b) => b.addEventListener('click', () => {
+    el.querySelector('[data-bt]')?.addEventListener('click', () => runBacktest(el));
+    el.querySelector('[data-backup="save"]')?.addEventListener('click', backupSave);
+    el.querySelector('[data-backup="load"]')?.addEventListener('change', (e) => backupLoad(e.target.files?.[0], el));
+    el.querySelectorAll('.pt-dca [data-k="btYears"]').forEach((b) => b.addEventListener('click', () => {
+      const sel = el.querySelector('#bt-asset'); if (sel) bt.asset = ctx.assets()[Number(sel.value)] || bt.asset;
+      bt.strat = el.querySelector('#bt-strat')?.value || bt.strat;
+      bt.years = Number(b.dataset.v); bt.result = null; render(el);
+    }));
+    el.querySelectorAll('.pt-dca [data-k="dcaEvery"], .pt-dca [data-k="dcaYears"]').forEach((b) => b.addEventListener('click', () => {
       dca.amount = el.querySelector('#dca-amount')?.value ?? dca.amount;
       const sel = el.querySelector('#dca-asset'); if (sel) dca.asset = ctx.assets()[Number(sel.value)] || dca.asset;
       if (b.dataset.k === 'dcaEvery') dca.every = b.dataset.v; else dca.years = Number(b.dataset.v);
@@ -773,18 +899,18 @@ export function createPaper(ctx) {
       <div class="trade-amount"><div class="alert-input"><input id="tr-amount" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.amount)}"><span>${unit}</span></div>
         ${segHTML('mode', [['usd', '$'], ['qty', t('pt.qtyShort')]], k.mode)}</div>
       <div class="trade-quick">${[10, 25, 50, 100].map((p) => `<button type="button" class="btn btn-sm" data-pct="${p}">${p} %</button>`).join('')}</div>
-      <label>${t('pt.lev')}</label>
+      <label>${t('pt.lev')} ${ctx.gloss('lev')}</label>
       ${segHTML('lev', LEVERAGES.map((l) => [l, `${l}×`]), k.lev)}
       <div class="trade-tpsl">
-        <div><label for="tr-tp">${t('pt.tp')} <small>${t('pt.optional')}</small></label>
+        <div><label for="tr-tp">${t('pt.tp')} <small>${t('pt.optional')}</small> ${ctx.gloss('tp')}</label>
           <div class="alert-input"><input id="tr-tp" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.tp)}"><span>${pu}</span></div><small class="tr-hint" id="tr-tp-h"></small></div>
-        <div><label for="tr-sl">${t('pt.sl')} <small>${t('pt.optional')}</small></label>
+        <div><label for="tr-sl">${t('pt.sl')} <small>${t('pt.optional')}</small> ${ctx.gloss('sl')}</label>
           <div class="alert-input"><input id="tr-sl" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.sl)}"><span>${pu}</span></div><small class="tr-hint" id="tr-sl-h"></small></div>
       </div>
       <div class="trade-tpsl">
-        <div><label for="tr-trail">${t('pt.trail')} <small>${t('pt.optional')}</small></label>
+        <div><label for="tr-trail">${t('pt.trail')} <small>${t('pt.optional')}</small> ${ctx.gloss('trail')}</label>
           <div class="alert-input"><input id="tr-trail" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.trail)}" placeholder="5"><span>%</span></div><small class="tr-hint" id="tr-trail-h"></small></div>
-        ${k.type === 'market' ? '' : `<div><label for="tr-oco">${t('pt.oco')} <small>${t('pt.optional')}</small></label>
+        ${k.type === 'market' ? '' : `<div><label for="tr-oco">${t('pt.oco')} <small>${t('pt.optional')}</small> ${ctx.gloss('oco')}</label>
           <div class="alert-input"><input id="tr-oco" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.oco)}"><span>${pu}</span></div><small class="tr-hint" id="tr-oco-h"></small></div>`}
       </div>
       <dl class="pt-kv trade-sum" id="tr-sum"></dl>

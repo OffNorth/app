@@ -33,5 +33,7 @@
   }
   window.addEventListener('storage', function (e) { if (e.key === KEY) { pref = read(); apply(); } });
   apply();
+  // Taille du texte choisie dans l'app (zoom de l'interface), appliquée avant l'affichage.
+  try { var z = JSON.parse(localStorage.getItem('marches:textScale')); if ([0.9, 1.15, 1.3].indexOf(z) >= 0) document.documentElement.style.zoom = String(z); } catch (e) { /* défaut */ }
   window.marchesTheme = { modes: MODES, pref: function () { return pref; }, resolved: resolved, set: set };
 })();

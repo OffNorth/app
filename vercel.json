@@ -1,5 +1,43 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    {
+      "source": "/api/news",
+      "destination": "/api/feeds?r=news"
+    },
+    {
+      "source": "/api/sentiment",
+      "destination": "/api/feeds?r=sentiment"
+    },
+    {
+      "source": "/api/cryptocats",
+      "destination": "/api/feeds?r=cryptocats"
+    },
+    {
+      "source": "/api/econ",
+      "destination": "/api/feeds?r=econ"
+    },
+    {
+      "source": "/api/dividends",
+      "destination": "/api/feeds?r=dividends"
+    },
+    {
+      "source": "/api/calendar",
+      "destination": "/api/feeds?r=calendar"
+    },
+    {
+      "source": "/api/macro",
+      "destination": "/api/feeds?r=macro"
+    },
+    {
+      "source": "/api/search",
+      "destination": "/api/feeds?r=search"
+    },
+    {
+      "source": "/api/quote",
+      "destination": "/api/feeds?r=quote"
+    }
+  ],
   "headers": [
     {
       "source": "/sw.js",

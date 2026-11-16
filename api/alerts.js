@@ -4,7 +4,7 @@
 import { json } from './_lib.js';
 
 const FUNCTION_URL = process.env.ALERTS_FUNCTION_URL || 'https://glvxxxoxcxsxdnbofgqf.supabase.co/functions/v1/alerts';
-const ACTIONS = new Set(['config', 'register', 'list', 'create', 'delete', 'forget', 'summary.set',
+const ACTIONS = new Set(['config', 'register', 'list', 'create', 'delete', 'forget', 'summary.set', 'moves.set',
   'paper.put', 'paper.get', 'paper.delete', 'paper.link', 'paper.pseudo', 'group.create', 'group.join', 'group.leave', 'group.board']);
 const MAX_BODY = 420_000; // un compte démo complet (historique compris) tient dans cette limite
 
