@@ -992,6 +992,8 @@ export function createPaper(ctx) {
   }
 
   return {
+    /** Résumé du compte actif (écran « En bref ») ou null. */
+    info: () => (acct ? { ...summary(), positions: acct.positions.length, orders: acct.orders.length, name: acctName(accounts.find((x) => x.id === active)) } : null),
     isSynced: () => !!sync,
     liqOf,
     fxOf,

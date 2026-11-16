@@ -4,10 +4,11 @@ import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix
 import { makeSnapshot, makeTradeCard } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
 import { createTradeChart, INDICATORS, TIMEFRAMES } from './tradechart.js';
+import { rsi, sma, volumeRatio } from './indicators.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 17; // à garder égal à VERSION ('v17') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
-const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
+const APP_BUILD = 18; // à garder égal à VERSION ('v18') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
+const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
 const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS];
@@ -36,9 +37,14 @@ let favs = (store.get('favs') || []).filter((f) => f && ['c', 's', 'i', 'm'].inc
 const isFav = (f) => favs.some((x) => favKey(x) === favKey(f));
 const hasStockFav = () => favs.some((f) => f.t === 's');
 function toggleFav(f) {
-  favs = isFav(f) ? favs.filter((x) => favKey(x) !== favKey(f)) : [...favs, f];
+  favs = isFav(f) ? favs.filter((x) => favKey(x) !== favKey(f)) : [...favs, { ...f, l: favView.list !== 'all' ? favView.list : undefined }];
   store.set('favs', favs);
 }
+/* Listes de favoris : [{ id, name }] ; chaque favori peut appartenir à une liste (champ l). Affichage : liste et tri choisis. */
+let favLists = (store.get('favLists') || []).filter((x) => x && /^[a-z0-9]{4,12}$/.test(x.id) && typeof x.name === 'string').slice(0, 12);
+const favView = { list: 'all', sort: 'added', organize: false, ...(store.get('favView') || {}) };
+if (favView.list !== 'all' && !favLists.some((x) => x.id === favView.list)) favView.list = 'all';
+const saveFavView = () => store.set('favView', { list: favView.list, sort: favView.sort });
 /** Taille du classement d'entreprises à charger : 100 si une entreprise est en favori (pour la retrouver). */
 const stocksToLoad = () => (hasStockFav() || paper?.exposure().some((x) => x.kind === 's') ? 100 : prefs.nStocks);
 
@@ -46,7 +52,7 @@ const state = {
   fx: store.get('fx'),
   macro: store.get('macro'),
   extra: { c: {}, s: {} }, // actifs trouvés par la recherche (hors des listes principales)
-  tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'crypto',
+  tab: initialTab(location.hash.slice(1)) || initialTab(store.get('tab')) || 'accueil',
   crypto: store.get('crypto'),
   indices: store.get('indices'),
   stocks: store.get('stocks'),
@@ -349,6 +355,7 @@ function renderCrypto() {
   renderTiles(map, cryptoItems(data), {
     maxAbs: PERIOD_MAX[prefs.period], period: t('period24h', { p: periodLabel() }), priceText: (c) => fmtPrice(c.price), onOpen: openChart, resize: shrinkBTC,
   });
+  renderMovers($('#crypto-movers'), cryptoItems(data), (c) => fmtPrice(c.price), openCryptoRanked, t('movers.period', { p: periodLabel() }));
 }
 
 /** Cours d'une action dans sa devise (symbole $ pour l'USD). */
@@ -384,6 +391,7 @@ function renderStocks() {
     maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
     ...(bySector && state.sectors ? { groupOf: (c) => sec[c.id] || 'other', groupName: sectorName } : {}), // secteurs pas encore chargés : vue simple
   });
+  renderMovers($('#stocks-movers'), stockItems(data), (c) => fmtStockPrice(c.price, c.currency), openStockRanked, t('movers.session'));
   const src = $('#stocks-sector-src');
   src.hidden = !bySector;
   if (bySector) src.textContent = state.sectors ? t('sector.src', { s: state.sectors.source, d: fmtDay(Date.parse(state.sectors.generatedAt)) }) : t('loading');
@@ -465,9 +473,9 @@ async function loadAlerts(force = false) {
   if (alertsCache && !force && Date.now() - alertsCache.at < 30_000) return alertsCache;
   try {
     const r = await alertsApi('list', { token });
-    alertsCache = { alerts: r.alerts || [], at: Date.now() };
+    alertsCache = { alerts: r.alerts || [], summary: r.summary || null, at: Date.now() };
   } catch {
-    alertsCache = { alerts: alertsCache?.alerts || [], at: Date.now(), error: true };
+    alertsCache = { alerts: alertsCache?.alerts || [], summary: alertsCache?.summary || null, at: Date.now(), error: true };
   }
   return alertsCache;
 }
@@ -489,8 +497,11 @@ async function ensureDevice() {
 const alertWindow = (kind) => t(kind === 'c' ? 'alert.w24' : 'alert.wDay');
 function alertLine(a) {
   const pct = a.metric === 'pct';
-  const val = (v) => (pct ? fmtPct(v) : fmtNative(v, a.currency));
-  const cond = `${esc(a.label)} ${a.direction === 'above' ? '≥' : '≤'} ${val(a.target)}${pct ? ` <small>(${alertWindow(a.kind)})</small>` : ''}`;
+  const val = (v) => (a.metric === 'rsi' || a.metric === 'vol' ? NF1.format(v) : a.metric === 'ma' ? fmtNative(v, a.currency) : pct ? fmtPct(v) : fmtNative(v, a.currency));
+  const cond = a.metric === 'rsi' ? `${esc(a.label)} · RSI 14 ${a.direction === 'above' ? '≥' : '≤'} ${NF1.format(a.target)} <small>(${t('alert.daily')})</small>`
+    : a.metric === 'ma' ? `${esc(a.label)} · ${t(a.direction === 'above' ? 'alert.maUp' : 'alert.maDown')} <small>(${t('alert.daily')})</small>`
+    : a.metric === 'vol' ? `${esc(a.label)} · ${t('alert.volX', { v: NF1.format(a.target) })} <small>(${t('alert.daily')})</small>`
+    : `${esc(a.label)} ${a.direction === 'above' ? '≥' : '≤'} ${val(a.target)}${pct ? ` <small>(${alertWindow(a.kind)})</small>` : ''}`;
   const st = a.triggeredAt
     ? t('alert.fired', { d: fmtDay(Date.parse(a.triggeredAt)), p: val(a.triggeredPrice) })
     : t('alert.active');
@@ -535,7 +546,8 @@ function alertMsg(key, vars) {
   m.innerHTML = key ? t(key, vars) : '';
   m.hidden = !key;
 }
-let alertMetric = 'price'; // 'price' : seuil de cours ; 'pct' : seuil de variation (24 h pour une crypto, séance sinon)
+let alertMetric = 'price'; // 'price' : seuil de cours ; 'pct' : seuil de variation (24 h pour une crypto, séance sinon) ; 'tech' : indicateur
+const TECH_KINDS = ['rsiAbove', 'rsiBelow', 'maUp', 'maDown', 'vol'];
 /** Pourcentage signé saisi (« -5 », « −2,5 », « +3 % »). */
 function parseSigned(raw) {
   const s = String(raw).trim().replace(/[%\s\u00a0\u202f]/g, '');
@@ -547,6 +559,10 @@ function setAlertMetric(m) {
   const a = alertAsset;
   alertMetric = m;
   for (const b of document.querySelectorAll('#alert-mode [data-metric]')) b.setAttribute('aria-pressed', String(b.dataset.metric === m));
+  const techBox = $('#alert-tech');
+  techBox.hidden = m !== 'tech';
+  $('#alert-target').closest('.alert-input').hidden = false;
+  if (m === 'tech') return setTechKind($('#alert-tech-kind').value || 'rsiAbove');
   const pct = m === 'pct';
   $('#alert-title').textContent = t(pct ? 'alert.titlePct' : 'alert.title', { l: a.label });
   $('#alert-label').textContent = pct ? t('alert.targetPct', { w: alertWindow(a.kind) }) : t('alert.target');
@@ -562,9 +578,30 @@ function setAlertMetric(m) {
   alertMsg(ok ? null : pct ? 'alert.noChg' : 'alert.noPrice');
   $('#alert-submit').disabled = !ok;
 }
+/** Mode « Technique » : RSI 14, croisement MM20 / MM50 ou volume, sur bougies journalières (vérifié par le serveur). */
+function setTechKind(k) {
+  const a = alertAsset;
+  $('#alert-tech-kind').value = k;
+  $('#alert-title').textContent = t('alert.titleTech', { l: a.label });
+  $('#alert-now').textContent = t('alert.techNow');
+  const input = $('#alert-target');
+  const box = input.closest('.alert-input');
+  box.hidden = k === 'maUp' || k === 'maDown';
+  input.value = k === 'rsiAbove' ? '70' : k === 'rsiBelow' ? '30' : k === 'vol' ? '2' : '';
+  input.inputMode = 'decimal';
+  input.placeholder = '';
+  $('#alert-label').textContent = t(k.startsWith('rsi') ? 'alert.rsiLabel' : k === 'vol' ? 'alert.volLabel' : 'alert.maLabel');
+  $('#alert-unit').textContent = k === 'vol' ? '×' : '';
+  $('#alert-note').textContent = t(`alert.techNote.${k.startsWith('rsi') ? 'rsi' : k === 'vol' ? 'vol' : 'ma'}`);
+  $('#alert-dir').textContent = '';
+  const noSym = (a.kind === 'i' || a.kind === 'm') && !a.symbol;
+  alertMsg(noSym ? 'alert.techNa' : null);
+  $('#alert-submit').disabled = noSym;
+}
 function updateAlertDir() {
   const a = alertAsset;
   const out = $('#alert-dir');
+  if (alertMetric === 'tech') { out.textContent = ''; return; }
   if (alertMetric === 'pct') {
     const v = parseSigned($('#alert-target').value);
     out.textContent = isNum(v) && v !== 0 ? t(v > 0 ? 'alert.pctAbove' : 'alert.pctBelow', { t: fmtPct(v), w: alertWindow(a?.kind) }) : '';
@@ -593,13 +630,18 @@ $('#alert-close').addEventListener('click', closeAlert);
 $('#alert').addEventListener('click', (e) => { if (e.target.id === 'alert') closeAlert(); });
 $('#alert-target').addEventListener('input', updateAlertDir);
 for (const b of document.querySelectorAll('#alert-mode [data-metric]')) b.addEventListener('click', () => { if (alertAsset) { setAlertMetric(b.dataset.metric); $('#alert-target').focus(); } });
+$('#alert-tech-kind').addEventListener('change', (e) => { if (alertAsset) setTechKind(e.target.value); });
 $('#alert-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const a = alertAsset;
-  const pct = alertMetric === 'pct';
-  const target = pct ? parseSigned($('#alert-target').value) : parseAmount($('#alert-target').value);
+  const pct = alertMetric === 'pct', tech = alertMetric === 'tech';
+  const techKind = $('#alert-tech-kind').value;
+  const target = tech ? (techKind.startsWith('ma') ? 1 : parseAmount($('#alert-target').value)) : pct ? parseSigned($('#alert-target').value) : parseAmount($('#alert-target').value);
   if (!a) return;
-  if (pct) {
+  if (tech) {
+    if (techKind.startsWith('rsi') && !(isNum(target) && target >= 1 && target <= 99)) return alertMsg('alert.rsiInvalid');
+    if (techKind === 'vol' && !(isNum(target) && target >= 1.2 && target <= 50)) return alertMsg('alert.volInvalid');
+  } else if (pct) {
     if (!isNum(a.chg)) return alertMsg('alert.noChg');
     if (!isNum(target) || target === 0 || target < -99 || target > 1000) return alertMsg('alert.pctInvalid');
     if (target > 0 ? a.chg >= target : a.chg <= target) return alertMsg('alert.pctReached');
@@ -619,7 +661,10 @@ $('#alert-form').addEventListener('submit', async (e) => {
   btn.textContent = t('alert.creating');
   try {
     const token = await ensureDevice();
-    await alertsApi('create', { token, alert: pct
+    await alertsApi('create', { token, alert: tech
+      ? { kind: a.kind, assetId: a.assetId, label: a.label, symbol: a.symbol || undefined, currency: null, target,
+        metric: techKind.startsWith('rsi') ? 'rsi' : techKind === 'vol' ? 'vol' : 'ma', direction: techKind === 'rsiBelow' || techKind === 'maDown' ? 'below' : 'above' }
+      : pct
       ? { kind: a.kind, assetId: a.assetId, label: a.label, metric: 'pct', direction: target > 0 ? 'above' : 'below', target, currency: null }
       : { kind: a.kind, assetId: a.assetId, label: a.label, direction: target > a.price ? 'above' : 'below', target, currency: a.currency } });
     $('#alert-target').value = '';
@@ -838,6 +883,7 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav
   $('#chart-title').innerHTML = titleHTML;
   $('#chart-sub').textContent = sub;
   $('#chart-stats').innerHTML = statsHTML;
+  renderFacts(trade, token);
   link.hidden = true;
   const modeBox = $('#chart-mode');
   modeBox.hidden = !trade;
@@ -1029,7 +1075,7 @@ function openIndexChart(ix) {
     label: indexName(ix),
     missingMsg: t('missIndex', { s: esc(indexName(ix)) }),
     fav: { t: 'i', id: ix.id, label: ix.name, name: ix.name, logo: ix.logo, logoSmall: ix.logoSmall },
-    alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null, chg: ix.outdated ? null : ix.changePct },
+    alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null, chg: ix.outdated ? null : ix.changePct, symbol: ix.symbol },
     trade: ix.symbol ? { kind: 'i', assetId: ix.id, label: ix.name, name: country(ix.country), symbol: ix.symbol, logo: ix.logo, logoSmall: ix.logoSmall } : null,
   });
 }
@@ -1105,7 +1151,7 @@ function openMacroChart(m) {
     label: name,
     missingMsg: t('missIndex', { s: esc(name) }),
     fav: { t: 'm', id: m.id, label: name, name, logo: m.logo, logoSmall: m.logoSmall },
-    alert: { kind: 'm', assetId: m.id, label: name, price: m.price, currency: m.currency || null, chg: m.outdated ? null : m.changePct },
+    alert: { kind: 'm', assetId: m.id, label: name, price: m.price, currency: m.currency || null, chg: m.outdated ? null : m.changePct, symbol: m.symbol },
     trade: { kind: 'm', assetId: m.id, label: name, name: t(`macro.g.${m.group}`), symbol: m.symbol, logo: m.logo, logoSmall: m.logoSmall },
   });
 }
@@ -1278,6 +1324,7 @@ async function loadAgenda() {
   agendaAt = Date.now();
   agendaLoading = false;
   if (state.tab === 'indices') renderAgenda();
+  else if (state.tab === 'accueil') renderHome();
 }
 const dayMs = (d) => Date.parse(`${d}T12:00:00Z`); // date publiée (AAAA-MM-JJ), sans heure
 function inDays(d) {
@@ -1421,17 +1468,96 @@ function findCoin(f) {
   const i = coins.findIndex((c) => c.id === f.id);
   return i >= 0 ? i : coins.findIndex((c) => c.symbol === f.label); // id différent selon la source (CoinGecko / CoinPaprika)
 }
+/** Favoris de la liste affichée, triés selon le choix (variation : celle affichée par l'app ; n/d en dernier). */
+function visibleFavs() {
+  let list = favView.list === 'all' ? [...favs] : favs.filter((f) => f.l === favView.list);
+  const chg = (f) => quoteOf({ kind: f.t, assetId: f.id, label: f.label }).chg;
+  if (favView.sort === 'name') list.sort((a, b) => a.label.localeCompare(b.label));
+  else if (favView.sort === 'chgDesc' || favView.sort === 'chgAsc') {
+    const dir = favView.sort === 'chgDesc' ? -1 : 1;
+    list.sort((a, b) => { const x = chg(a), y = chg(b); if (!isNum(x)) return 1; if (!isNum(y)) return -1; return (x - y) * dir; });
+  }
+  return list;
+}
+function renderFavTools() {
+  const box = $('#fav-tools');
+  box.innerHTML = `<div class="fav-lists" role="group" aria-label="${esc(t('fav.lists'))}">
+      ${[['all', t('fav.all')], ...favLists.map((x) => [x.id, x.name])].map(([id, name]) =>
+        `<button type="button" class="chip-btn" data-flist="${esc(id)}" aria-pressed="${favView.list === id}">${esc(name)}</button>`).join('')}
+      <button type="button" class="chip-btn" data-fact="new">+ ${t('fav.newList')}</button></div>
+    <div class="fav-row"><label for="fav-sort" class="pt-label">${t('fav.sort')}</label>
+      <select id="fav-sort" class="lang-select">${[['added', t('fav.sort.added')], ['chgDesc', t('fav.sort.chgDesc')], ['chgAsc', t('fav.sort.chgAsc')], ['name', t('fav.sort.name')]]
+        .map(([v, l]) => `<option value="${v}"${favView.sort === v ? ' selected' : ''}>${esc(l)}</option>`).join('')}</select>
+      <button type="button" class="btn btn-sm" data-fact="organize" aria-pressed="${favView.organize}">${t(favView.organize ? 'fav.done' : 'fav.organize')}</button></div>`;
+  box.onclick = (e) => {
+    const l = e.target.closest('[data-flist]');
+    if (l) { favView.list = l.dataset.flist; saveFavView(); renderFavs(); return; }
+    const a = e.target.closest('[data-fact]');
+    if (a?.dataset.fact === 'organize') { favView.organize = !favView.organize; renderFavs(); }
+    else if (a?.dataset.fact === 'new') {
+      if (favLists.length >= 12) { toast(t('fav.maxLists'), 'neg'); return; }
+      const name = (prompt(t('fav.listName')) || '').trim().slice(0, 24);
+      if (!name) return;
+      const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+      favLists.push({ id, name });
+      store.set('favLists', favLists);
+      favView.list = id; saveFavView(); renderFavs();
+    }
+  };
+  box.querySelector('#fav-sort').onchange = (e) => { favView.sort = e.target.value; saveFavView(); renderFavs(); };
+}
+/** Mode « Organiser » : liste de chaque favori, rangement dans une liste, ordre, retrait ; renommer ou supprimer la liste affichée. */
+function renderFavOrganize(grid) {
+  const list = favView.list === 'all' ? favs : favs.filter((f) => f.l === favView.list);
+  const cur = favLists.find((x) => x.id === favView.list);
+  grid.innerHTML = `<div class="fav-org card">
+    ${cur ? `<div class="fav-row"><strong>${esc(cur.name)}</strong><button type="button" class="btn btn-sm" data-org="rename">${t('pt.acctRename')}</button>
+      <button type="button" class="btn btn-sm" data-org="dellist">${t('fav.delList')}</button></div>` : ''}
+    ${list.length ? `<ul>${list.map((f) => `<li data-key="${esc(favKey(f))}">${logoImg(f, 20, 'mv-logo')}<span class="mv-l"><strong>${esc(f.label)}</strong><small>${esc(f.name || '')}</small></span>
+      <select class="lang-select" data-org="move" aria-label="${esc(t('fav.moveTo'))}"><option value="">${t('fav.noList')}</option>${favLists.map((x) => `<option value="${esc(x.id)}"${f.l === x.id ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
+      <button type="button" class="alert-del" data-org="up" aria-label="${esc(t('fav.up'))}">↑</button><button type="button" class="alert-del" data-org="down" aria-label="${esc(t('fav.down'))}">↓</button>
+      <button type="button" class="alert-del" data-org="rm" aria-label="${esc(t('fav.remove'))}">✕</button></li>`).join('')}</ul>` : `<p class="mc-note">${t('fav.emptyList')}</p>`}</div>`;
+  const save = () => { store.set('favs', favs); renderFavs(); };
+  grid.onclick = (e) => {
+    const b = e.target.closest('button[data-org]'); if (!b) return;
+    if (b.dataset.org === 'rename') { const n = (prompt(t('fav.listName'), cur.name) || '').trim().slice(0, 24); if (n) { cur.name = n; store.set('favLists', favLists); renderFavs(); } return; }
+    if (b.dataset.org === 'dellist') {
+      if (!confirm(t('fav.delListConfirm'))) return;
+      favLists = favLists.filter((x) => x !== cur); store.set('favLists', favLists);
+      favs = favs.map((f) => (f.l === cur.id ? { ...f, l: undefined } : f)); favView.list = 'all'; saveFavView(); save(); return;
+    }
+    const key = b.closest('li')?.dataset.key; const i = favs.findIndex((f) => favKey(f) === key); if (i < 0) return;
+    if (b.dataset.org === 'rm') favs.splice(i, 1);
+    else {
+      // Déplacement dans l'ordre d'ajout, parmi les favoris de la liste affichée.
+      const keys = list.map(favKey); const j = keys.indexOf(key) + (b.dataset.org === 'up' ? -1 : 1);
+      if (j < 0 || j >= keys.length) return;
+      const k = favs.findIndex((f) => favKey(f) === keys[j]); [favs[i], favs[k]] = [favs[k], favs[i]];
+    }
+    save();
+  };
+  grid.onchange = (e) => {
+    const sel = e.target.closest('select[data-org="move"]'); if (!sel) return;
+    const key = sel.closest('li').dataset.key; const f = favs.find((x) => favKey(x) === key);
+    if (f) { f.l = sel.value || undefined; save(); }
+  };
+  grid.onkeydown = null;
+}
 function renderFavs() {
   renderFavAlerts();
+  renderFavTools();
   const grid = $('#grid-favoris');
   if (!favs.length) {
     grid.innerHTML = `<div class="empty fav-empty">${t('fav.empty')}</div>`;
     grid.onclick = null;
     return;
   }
+  if (favView.organize) return renderFavOrganize(grid);
+  const shown = visibleFavs();
+  if (!shown.length) { grid.innerHTML = `<div class="empty fav-empty">${t('fav.emptyList')}</div>`; grid.onclick = null; return; }
   const field = PERIOD_FIELD[prefs.period];
   const actions = new Map();
-  grid.innerHTML = favs.map((f) => {
+  grid.innerHTML = shown.map((f) => {
     const key = favKey(f);
     if (f.t === 'i') {
       const ix = state.indices?.indices?.find((x) => x.id === f.id);
@@ -1555,6 +1681,7 @@ function render() {
   }
   renderChrome();
   if (state.tab === 'crypto') renderCrypto();
+  else if (state.tab === 'accueil') renderHome();
   else if (state.tab === 'actions') renderStocks();
   else if (state.tab === 'favoris') renderFavs();
   else if (state.tab === 'compte') paper.render($('#paper'));
@@ -1739,6 +1866,22 @@ function priceIn(v, kind, ccy) {
   if (ccy === 'USX') return `${NF2.format(v)}\u00a0¢`;
   return fmtNative(v, ccy || 'USD');
 }
+/** Tous les actifs chargés (cryptos, entreprises, actifs trouvés par la recherche, matières premières et devises, indices). */
+function allAssets() {
+  return [
+    ...(state.crypto?.coins || []).map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+    ...(state.stocks?.companies || []).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
+    ...Object.values(state.extra.c).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+    ...Object.values(state.extra.s).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
+    ...(state.macro?.items || []).filter((m) => isNum(m.price))
+      .map((m) => ({ kind: 'm', assetId: m.id, label: macroName(m), name: t(`macro.g.${m.group}`), symbol: m.symbol, logo: m.logo, logoSmall: m.logoSmall, price: m.price, chg: m.changePct, ccy: m.currency })),
+    ...(state.indices?.indices || []).filter((i) => isNum(i.price) && !i.outdated)
+      .map((i) => ({ kind: 'i', assetId: i.id, label: i.name, name: country(i.country), symbol: i.symbol, logo: i.logo, logoSmall: i.logoSmall, price: i.price, chg: i.changePct, ccy: i.currency })),
+  ];
+}
 const paper = createPaper({
   t, store, esc, isNum, ND,
   quote: quoteOf,
@@ -1765,19 +1908,7 @@ const paper = createPaper({
   logo: (a, size) => logoImg(a, size, 'pt-logo'),
   toast,
   changed: () => { tradeChart.refresh(); if (state.tab === 'compte') render(); if ((state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks(); },
-  assets: () => [
-    ...(state.crypto?.coins || []).map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
-    ...(state.stocks?.companies || []).filter((c) => isNum(c.price))
-      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
-    ...Object.values(state.extra.c).filter((c) => isNum(c.price))
-      .map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
-    ...Object.values(state.extra.s).filter((c) => isNum(c.price))
-      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
-    ...(state.macro?.items || []).filter((m) => isNum(m.price))
-      .map((m) => ({ kind: 'm', assetId: m.id, label: macroName(m), name: t(`macro.g.${m.group}`), symbol: m.symbol, logo: m.logo, logoSmall: m.logoSmall, price: m.price, chg: m.changePct, ccy: m.currency })),
-    ...(state.indices?.indices || []).filter((i) => isNum(i.price) && !i.outdated)
-      .map((i) => ({ kind: 'i', assetId: i.id, label: i.name, name: country(i.country), symbol: i.symbol, logo: i.logo, logoSmall: i.logoSmall, price: i.price, chg: i.changePct, ccy: i.currency })),
-  ],
+  assets: allAssets,
 });
 
 /** Nombre pour un champ de saisie (sans séparateur de milliers, décimale de la langue). */
@@ -1808,6 +1939,7 @@ const tradeChart = createTradeChart({
     updateAlertDir();
   },
   fetchCandles,
+  compareList: () => allAssets().map((a) => ({ ...a, key: `${a.kind}:${a.assetId}` })),
 });
 
 /** Bougies réelles d'un actif (/api/candles). */
@@ -1851,6 +1983,267 @@ window.addEventListener('marches-theme', () => {
   if (tvThemeShown !== isLight()) { tvThemeShown = isLight(); reloadTVTheme(); }
 });
 
+
+/* ---------- Plus fortes hausses et baisses (sous les heatmaps et dans « En bref ») ---------- */
+function moversLists(items, n = 5) {
+  const ok = items.filter((c) => isNum(c.changePct));
+  const up = ok.filter((c) => c.changePct > 0).sort((a, b) => b.changePct - a.changePct).slice(0, n);
+  const down = ok.filter((c) => c.changePct < 0).sort((a, b) => a.changePct - b.changePct).slice(0, n);
+  return { up, down };
+}
+function moverRow(c, priceText) {
+  return `<li><button type="button" class="mv-row" data-mv="${esc(c.id)}">${logoImg(c, 20, 'mv-logo')}<span class="mv-l"><strong>${esc(c.label)}</strong><small>${esc(c.name || '')}</small></span>
+    <span class="mv-p">${priceText(c)}<b class="${signClass(c.changePct)}">${fmtPct(c.changePct)}</b></span></button></li>`;
+}
+function renderMovers(box, items, priceText, open, periodText) {
+  if (!box) return;
+  const { up, down } = moversLists(items);
+  if (!up.length && !down.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<h2>${t('movers.title')} <small>${esc(periodText)}</small></h2>
+    <div class="mv-cols"><div><h3 class="pos">▲ ${t('movers.up')}</h3><ol>${up.map((c) => moverRow(c, priceText)).join('') || `<li class="mv-none">${ND}</li>`}</ol></div>
+    <div><h3 class="neg">▼ ${t('movers.down')}</h3><ol>${down.map((c) => moverRow(c, priceText)).join('') || `<li class="mv-none">${ND}</li>`}</ol></div></div>`;
+  box.onclick = (e) => { const b = e.target.closest('[data-mv]'); const c = b && items.find((x) => x.id === b.dataset.mv); if (c) open(c); };
+}
+
+/* ---------- Fiche détaillée d'un actif (écran graphique) : calculée sur les bougies journalières réelles ---------- */
+async function renderFacts(asset, token) {
+  const box = $('#chart-facts');
+  box.innerHTML = '';
+  $('#chart-facts-box').hidden = !asset;
+  if (!asset) return;
+  box.innerHTML = `<h3>${t('facts.title')}</h3><p class="mc-note">${t('loading')}</p>`;
+  let d = null;
+  try { d = await fetchCandles(asset, '1d'); } catch { /* n/d */ }
+  if (token !== chartToken) return;
+  const c = (d?.candles || []).filter((x) => isNum(x[4]));
+  if (c.length < 20) { box.innerHTML = `<h3>${t('facts.title')}</h3><p class="mc-note">${t('facts.na')}</p>`; return; }
+  const last = c[c.length - 1], close = last[4], nowS = last[0];
+  const DAY = 86400;
+  const closeAt = (sec) => { let v = null; for (const x of c) { if (x[0] <= sec) v = x[4]; else break; } return v; };
+  const perf = (sec) => { const v = closeAt(sec); return isNum(v) && c[0][0] <= sec ? (close / v - 1) * 100 : null; };
+  const year = c.filter((x) => x[0] > nowS - 365 * DAY);
+  const hi = Math.max(...year.map((x) => x[2])), lo = Math.min(...year.map((x) => x[3]));
+  const jan1 = Date.UTC(new Date(nowS * 1000).getUTCFullYear(), 0, 1) / 1000;
+  const bars = c.map((x) => ({ time: x[0], close: x[4], volume: x[5] ?? null }));
+  const rsiV = rsi(bars).at(-1)?.value;
+  const ma50 = bars.length >= 50 ? sma(bars, 50).at(-1).value : null, ma200 = bars.length >= 200 ? sma(bars, 200).at(-1).value : null;
+  const vr = volumeRatio(bars);
+  const p = (v) => priceIn(v, asset.kind, d.currency || (asset.kind === 'c' ? 'USD' : null));
+  const pc = (v) => (isNum(v) ? `<span class="${signClass(v)}">${fmtPct(v)}</span>` : ND);
+  const side = (ma) => (isNum(ma) ? `${close >= ma ? t('facts.above') : t('facts.below')} (${p(ma)})` : ND);
+  const sector = asset.kind === 's' ? state.sectors?.sectors?.[asset.assetId] : null;
+  const earn = asset.kind === 's' ? (agenda?.earnings || []).find((e) => e.symbol === asset.assetId) : null;
+  const rows = [
+    [t('facts.hi52'), `${p(hi)} <small>${pc((close / hi - 1) * 100)}</small>`],
+    [t('facts.lo52'), `${p(lo)} <small>${pc((close / lo - 1) * 100)}</small>`],
+    [t('facts.p1m'), pc(perf(nowS - 30 * DAY))], [t('facts.p3m'), pc(perf(nowS - 91 * DAY))],
+    [t('facts.ytd'), pc(perf(jan1))], [t('facts.p1y'), pc(perf(nowS - 365 * DAY))],
+    [t('facts.p5y'), pc(perf(nowS - 5 * 365 * DAY + 7 * DAY))],
+    [t('facts.rsi'), isNum(rsiV) ? NF1.format(rsiV) : ND],
+    [t('facts.ma50'), side(ma50)], [t('facts.ma200'), side(ma200)],
+    [t('facts.vol'), isNum(vr) ? `${NF1.format(vr)} ×` : ND],
+  ];
+  if (sector) rows.push([t('facts.sector'), esc(sectorName(sector))]);
+  if (earn) rows.push([t('facts.earnings'), `${fmtDay(dayMs(earn.date), 'UTC')}${earn.time ? ` · ${t(`ag.${earn.time}`)}` : ''}`]);
+  box.innerHTML = `<h3>${t('facts.title')}</h3><dl class="facts">${rows.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join('')}</dl>
+    <p class="mc-note">${t('facts.note', { s: esc(d.source || ND), d: fmtDay(nowS * 1000) })}</p>`;
+}
+
+/* ---------- Onglet « En bref » ---------- */
+const HOME_INDICES = ['spx', 'ixic', 'sx5e', 'cac', 'dax', 'ftse', 'n225', 'hsi'];
+const HOME_OTHERS = [['c', 'bitcoin'], ['c', 'ethereum'], ['m', 'gold'], ['m', 'brent'], ['m', 'eurusd']];
+function homeRow({ key, logo, label, sub, price, pct }) {
+  return `<li><button type="button" class="mv-row" data-home="${esc(key)}">${logo || ''}<span class="mv-l"><strong>${esc(label)}</strong><small>${esc(sub || '')}</small></span>
+    <span class="mv-p">${price}<b class="${signClass(pct)}">${fmtPct(pct)}</b></span></button></li>`;
+}
+function renderHome() {
+  const box = $('#home');
+  const open = new Map();
+  const ix = state.indices?.indices || [];
+  const idxRows = HOME_INDICES.map((id) => ix.find((x) => x.id === id)).filter(Boolean).map((x) => {
+    open.set(`i:${x.id}`, () => openIndexChart(x));
+    return homeRow({ key: `i:${x.id}`, logo: logoImg(x, 20, 'mv-logo'), label: indexName(x), sub: country(x.country), price: x.outdated ? ND : fmtLevel(x.price), pct: x.outdated ? null : x.changePct });
+  });
+  const otherRows = HOME_OTHERS.map(([k, id]) => {
+    if (k === 'c') {
+      const c = coinById(id); if (!c) return '';
+      open.set(`c:${id}`, () => openCryptoRanked(c));
+      return homeRow({ key: `c:${id}`, logo: logoImg(c, 20, 'mv-logo'), label: c.symbol, sub: `${c.name} · 24 h`, price: fmtPrice(c.price), pct: c.changePct });
+    }
+    const m = macroById(id); if (!m) return '';
+    open.set(`m:${id}`, () => openMacroChart(m));
+    return homeRow({ key: `m:${id}`, logo: logoImg(m, 20, 'mv-logo'), label: macroName(m), sub: t(`macro.g.${m.group}`), price: m.outdated ? ND : fmtMacro(m), pct: m.outdated ? null : m.changePct });
+  }).filter(Boolean);
+  // Places ouvertes maintenant (parmi les grandes places du décompte)
+  const clocks = CLOCK_MARKETS.map((id) => ix.find((x) => x.id === id)).filter(Boolean).map((x) => marketClock(x)).filter(Boolean);
+  const openNow = clocks.filter((c) => c.kind === 'close').length;
+  // Plus fortes variations
+  const cm = moversLists(cryptoItems(state.crypto), 3), sm = moversLists(stockItems(state.stocks), 3);
+  const mvRows = (list, kind) => list.map((c) => {
+    const key = `${kind}:${c.id}`;
+    open.set(key, () => (kind === 'c' ? openCryptoRanked(c) : openStockRanked(c)));
+    return homeRow({ key, logo: logoImg(c, 20, 'mv-logo'), label: c.label, sub: c.name, price: kind === 'c' ? fmtPrice(c.price) : fmtStockPrice(c.price, c.currency), pct: c.changePct });
+  }).join('');
+  // Favoris (6 premiers)
+  const favRows = favs.slice(0, 6).map((f) => {
+    const kind = f.t; const a = { kind, assetId: f.id, label: f.label };
+    const q = quoteOf(a);
+    const key = `f:${favKey(f)}`;
+    open.set(key, () => openFav(f));
+    return homeRow({ key, logo: logoImg(f, 20, 'mv-logo'), label: f.label, sub: f.name || '', price: isNum(q.price) ? priceIn(q.price, kind, q.ccy) : ND, pct: q.chg });
+  }).join('');
+  // Compte démo
+  const pi = paper.info();
+  // Agenda : prochaine décision de taux et résultats d'aujourd'hui / demain
+  if (!agenda || Date.now() - agendaAt > 30 * 60_000) loadAgenda();
+  const today = new Date().toLocaleDateString('en-CA');
+  const tomorrow = new Date(Date.now() + 86_400_000).toLocaleDateString('en-CA');
+  const bank = agenda?.central?.[0];
+  const soon = (agenda?.earnings || []).filter((e) => e.date === today || e.date === tomorrow).slice(0, 4);
+  box.innerHTML = `
+    <section class="card home-card"><h2>${t('home.now')} <small>${fmtDay(Date.now())}</small></h2>
+      <p class="home-open">${clocks.length ? t('home.openNow', { n: openNow, m: clocks.length }) : ''}</p>
+      ${idxRows.length ? `<ol class="mv-list">${idxRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
+    <section class="card home-card"><h2>${t('home.others')}</h2>${otherRows.length ? `<ol class="mv-list">${otherRows.join('')}</ol>` : `<p class="mc-note">${state.loading ? t('loading') : ND}</p>`}</section>
+    <section class="card home-card"><h2>${t('movers.title')}</h2>
+      <h3>${t('home.cryptos')} <small>${esc(periodLabel())}</small></h3><ol class="mv-list">${mvRows([...cm.up, ...cm.down], 'c') || `<li class="mv-none">${ND}</li>`}</ol>
+      <h3>${t('home.stocks')} <small>${t('movers.session')}</small></h3><ol class="mv-list">${mvRows([...sm.up, ...sm.down], 's') || `<li class="mv-none">${ND}</li>`}</ol></section>
+    <section class="card home-card"><h2>${t('ag.title')}</h2>
+      ${bank ? `<p class="home-line"><span class="ag-badge ${bank.bank}">${t(`ag.${bank.bank}`)}</span> ${t('ag.rate')} · <b>${fmtDay(dayMs(bank.date), 'UTC')}</b> <small>${inDays(bank.date)}</small></p>` : ''}
+      ${soon.length ? `<p class="home-line">${t('home.earnSoon')} ${soon.map((e) => `<b>${esc(e.symbol)}</b> <small>${e.date === today ? t('ag.today') : t('ag.tomorrow')}</small>`).join(' · ')}</p>` : ''}
+      ${!agenda ? `<p class="mc-note">${t('loading')}</p>` : agenda.error ? `<p class="mc-note">${t('ag.na')}</p>` : ''}
+      <button type="button" class="btn btn-sm" data-go="indices">${t('home.seeAgenda')}</button></section>
+    <section class="card home-card"><h2>${t('home.demo')}</h2>
+      ${pi ? `<p class="home-demo"><b>${fmtNative(pi.equity, 'USD')}</b> <span class="${signClass(pi.pnlPct)}">${fmtPct(pi.pnlPct)}</span>
+        <small>${esc(pi.name)} · ${t('home.demoPos', { p: pi.positions, o: pi.orders })}</small></p>` : `<p class="mc-note">${t('home.demoNone')}</p>`}
+      <button type="button" class="btn btn-sm" data-go="compte">${t(pi ? 'home.openDemo' : 'pt.create')}</button></section>
+    <section class="card home-card"><h2>${t('tab.favoris')}</h2>${favRows ? `<ol class="mv-list">${favRows}</ol>` : `<p class="mc-note">${t('fav.empty')}</p>`}</section>
+    <section class="card home-card"><h2>${t('home.tools')}</h2>
+      <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
+        <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button></div>
+      ${summaryHTML()}</section>
+    <p class="consent-small">${t('home.note')}</p>`;
+  box.onclick = (e) => {
+    const r = e.target.closest('[data-home]'); if (r) { open.get(r.dataset.home)?.(); return; }
+    const g = e.target.closest('[data-go]'); if (g) { setTab(g.dataset.go); return; }
+    const tl = e.target.closest('[data-tool]');
+    if (tl?.dataset.tool === 'search') openSearch();
+    else if (tl?.dataset.tool === 'conv') openConverter();
+  };
+  bindSummary(box);
+}
+/** Graphique d'une crypto ou d'une entreprise avec son rang et sa part du top affiché (comme depuis la heatmap). */
+function openCryptoRanked(c) {
+  const top = cryptoItems(state.crypto);
+  const i = (state.crypto?.coins || []).findIndex((x) => x.id === c.id);
+  const total = top.reduce((s, x) => s + (isNum(x.marketCap) ? x.marketCap : 0), 0);
+  const item = { ...c, label: c.symbol || c.label, changePct: isNum(c[PERIOD_FIELD[prefs.period]]) ? c[PERIOD_FIELD[prefs.period]] : c.changePct };
+  openChart(item, i >= 0 ? i + 1 : null, i >= 0 && i < top.length ? total : null, top.length);
+}
+function openStockRanked(c) {
+  const top = stockItems(state.stocks);
+  const i = (state.stocks?.companies || []).findIndex((x) => x.id === c.id);
+  const total = top.reduce((s, x) => s + (isNum(x.marketCap) ? x.marketCap : 0), 0);
+  openStockChart(c, i >= 0 ? i + 1 : null, i >= 0 && i < top.length ? total : null, top.length);
+}
+/** Ouvre le graphique d'un favori. */
+function openFav(f) {
+  if (f.t === 'i') { const x = state.indices?.indices?.find((y) => y.id === f.id); if (x) openIndexChart(x); return; }
+  if (f.t === 'm') { const m = macroById(f.id); if (m) openMacroChart(m); return; }
+  if (f.t === 'c') { const c = coinById(f.id, f.label); if (c) openCryptoRanked(c); return; }
+  const c = stockById(f.id); if (c) openStockRanked(c);
+}
+
+/* ---------- Résumé quotidien par notification (favoris + compte démo lié) ---------- */
+function summaryHTML() {
+  const cur = alertsCache?.summary;
+  return `<div class="home-summary"><h3>${t('sum.title')}</h3><p class="consent-small">${t('sum.intro')}</p>
+    <div class="pt-join"><div class="alert-input"><input id="sum-time" type="time" value="${esc(cur?.time || '18:00')}" aria-label="${esc(t('sum.time'))}"></div>
+      <button type="button" class="btn" data-sum="on">${t(cur ? 'sum.update' : 'sum.on')}</button>
+      ${cur ? `<button type="button" class="btn" data-sum="off">${t('sum.off')}</button>` : ''}</div>
+    <p class="consent-small">${cur ? t('sum.active', { t: esc(cur.time), n: cur.count }) : ''} ${t('sum.privacy', { link: `<a href="${legalPrefix()}/confidentialite.html#resume">${t('alert.privacy')}</a>` })}</p></div>`;
+}
+function bindSummary(root) {
+  if (store.get(ALERT_TOKEN) && !alertsCache) loadAlerts().then(() => { if (state.tab === 'accueil') renderHome(); });
+  root.querySelectorAll('[data-sum]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      if (b.dataset.sum === 'off') {
+        await alertsApi('summary.set', { token: store.get(ALERT_TOKEN), time: null });
+      } else {
+        const sup = pushSupport();
+        if (sup !== 'ok') { toast(t(sup === 'ios' ? 'alert.ios' : 'alert.unsupported'), 'neg'); b.disabled = false; return; }
+        const perm = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission;
+        if (perm !== 'granted') { toast(t('alert.denied'), 'neg'); b.disabled = false; return; }
+        const token = await ensureDevice();
+        let tz = 'UTC';
+        try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { /* UTC */ }
+        await alertsApi('summary.set', { token, time: root.querySelector('#sum-time').value || '18:00', tz,
+          assets: favs.slice(0, 30).map((f) => ({ kind: f.t, assetId: f.id, label: f.label })) });
+        toast(t('sum.saved'));
+      }
+      await loadAlerts(true);
+    } catch { toast(t('alert.error'), 'neg'); }
+    if (state.tab === 'accueil') renderHome();
+  }));
+}
+
+/* ---------- Convertisseur de devises et de cryptos (taux /api/fx, cours /api/crypto) ---------- */
+let conv = { amount: '100', from: 'EUR', to: 'USD' };
+function convUnits() {
+  const out = [['USD', t('conv.usd'), 1]];
+  for (const [c, r] of Object.entries(state.fx?.rates || {})) if (isNum(r) && r > 0) out.push([c, c, r]);
+  for (const c of (state.crypto?.coins || []).slice(0, 50)) if (isNum(c.price) && c.price > 0) out.push([`crypto:${c.id}`, `${c.symbol} · ${c.name}`, c.price]);
+  return out;
+}
+function openConverter() {
+  const units = convUnits();
+  const opts = (sel) => units.map(([k, l]) => `<option value="${esc(k)}"${k === sel ? ' selected' : ''}>${esc(l)}</option>`).join('');
+  let dlg = $('#conv');
+  if (!dlg) {
+    dlg = document.createElement('div');
+    dlg.id = 'conv'; dlg.className = 'snap'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-labelledby', 'conv-title');
+    document.body.append(dlg);
+    dlg.addEventListener('click', (e) => { if (e.target === dlg) closeConverter(); });
+  }
+  dlg.innerHTML = `<div class="snap-card alert-card"><h2 id="conv-title">${t('conv.title')}</h2>
+    <div class="alert-input"><input id="conv-amount" type="text" inputmode="decimal" value="${esc(conv.amount)}" aria-label="${esc(t('conv.amount'))}"></div>
+    <label for="conv-from">${t('conv.from')}</label><select id="conv-from" class="lang-select dca-select">${opts(conv.from)}</select>
+    <button type="button" class="btn btn-sm" id="conv-swap">⇅ ${t('conv.swap')}</button>
+    <label for="conv-to">${t('conv.to')}</label><select id="conv-to" class="lang-select dca-select">${opts(conv.to)}</select>
+    <p class="conv-out" id="conv-out" aria-live="polite"></p><p class="consent-small" id="conv-src"></p>
+    <div class="snap-actions"><button type="button" class="btn" id="conv-close">${t('snap.close')}</button></div></div>`;
+  const upd = () => {
+    conv = { amount: dlg.querySelector('#conv-amount').value, from: dlg.querySelector('#conv-from').value, to: dlg.querySelector('#conv-to').value };
+    const u = new Map(convUnits().map(([k, l, r]) => [k, { l, r }]));
+    const a = parseAmount(conv.amount), f = u.get(conv.from), to = u.get(conv.to);
+    const name = (k, x) => (k.startsWith('crypto:') ? x.l.split(' · ')[0] : k);
+    const out = dlg.querySelector('#conv-out');
+    if (!isNum(a) || !f || !to) { out.textContent = ND; return; }
+    const v = (a * f.r) / to.r;
+    const nf = new Intl.NumberFormat(loc(), { maximumSignificantDigits: Math.abs(v) >= 1 ? 10 : 6, maximumFractionDigits: Math.abs(v) >= 1 ? 4 : 10 });
+    out.innerHTML = `${esc(NF2.format(a))} ${esc(name(conv.from, f))} = <b>${esc(nf.format(v))} ${esc(name(conv.to, to))}</b>`;
+    const fxT = state.fx?.time ? fmtTime(state.fx.time) : ND;
+    dlg.querySelector('#conv-src').textContent = t('conv.note', { fx: state.fx?.source || ND, t: fxT, c: state.crypto?.source || ND });
+  };
+  dlg.querySelectorAll('input, select').forEach((x) => x.addEventListener('input', upd));
+  dlg.querySelector('#conv-swap').addEventListener('click', () => {
+    const a = dlg.querySelector('#conv-from'), b = dlg.querySelector('#conv-to'); [a.value, b.value] = [b.value, a.value]; upd();
+  });
+  dlg.querySelector('#conv-close').addEventListener('click', closeConverter);
+  if (!state.fx) loadFx().then(upd);
+  dlg.hidden = false;
+  document.body.style.overflow = 'hidden';
+  upd();
+  dlg.querySelector('#conv-amount').focus();
+}
+function closeConverter() {
+  const d = $('#conv');
+  if (!d || d.hidden) return;
+  d.hidden = true;
+  if ($('#chart').hidden) document.body.style.overflow = '';
+}
+
 /* ---------- Navigation ---------- */
 function setTab(tab) {
   if (!TABS.includes(tab) || tab === state.tab) return;
@@ -1865,10 +2258,13 @@ document.querySelector('.tabbar').addEventListener('click', (e) => {
   if (b) setTab(b.dataset.tab);
 });
 $('#refresh').addEventListener('click', refresh);
+// Raccourci de l'icône de l'app (manifeste) : « Rechercher un actif ».
+if (new URLSearchParams(location.search).get('action') === 'search') setTimeout(openSearch, 400);
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
   if (!$('#search').hidden) closeSearch();
+  else if ($('#conv') && !$('#conv').hidden) closeConverter();
   else if (paper.isOpen()) paper.closeModal();
   else if (!$('#alert').hidden) closeAlert();
   else if (!$('#snap').hidden) closeSnapshot();

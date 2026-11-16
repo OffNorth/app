@@ -50,6 +50,29 @@ export function createTradeChart(ctx) {
   let token = 0;
   let suppressClick = 0;
 
+  /* Comparaison avec un autre actif : les deux courbes en % depuis le début de la période affichée (échelle en pourcentage). */
+  let compareWith = null; // { forKey, key, asset }
+  const keyOf = (a) => `${a.kind}:${a.assetId}`;
+  async function applyCompare() {
+    if (!cur?.chart) return;
+    const { chart, LWC } = cur;
+    if (cur.cmpSeries) { try { chart.removeSeries(cur.cmpSeries); } catch { /* déjà retirée */ } cur.cmpSeries = null; }
+    const other = compareWith && compareWith.forKey === keyOf(cur.asset) ? compareWith.asset : null;
+    chart.priceScale('right').applyOptions({ mode: other ? LWC.PriceScaleMode.Percentage : LWC.PriceScaleMode.Normal });
+    const lbl = cur.el.querySelector('#tc-cmp-l');
+    if (lbl) lbl.textContent = other ? t('tc.cmpNote') : '';
+    if (!other) return;
+    const my = token;
+    let data = null;
+    try { data = await ctx.fetchCandles(other, cur.tf); } catch { /* n/d */ }
+    if (my !== token || !cur?.chart) return;
+    if (!data?.candles?.length) { if (lbl) lbl.textContent = t('tc.cmpNa'); return; }
+    const first = cur.bars[0]?.time ?? 0;
+    const pts = data.candles.map((c) => ({ time: local(c[0]), value: c[4] })).filter((x) => x.time >= first);
+    cur.cmpSeries = chart.addSeries(LWC.LineSeries, { color: '#b48cff', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: other.label });
+    cur.cmpSeries.setData(pts);
+  }
+
   function unmount() {
     token++;
     if (cur?.chart) cur.chart.remove();
@@ -66,6 +89,10 @@ export function createTradeChart(ctx) {
         <span class="tc-src" id="tc-src"></span></div>
       <div class="tc-ind" role="group" aria-label="${esc(t('tc.ind'))}">${INDICATORS.map((k) =>
         `<button type="button" data-ind="${k}" aria-pressed="${ctx.getInd().includes(k)}">${t(`tc.ind.${k}`)}</button>`).join('')}</div>
+      <div class="tc-cmp"><label for="tc-cmp-sel">${t('tc.cmp')}</label>
+        <select id="tc-cmp-sel" class="lang-select"><option value="">${t('tc.cmpNone')}</option>${ctx.compareList().filter((x) => x.key !== keyOf(asset)).map((x) =>
+          `<option value="${esc(x.key)}"${compareWith?.forKey === keyOf(asset) && compareWith.key === x.key ? ' selected' : ''}>${esc(x.label)}${x.name ? ` · ${esc(x.name)}` : ''}</option>`).join('')}</select>
+        <span class="tc-cmp-l" id="tc-cmp-l"></span></div>
       <div class="tc-chart" id="tc-chart"><div class="msg">${t('chartLoading')}</div></div>
       <div class="tc-pop" id="tc-pop" hidden></div>
       <p class="tc-hint">${t('tc.hint')}</p>
@@ -75,6 +102,11 @@ export function createTradeChart(ctx) {
     cur = { asset, el, tf, lines: [], tap: null };
     el.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { ctx.setTf(b.dataset.tf); mount(el, asset); }));
     el.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => ctx.openTicket(asset, { side: b.dataset.side })));
+    el.querySelector('#tc-cmp-sel').addEventListener('change', (e) => {
+      const x = ctx.compareList().find((y) => y.key === e.target.value);
+      compareWith = x ? { forKey: keyOf(asset), key: x.key, asset: x } : null;
+      applyCompare();
+    });
     el.querySelectorAll('[data-ind]').forEach((b) => b.addEventListener('click', () => {
       const on = new Set(ctx.getInd());
       if (on.has(b.dataset.ind)) on.delete(b.dataset.ind); else on.add(b.dataset.ind);
@@ -115,6 +147,7 @@ export function createTradeChart(ctx) {
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 90), to: bars.length + 5 });
     Object.assign(cur, { chart, series, LWC, bars, prec, ind: {} });
     buildIndicators();
+    applyCompare();
     el.querySelector('#tc-src').textContent = t('tc.src', { s: data.source });
     applyLive();
     drawLines();
