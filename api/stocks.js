@@ -107,6 +107,7 @@ async function load(n) {
       state: q?.state ?? 'unknown',
       lastTime: q?.lastTime ?? null,
       timezone: q?.timezone ?? null,
+      session: q?.session ?? null,
       logo: logoURL(r.symbol, 128),
       logoSmall: logoURL(r.symbol, 64),
       tv: tvFor(q?.exchange, r.symbol),

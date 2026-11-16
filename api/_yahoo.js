@@ -75,6 +75,9 @@ export function parseYahoo(payload) {
     state: outdated ? 'closed' : marketState(m, nowSec),
     spark: pts.length >= 2 ? { start, end, points: downsample(pts, MAX_POINTS) } : null,
     exchange: m.exchangeName || null,
+    // Séance régulière du jour de cotation en cours, selon Yahoo (ms) : sert au décompte d'ouverture / fermeture.
+    session: num(m.currentTradingPeriod?.regular?.start) && num(m.currentTradingPeriod?.regular?.end)
+      ? { start: m.currentTradingPeriod.regular.start * 1000, end: m.currentTradingPeriod.regular.end * 1000 } : null,
     source: 'Yahoo Finance',
   };
 }
