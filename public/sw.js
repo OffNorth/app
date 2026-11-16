@@ -1,5 +1,5 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v13';
+const VERSION = 'v14';
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
@@ -13,7 +13,8 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // Fichiers de la nouvelle version téléchargés sans passer par le cache HTTP du navigateur.
+  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(ASSETS.map((u) => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {

@@ -5,6 +5,7 @@ import { makeSnapshot } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
 import { createTradeChart, TIMEFRAMES } from './tradechart.js';
 const REFRESH_MS = 60_000;
+const APP_VERSION = '14 (16/11/2026)'; // à faire évoluer avec VERSION dans sw.js
 const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
 const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
@@ -777,7 +778,7 @@ function openStockChart(c, rank, total, count) {
     missingMsg: t('missStock', { s: esc(c.name) }),
     fav: { t: 's', id: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
     alert: { kind: 's', assetId: c.id, label: c.label, price: c.price, currency: c.currency || null },
-    trade: c.currency === 'USD' ? { kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall } : null,
+    trade: { kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
   });
 }
 
@@ -852,6 +853,7 @@ function openIndexChart(ix) {
     missingMsg: t('missIndex', { s: esc(indexName(ix)) }),
     fav: { t: 'i', id: ix.id, label: ix.name, name: ix.name, logo: ix.logo, logoSmall: ix.logoSmall },
     alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null },
+    trade: ix.symbol ? { kind: 'i', assetId: ix.id, label: ix.name, name: country(ix.country), symbol: ix.symbol, logo: ix.logo, logoSmall: ix.logoSmall } : null,
   });
 }
 
@@ -1173,24 +1175,40 @@ document.addEventListener('click', (e) => {
 });
 
 /* ---------- Papertrading (compte de démonstration, argent fictif) ---------- */
-/** Cours utilisable pour le papertrading : ok = cours frais, en dollars, et marché ouvert (actions). */
+/* Devises en sous-unités chez Yahoo : pence, agorot, cents sud-africains. */
+const MINOR_CCY = { GBp: ['GBP', 100], GBX: ['GBP', 100], ILA: ['ILS', 100], ZAc: ['ZAR', 100], ZAC: ['ZAR', 100] };
+/** Dollars US pour 1 unité de la devise (taux de /api/fx) ; null si inconnu. */
+function usdPer(ccy) {
+  if (!ccy) return null;
+  if (ccy === 'USD') return 1;
+  const [base, div] = MINOR_CCY[ccy] || [ccy, 1];
+  const r = state.fx?.rates?.[base] ?? (base === 'EUR' ? state.fx?.eurusd : null);
+  return isNum(r) && r > 0 ? r / div : null;
+}
+/**
+ * Cours utilisable pour le papertrading. ok = cours frais (et taux de change connu).
+ * Marché fermé (actions, indices) : ok quand même, au dernier cours connu, avec closed = true.
+ */
 function quoteOf(x) {
   if (x.kind === 'c') {
     const coins = state.crypto?.coins || [];
     const c = coins.find((y) => y.id === x.assetId) || coins.find((y) => y.symbol === x.label);
     if (!c || !isNum(c.price)) return { price: null, ok: false, reason: 'na' };
     const fresh = !state.offline.crypto && !state.crypto.stale;
-    return { price: c.price, chg: c.changePct, ok: fresh, reason: fresh ? null : 'stale', currency: 'USD' };
+    return { price: c.price, chg: c.changePct, ok: fresh, reason: fresh ? null : 'stale', ccy: 'USD', fx: 1 };
   }
-  if (x.kind === 's') {
-    const c = (state.stocks?.companies || []).find((y) => y.id === x.assetId);
-    if (!c || !isNum(c.price)) return { price: null, ok: false, reason: 'na' };
-    if (c.currency !== 'USD') return { price: null, ok: false, reason: 'currency', currency: c.currency };
-    const fresh = !state.offline.stocks && !state.stocks.stale;
-    const open = c.state === 'open';
-    return { price: c.price, chg: c.changePct, ok: fresh && open, reason: !fresh ? 'stale' : open ? null : 'closed', currency: 'USD' };
-  }
-  return { price: null, ok: false, reason: 'na' };
+  const item = x.kind === 's' ? (state.stocks?.companies || []).find((y) => y.id === x.assetId)
+    : x.kind === 'i' ? (state.indices?.indices || []).find((y) => y.id === x.assetId) : null;
+  if (!item || !isNum(item.price)) return { price: null, ok: false, reason: 'na' };
+  const key = x.kind === 's' ? 'stocks' : 'indices';
+  const ccy = item.currency || null;
+  const fx = usdPer(ccy);
+  const fresh = !state.offline[key] && !state[key].stale && !item.outdated;
+  const closed = item.state !== 'open';
+  const base = { price: item.price, chg: item.changePct, ccy, fx, closed, lastTime: item.lastTime };
+  if (!fresh) return { ...base, ok: false, reason: 'stale' };
+  if (!fx) return { ...base, ok: false, reason: 'fx' };
+  return { ...base, ok: true, reason: null };
 }
 function toast(msg, kind = '') {
   const box = $('#toasts');
@@ -1202,10 +1220,19 @@ function toast(msg, kind = '') {
   setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, 3200);
 }
 const qtyNF = () => new Intl.NumberFormat(loc(), { maximumSignificantDigits: 6 });
+/** Prix dans la devise de l'actif ; indice : en points. */
+function priceIn(v, kind, ccy) {
+  if (!isNum(v)) return ND;
+  if (kind === 'i') return `${NF2.format(v)}\u00a0${t('pt.pts')}`;
+  return fmtNative(v, ccy || 'USD');
+}
 const paper = createPaper({
   t, store, esc, isNum, ND,
   quote: quoteOf,
   money: (v) => fmtNative(v, 'USD'),
+  price: priceIn,
+  unit: (kind, ccy) => (kind === 'i' ? t('pt.pts') : !ccy || ccy === 'USD' ? '$' : ccy),
+  fxText: (fx, ccy) => (isNum(fx) ? (fx >= 0.1 ? `1 ${ccy} = ${fmtNative(fx, 'USD')}` : `1 $ = ${NF2.format(1 / fx)} ${ccy}`) : ND),
   pct: (v) => fmtPct(v),
   qty: (v) => (isNum(v) ? (Math.abs(v) >= 1000 ? NF2 : qtyNF()).format(v) : ND),
   NF1: () => NF1, NF2: () => NF2, pctSign,
@@ -1217,8 +1244,10 @@ const paper = createPaper({
   changed: () => { tradeChart.refresh(); if (state.tab === 'compte') render(); if ((state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks(); },
   assets: () => [
     ...(state.crypto?.coins || []).map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
-    ...(state.stocks?.companies || []).filter((c) => c.currency === 'USD')
-      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+    ...(state.stocks?.companies || []).filter((c) => isNum(c.price))
+      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct, ccy: c.currency })),
+    ...(state.indices?.indices || []).filter((i) => isNum(i.price) && !i.outdated)
+      .map((i) => ({ kind: 'i', assetId: i.id, label: i.name, name: country(i.country), symbol: i.symbol, logo: i.logo, logoSmall: i.logoSmall, price: i.price, chg: i.changePct, ccy: i.currency })),
   ],
 });
 
@@ -1233,6 +1262,7 @@ const tradeChart = createTradeChart({
   t, esc, isNum, paper, liqPrice, toast,
   quote: quoteOf,
   money: (v) => fmtNative(v, 'USD'),
+  price: priceIn,
   signed: (v) => (isNum(v) ? `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}${fmtNative(Math.abs(v), 'USD')}` : ND),
   num: (v, prec) => (isNum(v) ? new Intl.NumberFormat(loc(), { minimumFractionDigits: prec, maximumFractionDigits: prec }).format(v) : ''),
   qty: (v) => (isNum(v) ? qtyNF().format(v) : ND),
@@ -1248,7 +1278,7 @@ const tradeChart = createTradeChart({
   },
   fetchCandles: async (a, tf) => {
     const q = quoteOf(a);
-    const params = new URLSearchParams({ kind: a.kind, symbol: a.kind === 'c' ? a.label : a.assetId, tf });
+    const params = new URLSearchParams({ kind: a.kind, symbol: a.kind === 'c' ? a.label : a.kind === 'i' ? a.symbol : a.assetId, tf });
     if (a.kind === 'c' && /^[a-z0-9-]+$/.test(a.assetId)) params.set('id', a.assetId);
     if (isNum(q.price)) params.set('ref', String(q.price));
     const r = await fetch(`/api/candles?${params}`);
@@ -1360,7 +1390,13 @@ window.addEventListener('resize', () => {
 
 /* ---------- Démarrage ---------- */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').then((reg) => {
+    // Une app installée (surtout sur iPhone) peut rester des jours en arrière-plan sans recharger la page :
+    // on cherche une nouvelle version à chaque retour au premier plan, et toutes les 15 minutes.
+    const check = () => reg.update().catch(() => {});
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
+    setInterval(check, 15 * 60_000);
+  }).catch(() => {}));
   // Nouvelle version de l'app installée → rechargement unique pour l'afficher.
   const hadController = !!navigator.serviceWorker.controller;
   let reloaded = false;
@@ -1369,5 +1405,6 @@ if ('serviceWorker' in navigator) {
   });
 }
 applyStatic();
+$('#app-version').textContent = `${t('version')} ${APP_VERSION}`;
 render();
 refresh();

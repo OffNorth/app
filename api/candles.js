@@ -1,6 +1,6 @@
-// GET /api/candles?kind=c|s&symbol=BTC&id=bitcoin&tf=15m&ref=64000
+// GET /api/candles?kind=c|s|i&symbol=BTC&id=bitcoin&tf=15m&ref=64000
 // Bougies OHLC pour le graphique de trading (mode démo).
-// Actions : Yahoo Finance. Cryptos : Yahoo Finance (SYMBOLE-USD), vérifié contre le cours de référence
+// Actions et indices : Yahoo Finance. Cryptos : Yahoo Finance (SYMBOLE-USD), vérifié contre le cours de référence
 // (un même ticker peut désigner un autre actif chez Yahoo) ; sinon CoinGecko /ohlc.
 // Rien d'inventé : si aucune source fiable ne répond, erreur → le client affiche « n/d ».
 import { cached, fetchWithTimeout, json, num } from './_lib.js';
@@ -64,12 +64,12 @@ export async function GET(request) {
   const kind = q.get('kind'), tfKey = q.get('tf') || '15m', symbol = q.get('symbol') || '', id = q.get('id') || '';
   const ref = Number(q.get('ref'));
   const tf = TF[tfKey];
-  if (!tf || !['c', 's'].includes(kind) || !/^[A-Za-z0-9.^=&-]{1,20}$/.test(symbol) || (id && !/^[a-z0-9-]{1,64}$/.test(id))) {
+  if (!tf || !['c', 's', 'i'].includes(kind) || !/^[A-Za-z0-9.^=&-]{1,20}$/.test(symbol) || (id && !/^[a-z0-9-]{1,64}$/.test(id))) {
     return json({ error: 'paramètres invalides' }, 400, 0);
   }
   try {
     const data = await cached(`candles:${kind}:${symbol}:${id}:${tfKey}`, tf.ttl, async () => {
-      if (kind === 's') return yahoo(symbol, tf);
+      if (kind !== 'c') return yahoo(symbol, tf); // actions et indices : symbole Yahoo
       const errors = [];
       try {
         const y = await yahoo(`${symbol.toUpperCase()}-USD`, tf);

@@ -1,6 +1,8 @@
 // Papertrading : compte de démonstration en argent fictif, stocké uniquement sur l'appareil (marches:paper).
 // Aucun ordre réel n'est transmis. Exécution au cours affiché lors des vérifications (à chaque rafraîchissement
-// des données, toutes les 60 s quand l'app est ouverte) ; jamais sur un cours absent, ancien ou de marché fermé.
+// des données, toutes les 60 s quand l'app est ouverte) ; jamais sur un cours absent ou ancien.
+// Multi-devises : prix, TP, SL et ordres dans la devise de l'actif (points pour un indice) ; compte, marge,
+// frais et P&L en dollars US, convertis au taux de change du moment (fx = dollars pour 1 unité de devise).
 
 const KEY = 'paper';
 const FEE = 0.001; // frais simulés : 0,1 % de la valeur, à l'ouverture et à la clôture
@@ -25,7 +27,9 @@ export function createPaper(ctx) {
   /* ---------- Compte ---------- */
   function load() {
     const a = store.get(KEY);
-    return a && a.v === 1 && isNum(a.cash) && Array.isArray(a.positions) ? a : null;
+    if (!(a && a.v === 1 && isNum(a.cash) && Array.isArray(a.positions))) return null;
+    for (const x of [...a.positions, ...a.orders]) { x.ccy ||= 'USD'; if (!isNum(x.fxOpen)) x.fxOpen = 1; } // comptes d'avant le multi-devises
+    return a;
   }
   const save = () => store.set(KEY, acct);
   const nextId = () => `${Date.now().toString(36)}${(acct.seq++).toString(36)}`;
@@ -33,15 +37,24 @@ export function createPaper(ctx) {
     acct = { v: 1, initial, cash: initial, positions: [], orders: [], history: [], equity: [[Date.now(), initial]], createdAt: Date.now(), seq: 1 };
     save();
   }
-  const assetOf = (x) => ({ kind: x.kind, assetId: x.assetId, label: x.label, name: x.name, logo: x.logo, logoSmall: x.logoSmall });
-  const upnl = (p, price) => (price - p.entry) * p.qty * dirOf(p.side);
+  const assetOf = (x) => ({ kind: x.kind, assetId: x.assetId, label: x.label, name: x.name, symbol: x.symbol, logo: x.logo, logoSmall: x.logoSmall });
+  /** Dollars pour 1 unité de la devise de la position : taux actuel, sinon celui de l'ouverture. */
+  const fxOf = (p, q = ctx.quote(p)) => (isNum(q.fx) ? q.fx : p.fxOpen ?? 1);
+  /** P&L latent en dollars. */
+  const upnl = (p, price, fx = fxOf(p)) => (price - p.entry) * p.qty * dirOf(p.side) * fx;
+  /** Prix (dans la devise de l'actif) auquel la perte atteint la marge, au taux de change actuel. */
+  function liqOf(p, fx = fxOf(p)) {
+    const v = p.entry - dirOf(p.side) * p.margin / (p.qty * fx);
+    return v > 0 ? v : null;
+  }
+  const px = (v, a) => ctx.price(v, a.kind, a.ccy);
 
   function summary() {
     let unreal = 0, margin = 0, valued = true;
     for (const p of acct.positions) {
       margin += p.margin;
       const q = ctx.quote(p);
-      if (isNum(q.price)) unreal += Math.max(-p.margin, upnl(p, q.price));
+      if (isNum(q.price)) unreal += Math.max(-p.margin, upnl(p, q.price, fxOf(p, q)));
       else valued = false;
     }
     const equity = acct.cash + margin + unreal;
@@ -59,30 +72,30 @@ export function createPaper(ctx) {
     save();
   }
 
-  function openPosition(asset, { side, qty, price, lev, tp, sl }) {
-    const notional = qty * price, margin = notional / lev, fee = notional * FEE;
+  function openPosition(asset, { side, qty, price, lev, tp, sl, fx = 1, ccy = 'USD' }) {
+    const notional = qty * price * fx, margin = notional / lev, fee = notional * FEE;
     if (acct.positions.length >= MAX_OPEN) return { error: 'maxPos' };
     if (margin + fee > acct.cash + 1e-9) return { error: 'funds' };
     acct.cash -= margin + fee;
-    const p = { id: nextId(), ...assetOf(asset), side, qty, entry: price, lev, margin, fees: fee, tp: tp ?? null, sl: sl ?? null, openedAt: Date.now() };
+    const p = { id: nextId(), ...assetOf(asset), ccy, fxOpen: fx, side, qty, entry: price, lev, margin, fees: fee, tp: tp ?? null, sl: sl ?? null, openedAt: Date.now() };
     acct.positions.push(p);
     return { position: p };
   }
 
   /** Clôture (totale ou partielle) au prix donné ; perte plafonnée à la marge (liquidation). */
-  function closePosition(p, price, fraction = 1, reason = 'manual') {
+  function closePosition(p, price, fraction = 1, reason = 'manual', fx = fxOf(p)) {
     const all = fraction >= 0.999;
     const qty = all ? p.qty : p.qty * fraction;
     const share = qty / p.qty;
     const margin = p.margin * share;
-    const gross = (price - p.entry) * qty * dirOf(p.side);
+    const gross = (price - p.entry) * qty * dirOf(p.side) * fx;
     const liquidated = gross <= -margin;
     const pnl = Math.max(-margin, gross);
-    const closeFee = Math.min(qty * price * FEE, margin + pnl);
+    const closeFee = Math.min(qty * price * fx * FEE, margin + pnl);
     const openFee = p.fees * share;
     acct.cash += margin + pnl - closeFee;
     const h = {
-      id: nextId(), ...assetOf(p), side: p.side, qty, entry: p.entry, exit: price, lev: p.lev,
+      id: nextId(), ...assetOf(p), ccy: p.ccy, side: p.side, qty, entry: p.entry, exit: price, lev: p.lev,
       gross: pnl, fees: openFee + closeFee, net: pnl - openFee - closeFee,
       reason: liquidated ? 'liq' : reason, openedAt: p.openedAt, closedAt: Date.now(),
     };
@@ -99,24 +112,24 @@ export function createPaper(ctx) {
     const events = [];
     for (const o of [...acct.orders]) {
       const q = ctx.quote(o);
-      if (!q.ok) continue; // cours absent, ancien, ou marché fermé : rien n'est exécuté
-      const px = q.price;
-      const hit = o.type === 'limit' ? (o.side === 'long' ? px <= o.price : px >= o.price)
-        : (o.side === 'long' ? px >= o.price : px <= o.price);
+      if (!q.ok) continue; // cours absent ou ancien, ou taux de change manquant : rien n'est exécuté
+      const last = q.price;
+      const hit = o.type === 'limit' ? (o.side === 'long' ? last <= o.price : last >= o.price)
+        : (o.side === 'long' ? last >= o.price : last <= o.price);
       if (!hit) continue;
       acct.orders = acct.orders.filter((x) => x.id !== o.id);
-      const r = openPosition(o, { side: o.side, qty: o.qty, price: px, lev: o.lev, tp: o.tp, sl: o.sl });
+      const r = openPosition(o, { side: o.side, qty: o.qty, price: last, lev: o.lev, tp: o.tp, sl: o.sl, fx: q.fx, ccy: q.ccy });
       events.push(r.error ? { type: 'fail', o, reason: r.error } : { type: 'filled', p: r.position });
     }
     for (const p of [...acct.positions]) {
       const q = ctx.quote(p);
       if (!q.ok) continue;
-      const px = q.price, d = dirOf(p.side), liq = liqPrice(p.side, p.entry, p.lev);
+      const last = q.price, d = dirOf(p.side);
       let reason = null;
-      if (p.sl != null && (d > 0 ? px <= p.sl : px >= p.sl)) reason = 'sl';
-      else if (p.tp != null && (d > 0 ? px >= p.tp : px <= p.tp)) reason = 'tp';
-      else if (liq != null && (d > 0 ? px <= liq : px >= liq)) reason = 'liq';
-      if (reason) events.push({ type: 'closed', h: closePosition(p, px, 1, reason) });
+      if (p.sl != null && (d > 0 ? last <= p.sl : last >= p.sl)) reason = 'sl';
+      else if (p.tp != null && (d > 0 ? last >= p.tp : last <= p.tp)) reason = 'tp';
+      else if (upnl(p, last, q.fx) <= -p.margin) reason = 'liq'; // perte ≥ marge (en dollars, change compris)
+      if (reason) events.push({ type: 'closed', h: closePosition(p, last, 1, reason, q.fx) });
     }
     if (events.length) save();
     recordEquity();
@@ -133,7 +146,7 @@ export function createPaper(ctx) {
   const qtyFmt = (v) => ctx.qty(v);
 
   function notify(e) {
-    if (e.type === 'filled') ctx.toast(t('pt.t.filled', { s: sideLabel(e.p.side), q: qtyFmt(e.p.qty), l: e.p.label, p: money(e.p.entry) }));
+    if (e.type === 'filled') ctx.toast(t('pt.t.filled', { s: sideLabel(e.p.side), q: qtyFmt(e.p.qty), l: e.p.label, p: px(e.p.entry, e.p) }));
     else if (e.type === 'fail') ctx.toast(t('pt.t.fail', { l: e.o.label }), 'neg');
     else if (e.type === 'closed') {
       const key = { tp: 'pt.t.tp', sl: 'pt.t.sl', liq: 'pt.t.liq' }[e.h.reason] || 'pt.t.closed';
@@ -176,15 +189,15 @@ export function createPaper(ctx) {
 
   function positionHTML(p) {
     const q = ctx.quote(p);
-    const pnl = isNum(q.price) ? Math.max(-p.margin, upnl(p, q.price)) : null;
+    const pnl = isNum(q.price) ? Math.max(-p.margin, upnl(p, q.price, fxOf(p, q))) : null;
     const pct = pnl == null ? null : (pnl / p.margin) * 100;
-    const liq = liqPrice(p.side, p.entry, p.lev);
-    const note = q.ok ? '' : `<span class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.currency || '' }))}</span>`;
+    const liq = liqOf(p, fxOf(p, q));
+    const note = q.ok ? '' : `<span class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }))}</span>`;
     return `<li class="pt-pos" data-id="${esc(p.id)}">
       <div class="pt-row1">${ctx.logo(p, 22)}<strong>${esc(p.label)}</strong><span class="pt-badge ${p.side}">${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}×</span>
         <span class="pt-pnl ${cls(pnl)}">${signed(pnl)} <small>${pct == null ? '' : ctx.pct(pct)}</small></span></div>
-      <div class="pt-row2">${qtyFmt(p.qty)} @ ${money(p.entry)} · ${t('pt.nowShort')} ${isNum(q.price) ? money(q.price) : ctx.ND}</div>
-      <div class="pt-row3">TP ${p.tp != null ? money(p.tp) : '—'} · SL ${p.sl != null ? money(p.sl) : '—'} · ${t('pt.liqShort')} ${liq != null ? money(liq) : '—'} ${note}</div>
+      <div class="pt-row2">${qtyFmt(p.qty)} @ ${px(p.entry, p)} · ${t('pt.nowShort')} ${isNum(q.price) ? px(q.price, p) : ctx.ND}</div>
+      <div class="pt-row3">TP ${p.tp != null ? px(p.tp, p) : '—'} · SL ${p.sl != null ? px(p.sl, p) : '—'} · ${t('pt.liqShort')} ${liq != null ? px(liq, p) : '—'} ${note}</div>
       <div class="pt-actions"><button type="button" class="btn btn-sm" data-manage="${esc(p.id)}">${t('pt.manage')}</button>
         <button type="button" class="btn btn-sm" data-close="${esc(p.id)}">${t('pt.close')}</button></div>
     </li>`;
@@ -230,7 +243,7 @@ export function createPaper(ctx) {
       <h2 class="pt-h">${t('pt.orders')} <span>${acct.orders.length}</span></h2>
       ${acct.orders.length ? `<ul class="pt-list">${acct.orders.map((o) => `<li class="pt-order">
         <div class="pt-row1">${ctx.logo(o, 22)}<strong>${esc(o.label)}</strong><span class="pt-badge ${o.side}">${sideLabel(o.side)} · ${typeLabel(o.type)} ${o.lev}×</span></div>
-        <div class="pt-row2">${qtyFmt(o.qty)} @ ${money(o.price)} · TP ${o.tp != null ? money(o.tp) : '—'} · SL ${o.sl != null ? money(o.sl) : '—'}</div>
+        <div class="pt-row2">${qtyFmt(o.qty)} @ ${px(o.price, o)} · TP ${o.tp != null ? px(o.tp, o) : '—'} · SL ${o.sl != null ? px(o.sl, o) : '—'}</div>
         <div class="pt-actions"><button type="button" class="btn btn-sm" data-cancel="${esc(o.id)}">${t('pt.cancel')}</button></div></li>`).join('')}</ul>`
         : `<p class="pt-empty">${t('pt.noOrders')}</p>`}
 
@@ -238,7 +251,7 @@ export function createPaper(ctx) {
       ${acct.history.length ? `<ul class="pt-list pt-hist">${acct.history.slice(0, 50).map((h) => `<li>
         <div class="pt-row1">${ctx.logo(h, 20)}<strong>${esc(h.label)}</strong><span class="pt-badge ${h.side}">${h.side === 'long' ? 'LONG' : 'SHORT'} ${h.lev}×</span>
           <span class="pt-reason r-${h.reason}">${t(`pt.reason.${h.reason}`)}</span><span class="pt-pnl ${cls(h.net)}">${signed(h.net)}</span></div>
-        <div class="pt-row2">${qtyFmt(h.qty)} · ${money(h.entry)} → ${money(h.exit)} · ${t('pt.feesShort')} ${money(h.fees)} · ${ctx.day(h.closedAt)} ${ctx.time(h.closedAt)}</div></li>`).join('')}</ul>`
+        <div class="pt-row2">${qtyFmt(h.qty)} · ${px(h.entry, h)} → ${px(h.exit, h)} · ${t('pt.feesShort')} ${money(h.fees)} · ${ctx.day(h.closedAt)} ${ctx.time(h.closedAt)}</div></li>`).join('')}</ul>`
         : `<p class="pt-empty">${t('pt.noHistory')}</p>`}
 
       <h2 class="pt-h">${t('pt.stats')}</h2>
@@ -268,8 +281,8 @@ export function createPaper(ctx) {
 
   function closeManual(p, fraction) {
     const q = ctx.quote(p);
-    if (!q.ok) { ctx.toast(t(`pt.why.${q.reason || 'na'}`, { c: q.currency || '' }), 'neg'); return false; }
-    const h = closePosition(p, q.price, fraction, 'manual');
+    if (!q.ok) { ctx.toast(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }), 'neg'); return false; }
+    const h = closePosition(p, q.price, fraction, 'manual', q.fx);
     save();
     recordEquity();
     notify({ type: 'closed', h });
@@ -316,8 +329,8 @@ export function createPaper(ctx) {
       const s = f.trim().toLowerCase();
       if (!list.length) { ul.innerHTML = `<li class="pt-empty">${t('loading')}</li>`; return; }
       const items = list.filter((a) => !s || a.label.toLowerCase().includes(s) || (a.name || '').toLowerCase().includes(s)).slice(0, 120);
-      ul.innerHTML = items.length ? items.map((a, i) => `<li><button type="button" data-i="${list.indexOf(a)}">${ctx.logo(a, 24)}<span class="pk-l"><strong>${esc(a.label)}</strong><small>${esc(a.name || '')} · ${a.kind === 'c' ? t('fav.crypto') : t('fav.stock')}</small></span>
-        <span class="pk-p">${isNum(a.price) ? money(a.price) : ctx.ND}<small class="${cls(a.chg)}">${ctx.pct(a.chg)}</small></span></button></li>`).join('')
+      ul.innerHTML = items.length ? items.map((a, i) => `<li><button type="button" data-i="${list.indexOf(a)}">${ctx.logo(a, 24)}<span class="pk-l"><strong>${esc(a.label)}</strong><small>${esc(a.name || '')} · ${t(a.kind === 'c' ? 'fav.crypto' : a.kind === 'i' ? 'fav.index' : 'fav.stock')}</small></span>
+        <span class="pk-p">${isNum(a.price) ? px(a.price, a) : ctx.ND}<small class="${cls(a.chg)}">${ctx.pct(a.chg)}</small></span></button></li>`).join('')
         : `<li class="pt-empty">${t('pt.noMatch')}</li>`;
     };
     draw();
@@ -357,11 +370,12 @@ export function createPaper(ctx) {
   function computeTicket() {
     const k = ticket, q = ctx.quote(k.asset), P = ctx.parse;
     const r = { q, errors: [] };
+    const fx = isNum(q.fx) ? q.fx : null;
     r.entry = k.type === 'market' ? q.price : P(k.price);
     const amt = P(k.amount);
-    if (isNum(r.entry) && r.entry > 0 && isNum(amt) && amt > 0) {
-      r.qty = k.mode === 'usd' ? amt / r.entry : amt;
-      r.notional = r.qty * r.entry;
+    if (isNum(r.entry) && r.entry > 0 && isNum(amt) && amt > 0 && fx) {
+      r.qty = k.mode === 'usd' ? amt / (r.entry * fx) : amt;
+      r.notional = r.qty * r.entry * fx;
       r.margin = r.notional / k.lev;
       r.fee = r.notional * FEE;
       r.after = acct.cash - r.margin - r.fee;
@@ -370,13 +384,13 @@ export function createPaper(ctx) {
     const d = dirOf(k.side);
     r.tp = k.tp.trim() ? P(k.tp) : null;
     r.sl = k.sl.trim() ? P(k.sl) : null;
-    if (isNum(r.qty) && isNum(r.tp)) r.tpPnl = (r.tp - r.entry) * r.qty * d - r.fee - r.qty * r.tp * FEE;
-    if (isNum(r.qty) && isNum(r.sl)) r.slPnl = Math.max(-r.margin, (r.sl - r.entry) * r.qty * d) - r.fee - r.qty * r.sl * FEE;
+    if (isNum(r.qty) && isNum(r.tp)) r.tpPnl = (r.tp - r.entry) * r.qty * d * fx - r.fee - r.qty * r.tp * fx * FEE;
+    if (isNum(r.qty) && isNum(r.sl)) r.slPnl = Math.max(-r.margin, (r.sl - r.entry) * r.qty * d * fx) - r.fee - r.qty * r.sl * fx * FEE;
     if (isNum(r.tpPnl) && isNum(r.slPnl) && r.slPnl < 0) r.rr = r.tpPnl / -r.slPnl;
 
     // Erreurs, dans l'ordre où elles se corrigent.
-    if (k.type === 'market' && !q.ok) r.errors.push(t(`pt.why.${q.reason || 'na'}`, { c: q.currency || '' }));
-    if (k.type !== 'market' && (!isNum(q.price) || q.reason === 'currency')) r.errors.push(t(`pt.why.${q.reason || 'na'}`, { c: q.currency || '' }));
+    if (k.type === 'market' && !q.ok) r.errors.push(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }));
+    if (k.type !== 'market' && (!isNum(q.price) || !fx)) r.errors.push(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }));
     if (k.type !== 'market') {
       if (!isNum(r.entry) || r.entry <= 0) r.errors.push(t('pt.err.price'));
       else if (isNum(q.price)) {
@@ -390,7 +404,7 @@ export function createPaper(ctx) {
     if (!isNum(r.qty)) r.errors.push(t('pt.err.amount'));
     if (k.tp.trim() && (!isNum(r.tp) || (isNum(r.entry) && (r.tp - r.entry) * d <= 0))) r.errors.push(t('pt.err.tp'));
     if (k.sl.trim() && (!isNum(r.sl) || (isNum(r.entry) && (r.sl - r.entry) * d >= 0))) r.errors.push(t('pt.err.sl'));
-    else if (isNum(r.sl) && r.liq != null && (r.sl - r.liq) * d <= 0) r.errors.push(t('pt.err.slLiq', { p: money(r.liq) }));
+    else if (isNum(r.sl) && r.liq != null && (r.sl - r.liq) * d <= 0) r.errors.push(t('pt.err.slLiq', { p: px(r.liq, { kind: k.asset.kind, ccy: q.ccy }) }));
     if (isNum(r.after) && r.after < -1e-9) r.errors.push(t('pt.err.funds'));
     if (acct.positions.length >= MAX_OPEN) r.errors.push(t('pt.err.maxPos'));
     if (k.type !== 'market' && acct.orders.length >= MAX_ORDERS) r.errors.push(t('pt.err.maxOrders'));
@@ -400,14 +414,18 @@ export function createPaper(ctx) {
   function drawTicket() {
     const k = ticket, a = k.asset, q = ctx.quote(a);
     const unit = k.mode === 'usd' ? '$' : esc(a.label);
+    const pu = esc(ctx.unit(a.kind, q.ccy)); // unité des prix : $, €, KRW, pts…
+    const aq = { kind: a.kind, ccy: q.ccy };
     card.innerHTML = `
       <div class="trade-head">${ctx.logo(a, 32)}<div class="th-l"><h2 id="trade-title">${esc(a.label)}</h2><p>${esc(a.name || '')}</p></div>
-        <div class="th-p"><strong>${isNum(q.price) ? money(q.price) : ctx.ND}</strong><small class="${cls(q.chg)}">${ctx.pct(q.chg)}</small></div></div>
-      ${q.ok ? '' : `<p class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.currency || '' }))}</p>`}
+        <div class="th-p"><strong>${isNum(q.price) ? px(q.price, aq) : ctx.ND}</strong><small class="${cls(q.chg)}">${ctx.pct(q.chg)}</small></div></div>
+      ${q.ok ? '' : `<p class="pt-note">${esc(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }))}</p>`}
+      ${q.ok && q.closed ? `<p class="pt-note">${esc(t('pt.closedNote', { d: q.lastTime ? `${ctx.day(q.lastTime)} ${ctx.time(q.lastTime)}` : ctx.ND }))}</p>` : ''}
+      ${q.ok && q.ccy && q.ccy !== 'USD' ? `<p class="pt-fx">${esc(t(a.kind === 'i' ? 'pt.fxIndex' : 'pt.fxNote', { c: q.ccy, r: ctx.fxText(q.fx, q.ccy) }))}</p>` : ''}
       ${segHTML('side', [['long', t('pt.buy'), 'buy'], ['short', t('pt.sell'), 'sell']], k.side, 'trade-side')}
       ${segHTML('type', [['market', t('pt.market')], ['limit', t('pt.limit')], ['stop', t('pt.stop')]], k.type)}
       ${k.type === 'market' ? '' : `<label for="tr-price">${t(k.type === 'limit' ? 'pt.limitPrice' : 'pt.stopPrice')}</label>
-        <div class="alert-input"><input id="tr-price" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.price)}" placeholder="${isNum(q.price) ? ctx.NF2().format(q.price) : ''}"><span>$</span></div>`}
+        <div class="alert-input"><input id="tr-price" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.price)}" placeholder="${isNum(q.price) ? ctx.fmtInput(q.price) : ''}"><span>${pu}</span></div>`}
       <label for="tr-amount">${t(k.mode === 'usd' ? 'pt.amountUsd' : 'pt.qty')}</label>
       <div class="trade-amount"><div class="alert-input"><input id="tr-amount" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.amount)}"><span>${unit}</span></div>
         ${segHTML('mode', [['usd', '$'], ['qty', t('pt.qtyShort')]], k.mode)}</div>
@@ -416,9 +434,9 @@ export function createPaper(ctx) {
       ${segHTML('lev', LEVERAGES.map((l) => [l, `${l}×`]), k.lev)}
       <div class="trade-tpsl">
         <div><label for="tr-tp">${t('pt.tp')} <small>${t('pt.optional')}</small></label>
-          <div class="alert-input"><input id="tr-tp" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.tp)}"><span>$</span></div><small class="tr-hint" id="tr-tp-h"></small></div>
+          <div class="alert-input"><input id="tr-tp" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.tp)}"><span>${pu}</span></div><small class="tr-hint" id="tr-tp-h"></small></div>
         <div><label for="tr-sl">${t('pt.sl')} <small>${t('pt.optional')}</small></label>
-          <div class="alert-input"><input id="tr-sl" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.sl)}"><span>$</span></div><small class="tr-hint" id="tr-sl-h"></small></div>
+          <div class="alert-input"><input id="tr-sl" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.sl)}"><span>${pu}</span></div><small class="tr-hint" id="tr-sl-h"></small></div>
       </div>
       <dl class="pt-kv trade-sum" id="tr-sum"></dl>
       <p class="alert-msg" id="tr-msg" hidden></p>
@@ -438,7 +456,8 @@ export function createPaper(ctx) {
       const r = computeTicket();
       if (!isNum(r.entry) || r.entry <= 0) { updateTicket(); return; }
       const notional = (acct.cash * (Number(b.dataset.pct) / 100)) / (1 / k.lev + FEE) * 0.9999;
-      k.amount = k.mode === 'usd' ? trim(notional, 2) : trim(notional / r.entry, 8);
+      if (k.mode !== 'usd' && !isNum(r.q.fx)) { updateTicket(); return; }
+      k.amount = k.mode === 'usd' ? trim(notional, 2) : trim(notional / (r.entry * r.q.fx), 8);
       card.querySelector('#tr-amount').value = k.amount;
       updateTicket();
     }));
@@ -451,8 +470,9 @@ export function createPaper(ctx) {
   function convertAmount(prevMode) {
     const r = computeTicket();
     const amt = ctx.parse(ticket.amount);
-    if (!isNum(amt) || !isNum(r.entry) || r.entry <= 0) return;
-    ticket.amount = prevMode === 'usd' ? trim(amt / r.entry, 8) : trim(amt * r.entry, 2);
+    const fx = r.q.fx;
+    if (!isNum(amt) || !isNum(r.entry) || r.entry <= 0 || !isNum(fx)) return;
+    ticket.amount = prevMode === 'usd' ? trim(amt / (r.entry * fx), 8) : trim(amt * r.entry * fx, 2);
   }
 
   function updateTicket() {
@@ -460,12 +480,12 @@ export function createPaper(ctx) {
     const r = computeTicket();
     const row = (k, v, c = '') => `<div><dt>${k}</dt><dd class="${c}">${v}</dd></div>`;
     card.querySelector('#tr-sum').innerHTML = [
-      row(t(ticket.type === 'market' ? 'pt.entryEst' : 'pt.entry'), isNum(r.entry) ? money(r.entry) : ctx.ND),
+      row(t(ticket.type === 'market' ? 'pt.entryEst' : 'pt.entry'), isNum(r.entry) ? px(r.entry, { kind: ticket.asset.kind, ccy: r.q.ccy }) : ctx.ND),
       row(t('pt.qty'), isNum(r.qty) ? `${qtyFmt(r.qty)} ${esc(ticket.asset.label)}` : ctx.ND),
       row(t('pt.value'), isNum(r.notional) ? money(r.notional) : ctx.ND),
       row(t('pt.marginReq'), isNum(r.margin) ? money(r.margin) : ctx.ND),
       row(t('pt.fees'), isNum(r.fee) ? money(r.fee) : ctx.ND),
-      row(t('pt.liq'), r.liq != null && isNum(r.liq) ? money(r.liq) : '—'),
+      row(t('pt.liq'), r.liq != null && isNum(r.liq) ? px(r.liq, { kind: ticket.asset.kind, ccy: r.q.ccy }) : '—'),
       row(t('pt.after'), isNum(r.after) ? money(r.after) : money(acct.cash), isNum(r.after) && r.after < 0 ? 'neg' : ''),
       row(t('pt.rr'), isNum(r.rr) ? `1 : ${ctx.NF2().format(r.rr)}` : '—'),
     ].join('');
@@ -488,15 +508,16 @@ export function createPaper(ctx) {
     const k = ticket;
     const base = { side: k.side, qty: r.qty, lev: k.lev, tp: r.tp, sl: r.sl };
     if (k.type === 'market') {
-      const res = openPosition(k.asset, { ...base, price: r.q.price });
+      const res = openPosition(k.asset, { ...base, price: r.q.price, fx: r.q.fx, ccy: r.q.ccy });
       if (res.error) { ctx.toast(t(`pt.err.${res.error}`), 'neg'); return; }
       save();
       recordEquity();
       notify({ type: 'filled', p: res.position });
     } else {
-      acct.orders.push({ id: nextId(), ...k.asset, ...base, type: k.type, price: r.entry, createdAt: Date.now() });
+      const o = { id: nextId(), ...k.asset, ccy: r.q.ccy, fxOpen: r.q.fx, ...base, type: k.type, price: r.entry, createdAt: Date.now() };
+      acct.orders.push(o);
       save();
-      ctx.toast(t('pt.t.placed', { s: sideLabel(k.side), ty: typeLabel(k.type).toLowerCase(), q: qtyFmt(r.qty), l: k.asset.label, p: money(r.entry) }));
+      ctx.toast(t('pt.t.placed', { s: sideLabel(k.side), ty: typeLabel(k.type).toLowerCase(), q: qtyFmt(r.qty), l: k.asset.label, p: px(r.entry, o) }));
     }
     closeModal();
     ctx.changed();
@@ -513,17 +534,18 @@ export function createPaper(ctx) {
     const p = acct.positions.find((x) => x.id === manageId);
     if (!p) { closeModal(); return; }
     const q = ctx.quote(p);
-    const pnl = isNum(q.price) ? Math.max(-p.margin, upnl(p, q.price)) : null;
-    const liq = liqPrice(p.side, p.entry, p.lev);
+    const pnl = isNum(q.price) ? Math.max(-p.margin, upnl(p, q.price, fxOf(p, q))) : null;
+    const liq = liqOf(p, fxOf(p, q));
+    const pu = esc(ctx.unit(p.kind, p.ccy));
     card.innerHTML = `
       <div class="trade-head">${ctx.logo(p, 32)}<div class="th-l"><h2 id="trade-title">${esc(p.label)} <span class="pt-badge ${p.side}">${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}×</span></h2>
-        <p>${qtyFmt(p.qty)} @ ${money(p.entry)}</p></div>
-        <div class="th-p"><strong>${isNum(q.price) ? money(q.price) : ctx.ND}</strong><small class="${cls(pnl)}">${signed(pnl)}</small></div></div>
-      <dl class="pt-kv"><div><dt>${t('pt.marginReq')}</dt><dd>${money(p.margin)}</dd></div><div><dt>${t('pt.liq')}</dt><dd>${liq != null ? money(liq) : '—'}</dd></div>
+        <p>${qtyFmt(p.qty)} @ ${px(p.entry, p)}</p></div>
+        <div class="th-p"><strong>${isNum(q.price) ? px(q.price, p) : ctx.ND}</strong><small class="${cls(pnl)}">${signed(pnl)}</small></div></div>
+      <dl class="pt-kv"><div><dt>${t('pt.marginReq')}</dt><dd>${money(p.margin)}</dd></div><div><dt>${t('pt.liq')}</dt><dd>${liq != null ? px(liq, p) : '—'}</dd></div>
         <div><dt>${t('pt.openedAt')}</dt><dd>${ctx.day(p.openedAt)} ${ctx.time(p.openedAt)}</dd></div><div><dt>${t('pt.feesShort')}</dt><dd>${money(p.fees)}</dd></div></dl>
       <div class="trade-tpsl">
-        <div><label for="mg-tp">${t('pt.tp')}</label><div class="alert-input"><input id="mg-tp" type="text" inputmode="decimal" value="${p.tp != null ? ctx.fmtInput(p.tp) : ''}"><span>$</span></div></div>
-        <div><label for="mg-sl">${t('pt.sl')}</label><div class="alert-input"><input id="mg-sl" type="text" inputmode="decimal" value="${p.sl != null ? ctx.fmtInput(p.sl) : ''}"><span>$</span></div></div>
+        <div><label for="mg-tp">${t('pt.tp')}</label><div class="alert-input"><input id="mg-tp" type="text" inputmode="decimal" value="${p.tp != null ? ctx.fmtInput(p.tp) : ''}"><span>${pu}</span></div></div>
+        <div><label for="mg-sl">${t('pt.sl')}</label><div class="alert-input"><input id="mg-sl" type="text" inputmode="decimal" value="${p.sl != null ? ctx.fmtInput(p.sl) : ''}"><span>${pu}</span></div></div>
       </div>
       <p class="alert-msg" id="mg-msg" hidden></p>
       <button type="button" class="btn" id="mg-save">${t('pt.saveTpSl')}</button>
@@ -539,7 +561,7 @@ export function createPaper(ctx) {
       let err = '';
       if (tpS && (!isNum(tp) || (tp - ref) * d <= 0)) err = t('pt.err.tpNow');
       else if (slS && (!isNum(sl) || (sl - ref) * d >= 0)) err = t('pt.err.slNow');
-      else if (isNum(sl) && liq != null && (sl - liq) * d <= 0) err = t('pt.err.slLiq', { p: money(liq) });
+      else if (isNum(sl) && liq != null && (sl - liq) * d <= 0) err = t('pt.err.slLiq', { p: px(liq, p) });
       if (err) { msg.textContent = err; msg.hidden = false; return; }
       p.tp = tp; p.sl = sl;
       save();
@@ -562,7 +584,7 @@ export function createPaper(ctx) {
     if (ticket && !modal.hidden) {
       const head = card.querySelector('.th-p strong');
       const q = ctx.quote(ticket.asset);
-      if (head) head.textContent = isNum(q.price) ? money(q.price) : ctx.ND;
+      if (head) head.textContent = isNum(q.price) ? px(q.price, { kind: ticket.asset.kind, ccy: q.ccy }) : ctx.ND;
       updateTicket();
     }
     return ev;
@@ -580,19 +602,21 @@ export function createPaper(ctx) {
     if (!p || !isNum(price) || price <= 0) return t('pt.err.price');
     const d = dirOf(p.side), q = ctx.quote(p);
     const ref = isNum(q.price) ? q.price : p.entry;
-    const liq = liqPrice(p.side, p.entry, p.lev);
+    const liq = liqOf(p, fxOf(p, q));
     if (type === 'tp' && (price - ref) * d <= 0) return t('pt.err.tpNow');
     if (type === 'sl' && (price - ref) * d >= 0) return t('pt.err.slNow');
-    if (type === 'sl' && liq != null && (price - liq) * d <= 0) return t('pt.err.slLiq', { p: money(liq) });
+    if (type === 'sl' && liq != null && (price - liq) * d <= 0) return t('pt.err.slLiq', { p: px(liq, p) });
     const v = Number(price.toPrecision(8));
     if (type === 'tp') p.tp = v; else p.sl = v;
     save();
-    ctx.toast(t(type === 'tp' ? 'pt.t.tpSet' : 'pt.t.slSet', { l: p.label, p: money(v) }));
+    ctx.toast(t(type === 'tp' ? 'pt.t.tpSet' : 'pt.t.slSet', { l: p.label, p: px(v, p) }));
     ctx.changed();
     return null;
   }
 
   return {
+    liqOf,
+    fxOf,
     forAsset,
     setLevel,
     render,

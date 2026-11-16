@@ -136,11 +136,12 @@ export function createTradeChart(ctx) {
     const S = LWC.LineStyle;
     for (const p of positions) {
       const d = p.side === 'long' ? 1 : -1;
-      const pnlAt = (px) => Math.max(-p.margin, (px - p.entry) * p.qty * d);
+      const fx = ctx.paper.fxOf(p, q);
+      const pnlAt = (px) => Math.max(-p.margin, (px - p.entry) * p.qty * d * fx); // en dollars
       add(p.entry, C.entry, S.Solid, 2, `${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}× ${isNum(q.price) ? ctx.signed(pnlAt(q.price)) : ''}`, { type: 'entry', id: p.id });
       if (p.tp != null) add(p.tp, C.up, S.Dashed, 2, `TP ${ctx.signed(pnlAt(p.tp))}`, { type: 'tp', id: p.id });
       if (p.sl != null) add(p.sl, C.down, S.Dashed, 2, `SL ${ctx.signed(pnlAt(p.sl))}`, { type: 'sl', id: p.id });
-      const liq = ctx.liqPrice(p.side, p.entry, p.lev);
+      const liq = ctx.paper.liqOf(p, fx);
       if (liq != null) add(liq, C.liq, S.Dotted, 1, t('pt.liqShort'), { type: 'liq', id: p.id });
     }
     for (const o of orders) {
@@ -224,7 +225,7 @@ export function createTradeChart(ctx) {
     const pos = ctx.paper.forAsset(asset).positions.at(-1);
     cur.tap = price;
     drawLines();
-    pop.innerHTML = `<div class="tc-pop-h"><strong>${ctx.money(price)}</strong><button type="button" class="tc-x" data-a="x" aria-label="${esc(t('snap.close'))}">✕</button></div>
+    pop.innerHTML = `<div class="tc-pop-h"><strong>${ctx.price(price, asset.kind, ctx.quote(asset).ccy)}</strong><button type="button" class="tc-x" data-a="x" aria-label="${esc(t('snap.close'))}">✕</button></div>
       <div class="tc-pop-b">
         <button type="button" class="btn btn-sm btn-buy" data-a="buy">${t('tc.buyAt', { type: t(`pt.${buyType}`).toLowerCase() })}</button>
         <button type="button" class="btn btn-sm btn-sell" data-a="sell">${t('tc.sellAt', { type: t(`pt.${sellType}`).toLowerCase() })}</button>
