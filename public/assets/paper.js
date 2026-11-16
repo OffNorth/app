@@ -5,18 +5,30 @@
 // frais et P&L en dollars US, convertis au taux de change du moment (fx = dollars pour 1 unité de devise).
 
 import * as E from './paper-engine.js';
-import { CAPITALS, FEE, LEVERAGES, MAX_ORDERS, MAX_OPEN, dirOf, liqPrice } from './paper-engine.js';
+import { CAPITALS, FEE, LEVERAGES, MAX_ORDERS, MAX_OPEN, dirOf, liqPrice, trailLevel, validTrail } from './paper-engine.js';
 
 export { liqPrice };
-const KEY = 'paper';
-const SYNC_KEY = 'paperSync'; // { code, rev, notify } : compte synchronisé (facultatif)
+// Plusieurs comptes de démonstration sur l'appareil : le premier (« main ») garde les clés historiques.
+const ACCTS_KEY = 'paperAccounts'; // [{ id, name }]
+const ACTIVE_KEY = 'paperActive';
+const MAX_ACCOUNTS = 5;
+const keyOf = (id) => (id === 'main' ? 'paper' : `paper:${id}`);
+const syncKeyOf = (id) => (id === 'main' ? 'paperSync' : `paperSync:${id}`); // { code, rev, notify } : compte synchronisé (facultatif)
 
 export function createPaper(ctx) {
   const { t, store, esc, isNum } = ctx;
+  const saved = store.get(ACCTS_KEY);
+  let accounts = [{ id: 'main', name: null }, ...(Array.isArray(saved) ? saved.filter((a) => a && a.id !== 'main' && /^[a-z0-9]{6,16}$/.test(a.id)).slice(0, MAX_ACCOUNTS - 1) : [])];
+  const savedMain = Array.isArray(saved) ? saved.find((a) => a?.id === 'main') : null;
+  if (savedMain?.name) accounts[0].name = savedMain.name;
+  let active = accounts.some((a) => a.id === store.get(ACTIVE_KEY)) ? store.get(ACTIVE_KEY) : 'main';
+  let KEY = keyOf(active), SYNC_KEY = syncKeyOf(active);
   let acct = E.normalize(store.get(KEY));
   let sync = store.get(SYNC_KEY);
   let syncError = false;
   let board = null; // classement (groupes) chargé à l'affichage
+  let boardMode = 'month'; // défi du mois ou depuis le début
+  const monthName = (m) => { try { return new Intl.DateTimeFormat(ctx.locale(), { month: 'long', timeZone: 'UTC' }).format(new Date(`${m || new Date().toISOString().slice(0, 7)}-15T00:00:00Z`)); } catch { return m || ''; } };
   let ticket = null; // ticket d'ordre ouvert
   let manageId = null; // position en cours de gestion
   let picker = null; // fonction de redessin du sélecteur d'actif ouvert
@@ -51,12 +63,67 @@ export function createPaper(ctx) {
     return events;
   }
 
+  /* ---------- Plusieurs comptes ---------- */
+  const acctName = (a) => a.name || (a.id === 'main' ? t('pt.acctMain') : t('pt.acctN', { n: accounts.indexOf(a) + 1 }));
+  const saveAccounts = () => store.set(ACCTS_KEY, accounts);
+  async function switchAccount(id) {
+    if (id === active || !accounts.some((a) => a.id === id)) return;
+    if (pushTimer) { clearTimeout(pushTimer); pushTimer = 0; await push(); } // dernière modification envoyée avant de changer
+    active = id;
+    store.set(ACTIVE_KEY, id);
+    KEY = keyOf(id); SYNC_KEY = syncKeyOf(id);
+    acct = E.normalize(store.get(KEY));
+    sync = store.get(SYNC_KEY);
+    board = null; bench = null; syncError = false;
+    ctx.changed();
+  }
+  function addAccount() {
+    if (accounts.length >= MAX_ACCOUNTS) { ctx.toast(t('pt.acctMax', { n: MAX_ACCOUNTS }), 'neg'); return; }
+    const name = (prompt(t('pt.acctNamePh')) || '').trim().slice(0, 30);
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => 'abcdefghijklmnopqrstuvwxyz0123456789'[b % 36]).join('');
+    accounts.push({ id, name: name || null });
+    saveAccounts();
+    switchAccount(id);
+  }
+  function renameAccount() {
+    const a = accounts.find((x) => x.id === active);
+    const name = prompt(t('pt.acctNamePh'), a.name || '');
+    if (name == null) return;
+    a.name = name.trim().slice(0, 30) || null;
+    saveAccounts();
+    ctx.changed();
+  }
+  async function deleteAccount() {
+    if (active === 'main' || !confirm(t(sync ? 'pt.acctDelSynced' : 'pt.acctDel'))) return;
+    const id = active;
+    await switchAccount('main');
+    accounts = accounts.filter((a) => a.id !== id);
+    saveAccounts();
+    try { localStorage.removeItem(`marches:${keyOf(id)}`); localStorage.removeItem(`marches:${syncKeyOf(id)}`); } catch { /* rien */ }
+    ctx.changed();
+  }
+  function accountsHTML() {
+    return `<div class="pt-accts"><label class="pt-label" for="pt-acct">${t('pt.acctLabel')}</label>
+      <div class="pt-accts-row"><select id="pt-acct" class="lang-select">${accounts.map((a) => `<option value="${esc(a.id)}"${a.id === active ? ' selected' : ''}>${esc(acctName(a))}</option>`).join('')}</select>
+      <button type="button" class="btn btn-sm" data-acct="new">${t('pt.acctNew')}</button>
+      <button type="button" class="btn btn-sm" data-acct="rename">${t('pt.acctRename')}</button>
+      ${active !== 'main' ? `<button type="button" class="btn btn-sm" data-acct="del">${t('pt.acctDelete')}</button>` : ''}</div></div>`;
+  }
+  function bindAccounts(el) {
+    el.querySelector('#pt-acct')?.addEventListener('change', (e) => switchAccount(e.target.value));
+    el.querySelectorAll('[data-acct]').forEach((b) => b.addEventListener('click', () => {
+      if (b.dataset.acct === 'new') addAccount();
+      else if (b.dataset.acct === 'rename') renameAccount();
+      else deleteAccount();
+    }));
+  }
+
   /* ---------- Synchronisation (facultative) ----------
    * Le compte est copié sur le serveur, protégé par un code secret (seule son empreinte y est stockée).
    * Le serveur l'exécute toutes les 5 minutes, même app fermée ; l'app reprend la version la plus récente.
    */
   let pushTimer = 0, pushing = false;
-  function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(push, 500); }
+  function schedulePush() { clearTimeout(pushTimer); pushTimer = setTimeout(() => { pushTimer = 0; push(); }, 500); }
   function setSync(v) { sync = v; if (v) store.set(SYNC_KEY, v); else try { localStorage.removeItem(`marches:${SYNC_KEY}`); } catch { /* rien */ } }
   function adopt(r) {
     const a = E.normalize(r.data);
@@ -129,6 +196,7 @@ export function createPaper(ctx) {
   function notify(e) {
     if (e.type === 'filled') ctx.toast(t('pt.t.filled', { s: sideLabel(e.p.side), q: qtyFmt(e.p.qty), l: e.p.label, p: px(e.p.entry, e.p) }));
     else if (e.type === 'fail') ctx.toast(t('pt.t.fail', { l: e.o.label }), 'neg');
+    else if (e.type === 'oco') ctx.toast(t('pt.t.oco', { l: e.o.label }));
     else if (e.type === 'closed') {
       const key = { tp: 'pt.t.tp', sl: 'pt.t.sl', liq: 'pt.t.liq' }[e.h.reason] || 'pt.t.closed';
       ctx.toast(t(key, { l: e.h.label, pnl: signed(e.h.net) }), e.h.net >= 0 ? 'pos' : 'neg');
@@ -217,7 +285,128 @@ export function createPaper(ctx) {
       [t('pt.best'), h.length ? signed(Math.max(...h.map((x) => x.net))) : ctx.ND],
       [t('pt.worst'), h.length ? signed(Math.min(...h.map((x) => x.net))) : ctx.ND],
       [t('pt.feesPaid'), money(h.reduce((s, x) => s + x.fees, 0) + acct.positions.reduce((s, p) => s + p.fees, 0))],
+      [t('pt.maxDd'), (() => { const v = maxDrawdown(); return v == null ? ctx.ND : `−${ctx.NF1().format(v)}${ctx.pctSign()}`; })(), 'neg'],
+      [t('pt.avgHold'), h.length ? ctx.duration(h.reduce((s, x) => s + (x.closedAt - x.openedAt), 0) / h.length) : ctx.ND],
     ];
+  }
+  /** Pire baisse de la courbe de valeur depuis un sommet (en %), ou null. */
+  function maxDrawdown() {
+    const pts = acct.equity.map((p) => p[1]);
+    if (pts.length < 2) return null;
+    let peak = pts[0], dd = 0;
+    for (const v of pts) { peak = Math.max(peak, v); dd = Math.max(dd, (1 - v / peak) * 100); }
+    return dd;
+  }
+  /** Journal : résultat par actif et par tranche horaire d'ouverture (à partir de 5 trades clôturés). */
+  function journalHTML() {
+    const h = acct.history;
+    if (h.length < 5) return `<h2 class="pt-h">${t('pt.journal')}</h2><p class="pt-empty">${t('pt.journalMin', { n: 5 })}</p>`;
+    const by = (keyFn) => {
+      const m = new Map();
+      for (const x of h) { const k = keyFn(x); const v = m.get(k) || { net: 0, n: 0, wins: 0 }; v.net += x.net; v.n++; if (x.net > 0) v.wins++; m.set(k, v); }
+      return [...m];
+    };
+    const assets = by((x) => x.label).sort((a, b) => b[1].net - a[1].net);
+    const slots = by((x) => Math.floor(new Date(x.openedAt).getHours() / 4)).sort((a, b) => b[1].net - a[1].net);
+    const row = ([k, v], label) => `<li><span>${esc(label ?? k)}</span><span class="${cls(v.net)}">${signed(v.net)}</span><small>${t('pt.journalN', { n: v.n, w: Math.round((v.wins / v.n) * 100) })}</small></li>`;
+    const slotLabel = (k) => `${String(k * 4).padStart(2, '0')} h – ${String(k * 4 + 4).padStart(2, '0')} h`;
+    const top = assets.slice(0, 3), bottom = assets.slice(-3).reverse().filter((x) => !top.includes(x));
+    return `<h2 class="pt-h">${t('pt.journal')}</h2>
+      <div class="pt-journal card">
+        <h3>${t('pt.journalBest')}</h3><ol class="pt-jlist">${top.map((x) => row(x)).join('')}</ol>
+        ${bottom.length ? `<h3>${t('pt.journalWorst')}</h3><ol class="pt-jlist">${bottom.map((x) => row(x)).join('')}</ol>` : ''}
+        <h3>${t('pt.journalHours')}</h3><ol class="pt-jlist">${slots.map((x) => row(x, slotLabel(x[0]))).join('')}</ol>
+        <p class="consent-small">${t('pt.journalNote')}</p>
+      </div>`;
+  }
+  /** Export CSV de l'historique (séparateur et décimales adaptés à la langue, pour un tableur). */
+  function exportCSV() {
+    const fr = ctx.lang() === 'fr';
+    const sep = fr ? ';' : ',';
+    const n = (v) => (isNum(v) ? (fr ? String(Number(v.toPrecision(10))).replace('.', ',') : String(Number(v.toPrecision(10)))) : '');
+    const q = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const iso = (ms) => (isNum(ms) ? new Date(ms).toISOString() : '');
+    const head = ['opened_at', 'closed_at', 'symbol', 'name', 'side', 'leverage', 'quantity', 'entry', 'exit', 'currency', 'gross_usd', 'fees_usd', 'net_usd', 'reason', 'note'];
+    const lines = [head.join(sep), ...acct.history.map((h) => [iso(h.openedAt), iso(h.closedAt), q(h.label), q(h.name), h.side, h.lev, n(h.qty), n(h.entry), n(h.exit),
+      h.ccy || 'USD', n(h.gross), n(h.fees), n(h.net), h.reason, q(h.note)].join(sep))];
+    const blob = new Blob([`\ufeff${lines.join('\r\n')}\r\n`], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `marches-demo-historique-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  }
+
+  /* ---------- Simulateur d'achats programmés (DCA) : bougies journalières réelles, sans frais ---------- */
+  let dca = { asset: null, amount: '100', every: 'week', years: 1, result: null, busy: false };
+  function dcaHTML() {
+    const list = ctx.assets();
+    const r = dca.result;
+    const unit = r ? (r.ccy === 'USD' || !r.ccy ? '$' : r.ccy) : '$';
+    return `<h2 class="pt-h">${t('dca.title')}</h2>
+      <div class="card pt-dca">
+        <p class="consent-small">${t('dca.intro')}</p>
+        <label for="dca-asset">${t('dca.asset')}</label>
+        <select id="dca-asset" class="lang-select dca-select">${list.slice(0, 400).map((a, i) => `<option value="${i}"${dca.asset && a.kind === dca.asset.kind && a.assetId === dca.asset.assetId ? ' selected' : ''}>${esc(a.label)} · ${esc(a.name || '')}</option>`).join('')}</select>
+        <div class="trade-tpsl">
+          <div><label for="dca-amount">${t('dca.amount')}</label><div class="alert-input"><input id="dca-amount" type="text" inputmode="decimal" value="${esc(dca.amount)}"><span>${t('dca.inCcy')}</span></div></div>
+          <div><label>${t('dca.every')}</label>${segHTML('dcaEvery', [['week', t('dca.week')], ['month', t('dca.month')]], dca.every)}</div>
+        </div>
+        <label>${t('dca.since')}</label>${segHTML('dcaYears', [[1, t('dca.y', { n: 1 })], [3, t('dca.y', { n: 3 })], [5, t('dca.y', { n: 5 })]], dca.years)}
+        <button type="button" class="btn btn-primary" data-dca ${dca.busy ? 'disabled' : ''}>${t(dca.busy ? 'loading' : 'dca.run')}</button>
+        ${r?.error ? `<p class="pt-note">${t('dca.na')}</p>` : ''}
+        ${r && !r.error ? `<dl class="pt-kv">
+          <div><dt>${t('dca.invested')}</dt><dd>${ctx.num(r.invested, 2)} ${esc(unit)}</dd></div>
+          <div><dt>${t('dca.value')}</dt><dd class="${cls(r.value - r.invested)}">${ctx.num(r.value, 2)} ${esc(unit)}</dd></div>
+          <div><dt>${t('dca.perf')}</dt><dd class="${cls(r.value - r.invested)}">${ctx.pct((r.value / r.invested - 1) * 100)}</dd></div>
+          <div><dt>${t('dca.buys')}</dt><dd>${r.buys}</dd></div>
+          <div><dt>${t('dca.avgCost')}</dt><dd>${px(r.avgCost, { kind: r.kind, ccy: r.ccy })}</dd></div>
+          <div><dt>${t('dca.lump')}</dt><dd class="${cls(r.lump)}">${ctx.pct(r.lump)}</dd></div></dl>
+          ${dcaSVG(r)}
+          <p class="consent-small">${t('dca.note', { s: esc(r.source || ctx.ND), d: ctx.day(r.from) })}</p>` : ''}
+      </div>`;
+  }
+  function dcaSVG(r) {
+    const W = 320, H = 70, pts = r.curve;
+    if (pts.length < 2) return '';
+    const x0 = pts[0][0], x1 = pts[pts.length - 1][0], ys = pts.flatMap((p) => [p[1], p[2]]);
+    const y0 = Math.min(...ys, 0), y1 = Math.max(...ys);
+    const X = (x) => ((x - x0) / (x1 - x0 || 1)) * W, Y = (y) => H - 4 - ((y - y0) / (y1 - y0 || 1)) * (H - 8);
+    const path = (i) => pts.map((p, k) => `${k ? 'L' : 'M'}${X(p[0]).toFixed(1)},${Y(p[i]).toFixed(1)}`).join('');
+    return `<svg class="pt-curve ${r.value >= r.invested ? 'up' : 'down'}" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t('dca.chart'))}">
+      <path d="${path(2)}" class="bench b-spx"/><path d="${path(1)}" class="line"/></svg>
+      <div class="pt-bench"><span class="pt-bench-i"><i class="sw sw-acct"></i>${t('dca.value')}</span><span class="pt-bench-i"><i class="sw sw-spx"></i>${t('dca.invested')}</span></div>`;
+  }
+  async function runDca(el) {
+    const list = ctx.assets();
+    const a = list[Number(el.querySelector('#dca-asset')?.value)] || dca.asset;
+    dca.amount = el.querySelector('#dca-amount')?.value ?? dca.amount;
+    const amt = ctx.parse(dca.amount);
+    if (!a || !isNum(amt) || amt <= 0) { ctx.toast(t('pt.err.amount'), 'neg'); return; }
+    dca.asset = a; dca.busy = true; render(el);
+    try {
+      const d = await ctx.fetchCandles(a, '1d');
+      const c = (d.candles || []).map((x) => [x[0] * 1000, x[4]]).filter((x) => isNum(x[1]) && x[1] > 0);
+      const from = Date.now() - dca.years * 365.25 * 86_400_000;
+      if (!c.length || c[0][0] > from + 7 * 86_400_000) throw new Error('historique trop court');
+      // Achats : premier jour de cotation à partir de chaque date prévue (chaque semaine ou chaque mois).
+      let units = 0, invested = 0, buys = 0, next = from, i = 0;
+      const curve = [];
+      const step = (t0) => { const dt = new Date(t0); if (dca.every === 'week') return t0 + 7 * 86_400_000; dt.setMonth(dt.getMonth() + 1); return dt.getTime(); };
+      while (i < c.length && c[i][0] < from) i++;
+      const first = c[i];
+      for (; i < c.length; i++) {
+        while (c[i][0] >= next && next <= Date.now()) { units += amt / c[i][1]; invested += amt; buys++; next = step(next); }
+        curve.push([c[i][0], units * c[i][1], invested]);
+      }
+      const last = c[c.length - 1][1];
+      dca.result = { kind: a.kind, ccy: d.currency || (a.kind === 'c' ? 'USD' : null), invested, value: units * last, buys, avgCost: invested / units,
+        lump: (last / first[1] - 1) * 100, curve: curve.filter((_, k) => k % Math.ceil(curve.length / 200) === 0 || k === curve.length - 1), source: d.source, from: first[0] };
+    } catch { dca.result = { error: true }; }
+    dca.busy = false;
+    if (el.isConnected) render(el);
   }
 
   function positionHTML(p) {
@@ -230,7 +419,8 @@ export function createPaper(ctx) {
       <div class="pt-row1">${ctx.logo(p, 22)}<strong>${esc(p.label)}</strong><span class="pt-badge ${p.side}">${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}×</span>
         <span class="pt-pnl ${cls(pnl)}">${signed(pnl)} <small>${pct == null ? '' : ctx.pct(pct)}</small></span></div>
       <div class="pt-row2">${qtyFmt(p.qty)} @ ${px(p.entry, p)} · ${t('pt.nowShort')} ${isNum(q.price) ? px(q.price, p) : ctx.ND}</div>
-      <div class="pt-row3">TP ${p.tp != null ? px(p.tp, p) : '—'} · SL ${p.sl != null ? px(p.sl, p) : '—'} · ${t('pt.liqShort')} ${liq != null ? px(liq, p) : '—'} ${note}</div>
+      <div class="pt-row3">TP ${p.tp != null ? px(p.tp, p) : '—'} · SL ${p.sl != null ? px(p.sl, p) : '—'}${validTrail(p.trail) ? ` <span class="pt-badge trail">${t('pt.trailShort', { v: ctx.NF1().format(p.trail) })}</span>` : ''} · ${t('pt.liqShort')} ${liq != null ? px(liq, p) : '—'} ${note}</div>
+      ${p.note ? `<div class="pt-notetext">${esc(p.note)}</div>` : ''}
       <div class="pt-actions"><button type="button" class="btn btn-sm" data-manage="${esc(p.id)}">${t('pt.manage')}</button>
         <button type="button" class="btn btn-sm" data-close="${esc(p.id)}">${t('pt.close')}</button>
         <button type="button" class="btn btn-sm" data-share="${esc(p.id)}">${t('share.btn')}</button></div>
@@ -240,7 +430,7 @@ export function createPaper(ctx) {
   function render(el) {
     if (!acct && sync) { el.innerHTML = `<p class="pt-empty">${t('loading')}</p>`; pull().then(() => render(el)); return; }
     if (!acct) {
-      el.innerHTML = `<div class="pt-welcome card">
+      el.innerHTML = `${accountsHTML()}<div class="pt-welcome card">
         <h2>${t('pt.welcome')}</h2><p>${t('pt.welcomeP')}</p>
         <p class="pt-label">${t('pt.capital')}</p>
         <div class="seg seg-wide" role="group" aria-label="${esc(t('pt.capital'))}">${CAPITALS.map((c, i) =>
@@ -249,6 +439,7 @@ export function createPaper(ctx) {
         <p class="consent-small">${t('pt.disclaimer')}</p></div>
         ${syncHTML()}`;
       bindSync(el); // nouvel appareil : on peut aussi retrouver un compte synchronisé avec son code
+      bindAccounts(el);
       let cap = CAPITALS[1];
       el.querySelectorAll('[data-cap]').forEach((b) => b.addEventListener('click', () => {
         cap = Number(b.dataset.cap);
@@ -259,7 +450,7 @@ export function createPaper(ctx) {
     }
     const s = summary();
     const avail = acct.cash;
-    el.innerHTML = `
+    el.innerHTML = `${accountsHTML()}
       <div class="pt-summary card">
         <div class="pt-eq-label">${t('pt.equity')}${s.valued ? '' : ` <span class="pt-note">${t('pt.partial')}</span>`}</div>
         <div class="pt-eq">${money(s.equity)}</div>
@@ -280,8 +471,8 @@ export function createPaper(ctx) {
 
       <h2 class="pt-h">${t('pt.orders')} <span>${acct.orders.length}</span></h2>
       ${acct.orders.length ? `<ul class="pt-list">${acct.orders.map((o) => `<li class="pt-order">
-        <div class="pt-row1">${ctx.logo(o, 22)}<strong>${esc(o.label)}</strong><span class="pt-badge ${o.side}">${sideLabel(o.side)} · ${typeLabel(o.type)} ${o.lev}×</span></div>
-        <div class="pt-row2">${qtyFmt(o.qty)} @ ${px(o.price, o)} · TP ${o.tp != null ? px(o.tp, o) : '—'} · SL ${o.sl != null ? px(o.sl, o) : '—'}</div>
+        <div class="pt-row1">${ctx.logo(o, 22)}<strong>${esc(o.label)}</strong><span class="pt-badge ${o.side}">${sideLabel(o.side)} · ${typeLabel(o.type)} ${o.lev}×</span>${o.oco ? '<span class="pt-badge oco">OCO</span>' : ''}</div>
+        <div class="pt-row2">${qtyFmt(o.qty)} @ ${px(o.price, o)} · TP ${o.tp != null ? px(o.tp, o) : '—'} · SL ${o.sl != null ? px(o.sl, o) : '—'}${validTrail(o.trail) ? ` · ${t('pt.trailShort', { v: ctx.NF1().format(o.trail) })}` : ''}</div>
         <div class="pt-actions"><button type="button" class="btn btn-sm" data-cancel="${esc(o.id)}">${t('pt.cancel')}</button></div></li>`).join('')}</ul>`
         : `<p class="pt-empty">${t('pt.noOrders')}</p>`}
 
@@ -289,17 +480,23 @@ export function createPaper(ctx) {
       ${acct.history.length ? `<ul class="pt-list pt-hist">${acct.history.slice(0, 50).map((h) => `<li>
         <div class="pt-row1">${ctx.logo(h, 20)}<strong>${esc(h.label)}</strong><span class="pt-badge ${h.side}">${h.side === 'long' ? 'LONG' : 'SHORT'} ${h.lev}×</span>
           <span class="pt-reason r-${h.reason}">${t(`pt.reason.${h.reason}`)}</span><span class="pt-pnl ${cls(h.net)}">${signed(h.net)}</span>
+          <button type="button" class="pt-share" data-note-h="${esc(h.id)}" aria-label="${esc(t('pt.noteEdit'))}" title="${esc(t('pt.noteEdit'))}"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
           <button type="button" class="pt-share" data-share-h="${esc(h.id)}" aria-label="${esc(t('share.btn'))}" title="${esc(t('share.btn'))}"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button></div>
-        <div class="pt-row2">${qtyFmt(h.qty)} · ${px(h.entry, h)} → ${px(h.exit, h)} · ${t('pt.feesShort')} ${money(h.fees)} · ${ctx.day(h.closedAt)} ${ctx.time(h.closedAt)}</div></li>`).join('')}</ul>`
+        <div class="pt-row2">${qtyFmt(h.qty)} · ${px(h.entry, h)} → ${px(h.exit, h)} · ${t('pt.feesShort')} ${money(h.fees)} · ${ctx.day(h.closedAt)} ${ctx.time(h.closedAt)}</div>
+        ${h.note ? `<div class="pt-notetext">${esc(h.note)}</div>` : ''}</li>`).join('')}</ul>
+        <div class="pt-top-actions"><button type="button" class="btn btn-sm" data-export>${t('pt.export')}</button></div>`
         : `<p class="pt-empty">${t('pt.noHistory')}</p>`}
 
       <h2 class="pt-h">${t('pt.stats')}</h2>
       <dl class="pt-kv pt-stats">${stats().map(([k, v, c]) => `<div><dt>${k}</dt><dd class="${v === ctx.ND ? '' : c || ''}">${v}</dd></div>`).join('')}</dl>
+      ${journalHTML()}
+      ${dcaHTML()}
 
       ${syncHTML()}
       <p class="consent-small pt-disc">${t('pt.disclaimer')}</p>
       <button type="button" class="btn btn-sm pt-reset" data-reset>${t('pt.reset')}</button>`;
     bindSync(el);
+    bindAccounts(el);
     if (!benchFresh()) loadBench().then((changed) => { if (changed && el.isConnected) render(el); });
 
     el.querySelector('[data-new]').addEventListener('click', openPicker);
@@ -317,6 +514,24 @@ export function createPaper(ctx) {
     el.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', () => {
       const p = acct.positions.find((x) => x.id === b.dataset.share);
       if (p) ctx.share(p, false);
+    }));
+    el.querySelector('[data-export]')?.addEventListener('click', exportCSV);
+    el.querySelectorAll('[data-note-h]').forEach((b) => b.addEventListener('click', () => {
+      const h = acct.history.find((x) => x.id === b.dataset.noteH);
+      if (!h) return;
+      const v = prompt(t('pt.notePh'), h.note || '');
+      if (v == null) return;
+      h.note = v.trim().slice(0, 280) || undefined;
+      save();
+      render(el);
+    }));
+    el.querySelector('[data-dca]')?.addEventListener('click', () => runDca(el));
+    el.querySelectorAll('.pt-dca [data-k]').forEach((b) => b.addEventListener('click', () => {
+      dca.amount = el.querySelector('#dca-amount')?.value ?? dca.amount;
+      const sel = el.querySelector('#dca-asset'); if (sel) dca.asset = ctx.assets()[Number(sel.value)] || dca.asset;
+      if (b.dataset.k === 'dcaEvery') dca.every = b.dataset.v; else dca.years = Number(b.dataset.v);
+      dca.result = null;
+      render(el);
     }));
     el.querySelectorAll('[data-share-h]').forEach((b) => b.addEventListener('click', () => {
       const h = acct.history.find((x) => x.id === b.dataset.shareH);
@@ -350,10 +565,17 @@ export function createPaper(ctx) {
       <h3>${t('lb.title')}</h3>
       <div class="pt-join"><div class="alert-input"><input id="pt-pseudo" type="text" maxlength="20" autocomplete="nickname" value="${esc(board?.pseudo || '')}" placeholder="${esc(t('lb.pseudoPh'))}"></div>
         <button type="button" class="btn" data-sync="pseudo">${t('lb.savePseudo')}</button></div>
-      ${groups.map((g) => `<div class="pt-board"><div class="pt-board-h"><strong>${esc(g.name)}</strong><span>${t('lb.code')} <code>${esc(g.code)}</code></span>
+      ${groups.length ? `<div class="seg seg-wide" role="group" aria-label="${esc(t('lb.mode'))}">${[['month', t('lb.month', { m: monthName(board?.month) })], ['all', t('lb.all')]].map(([v, l]) =>
+        `<button type="button" data-board="${v}" aria-pressed="${boardMode === v}">${esc(l)}</button>`).join('')}</div>` : ''}
+      ${groups.map((g) => {
+        const key = boardMode === 'month' ? 'monthPct' : 'pnlPct';
+        const members = [...g.members].sort((a, b) => (isNum(b[key]) ? b[key] : -Infinity) - (isNum(a[key]) ? a[key] : -Infinity));
+        return `<div class="pt-board"><div class="pt-board-h"><strong>${esc(g.name)}</strong><span>${t('lb.code')} <code>${esc(g.code)}</code></span>
           <button type="button" class="alert-del" data-leave="${esc(g.code)}" aria-label="${esc(t('lb.leave'))}">✕</button></div>
-        <ol>${g.members.map((m) => `<li class="${m.me ? 'me' : ''}"><span>${esc(m.pseudo || t('lb.anon'))}${m.me ? ` (${t('lb.me')})` : ''}</span>
-          <span class="${isNum(m.pnlPct) && m.pnlPct > 0 ? 'pos' : isNum(m.pnlPct) && m.pnlPct < 0 ? 'neg' : ''}">${pct(m.pnlPct)}</span><small>${m.trades} ${t('lb.trades')}</small></li>`).join('')}</ol></div>`).join('')}
+        <ol>${members.map((m) => `<li class="${m.me ? 'me' : ''}"><span>${esc(m.pseudo || t('lb.anon'))}${m.me ? ` (${t('lb.me')})` : ''}</span>
+          <span class="${isNum(m[key]) && m[key] > 0 ? 'pos' : isNum(m[key]) && m[key] < 0 ? 'neg' : ''}">${pct(m[key])}</span><small>${m.trades} ${t('lb.trades')}</small></li>`).join('')}</ol></div>`;
+      }).join('')}
+      ${groups.length && boardMode === 'month' ? `<p class="consent-small">${t('lb.monthNote')}</p>` : ''}
       ${board?.error ? `<p class="pt-note">${t('sync.error')}</p>` : ''}
       <div class="pt-join"><div class="alert-input"><input id="pt-group" type="text" maxlength="30" autocomplete="off" placeholder="${esc(t('lb.groupPh'))}"></div>
         <button type="button" class="btn" data-sync="gcreate">${t('lb.create')}</button><button type="button" class="btn" data-sync="gjoin">${t('lb.join')}</button></div>
@@ -383,6 +605,7 @@ export function createPaper(ctx) {
       if (a === 'off') busy(b, async () => { if (confirm(t('sync.stopConfirm'))) await stopSync(false); });
       if (a === 'delete') busy(b, async () => { if (confirm(t('sync.deleteConfirm'))) await stopSync(true); });
     }));
+    el.querySelectorAll('[data-board]').forEach((b) => b.addEventListener('click', () => { boardMode = b.dataset.board; render(el); }));
     el.querySelectorAll('[data-leave]').forEach((b) => b.addEventListener('click', () => busy(b, async () => {
       if (!confirm(t('lb.leaveConfirm'))) return;
       await ctx.api('group.leave', { code: sync.code, group: b.dataset.leave });
@@ -464,7 +687,7 @@ export function createPaper(ctx) {
     if (!acct) { create(CAPITALS[1]); ctx.toast(t('pt.t.created', { c: money(CAPITALS[1]) })); }
     ticket = {
       asset: assetOf(asset), side: pre.side === 'short' ? 'short' : 'long', type: ['limit', 'stop'].includes(pre.type) ? pre.type : 'market',
-      mode: 'usd', lev: 1, price: isNum(pre.price) ? ctx.fmtInput(pre.price) : '', amount: '', tp: '', sl: '',
+      mode: 'usd', lev: 1, price: isNum(pre.price) ? ctx.fmtInput(pre.price) : '', amount: '', tp: '', sl: '', trail: '', oco: '',
     };
     drawTicket();
     showModal();
@@ -472,7 +695,7 @@ export function createPaper(ctx) {
 
   function readTicket() {
     const k = ticket;
-    for (const f of ['price', 'amount', 'tp', 'sl']) {
+    for (const f of ['price', 'amount', 'tp', 'sl', 'trail', 'oco']) {
       const input = card.querySelector(`#tr-${f}`);
       if (input) k[f] = input.value;
     }
@@ -499,6 +722,12 @@ export function createPaper(ctx) {
     if (isNum(r.qty) && isNum(r.tp)) r.tpPnl = (r.tp - r.entry) * r.qty * d * fx - r.fee - r.qty * r.tp * fx * FEE;
     if (isNum(r.qty) && isNum(r.sl)) r.slPnl = Math.max(-r.margin, (r.sl - r.entry) * r.qty * d * fx) - r.fee - r.qty * r.sl * fx * FEE;
     if (isNum(r.tpPnl) && isNum(r.slPnl) && r.slPnl < 0) r.rr = r.tpPnl / -r.slPnl;
+    // Stop suiveur (%) : SL de départ = trail % sous l'entrée (achat) ou au-dessus (vente), puis il suit le meilleur cours.
+    r.trail = k.trail.trim() ? P(k.trail) : null;
+    if (validTrail(r.trail) && isNum(r.entry)) r.trailSl = trailLevel(k.side, r.entry, r.trail);
+    // Ordre lié (OCO) : 2e ordre au prix donné, stop ou limite selon sa position par rapport au cours ; le premier exécuté annule l'autre.
+    r.oco = k.type !== 'market' && k.oco.trim() ? P(k.oco) : null;
+    if (isNum(r.oco) && isNum(q.price)) r.ocoType = (r.oco > q.price) === (k.side === 'long') ? 'stop' : 'limit';
 
     // Erreurs, dans l'ordre où elles se corrigent.
     if (k.type === 'market' && !q.ok) r.errors.push(t(`pt.why.${q.reason || 'na'}`, { c: q.ccy || '' }));
@@ -517,9 +746,11 @@ export function createPaper(ctx) {
     if (k.tp.trim() && (!isNum(r.tp) || (isNum(r.entry) && (r.tp - r.entry) * d <= 0))) r.errors.push(t('pt.err.tp'));
     if (k.sl.trim() && (!isNum(r.sl) || (isNum(r.entry) && (r.sl - r.entry) * d >= 0))) r.errors.push(t('pt.err.sl'));
     else if (isNum(r.sl) && r.liq != null && (r.sl - r.liq) * d <= 0) r.errors.push(t('pt.err.slLiq', { p: px(r.liq, { kind: k.asset.kind, ccy: q.ccy }) }));
+    if (k.trail.trim() && !validTrail(r.trail)) r.errors.push(t('pt.err.trail'));
+    if (k.type !== 'market' && k.oco.trim() && (!isNum(r.oco) || r.oco <= 0 || r.oco === r.entry || r.oco === q.price)) r.errors.push(t('pt.err.oco'));
     if (isNum(r.after) && r.after < -1e-9) r.errors.push(t('pt.err.funds'));
     if (acct.positions.length >= MAX_OPEN) r.errors.push(t('pt.err.maxPos'));
-    if (k.type !== 'market' && acct.orders.length >= MAX_ORDERS) r.errors.push(t('pt.err.maxOrders'));
+    if (k.type !== 'market' && acct.orders.length + (isNum(r.oco) ? 2 : 1) > MAX_ORDERS) r.errors.push(t('pt.err.maxOrders'));
     return r;
   }
 
@@ -549,6 +780,12 @@ export function createPaper(ctx) {
           <div class="alert-input"><input id="tr-tp" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.tp)}"><span>${pu}</span></div><small class="tr-hint" id="tr-tp-h"></small></div>
         <div><label for="tr-sl">${t('pt.sl')} <small>${t('pt.optional')}</small></label>
           <div class="alert-input"><input id="tr-sl" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.sl)}"><span>${pu}</span></div><small class="tr-hint" id="tr-sl-h"></small></div>
+      </div>
+      <div class="trade-tpsl">
+        <div><label for="tr-trail">${t('pt.trail')} <small>${t('pt.optional')}</small></label>
+          <div class="alert-input"><input id="tr-trail" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.trail)}" placeholder="5"><span>%</span></div><small class="tr-hint" id="tr-trail-h"></small></div>
+        ${k.type === 'market' ? '' : `<div><label for="tr-oco">${t('pt.oco')} <small>${t('pt.optional')}</small></label>
+          <div class="alert-input"><input id="tr-oco" type="text" inputmode="decimal" autocomplete="off" value="${esc(k.oco)}"><span>${pu}</span></div><small class="tr-hint" id="tr-oco-h"></small></div>`}
       </div>
       <dl class="pt-kv trade-sum" id="tr-sum"></dl>
       <p class="alert-msg" id="tr-msg" hidden></p>
@@ -604,11 +841,16 @@ export function createPaper(ctx) {
     const hint = (id, v) => { const el = card.querySelector(id); el.textContent = isNum(v) ? `${signed(v)} ${t('pt.netFees')}` : ''; el.className = `tr-hint ${cls(v)}`; };
     hint('#tr-tp-h', r.tpPnl);
     hint('#tr-sl-h', r.slPnl);
+    const aq = { kind: ticket.asset.kind, ccy: r.q.ccy };
+    const th = card.querySelector('#tr-trail-h');
+    th.textContent = isNum(r.trailSl) ? t('pt.trailHint', { p: px(r.trailSl, aq) }) : '';
+    const oh = card.querySelector('#tr-oco-h');
+    if (oh) oh.textContent = r.ocoType && isNum(r.oco) ? t('pt.ocoHint', { ty: typeLabel(r.ocoType).toLowerCase(), p: px(r.oco, aq) }) : '';
     const go = card.querySelector('#tr-go');
     go.disabled = r.errors.length > 0;
     const msg = card.querySelector('#tr-msg');
     // On n'affiche une erreur qu'une fois le montant saisi (pas d'erreur sur un formulaire vide).
-    const show = ticket.amount.trim() || ticket.price.trim() || ticket.tp.trim() || ticket.sl.trim() || !r.q.ok;
+    const show = ticket.amount.trim() || ticket.price.trim() || ticket.tp.trim() || ticket.sl.trim() || ticket.trail.trim() || ticket.oco.trim() || !r.q.ok;
     msg.textContent = show && r.errors.length ? r.errors[0] : '';
     msg.hidden = !(show && r.errors.length);
   }
@@ -618,7 +860,7 @@ export function createPaper(ctx) {
     const r = computeTicket();
     if (r.errors.length) { updateTicket(); return; }
     const k = ticket;
-    const base = { side: k.side, qty: r.qty, lev: k.lev, tp: r.tp, sl: r.sl };
+    const base = { side: k.side, qty: r.qty, lev: k.lev, tp: r.tp, sl: r.sl, trail: validTrail(r.trail) ? r.trail : null };
     if (k.type === 'market') {
       const res = openPosition(k.asset, { ...base, price: r.q.price, fx: r.q.fx, ccy: r.q.ccy });
       if (res.error) { ctx.toast(t(`pt.err.${res.error}`), 'neg'); return; }
@@ -627,9 +869,13 @@ export function createPaper(ctx) {
       notify({ type: 'filled', p: res.position });
     } else {
       const o = { id: nextId(), ...k.asset, ccy: r.q.ccy, fxOpen: r.q.fx, ...base, type: k.type, price: r.entry, createdAt: Date.now() };
-      acct.orders.push(o);
+      if (isNum(r.oco) && r.ocoType) {
+        o.oco = nextId();
+        acct.orders.push(o, { ...o, id: nextId(), type: r.ocoType, price: r.oco });
+      } else acct.orders.push(o);
       save();
-      ctx.toast(t('pt.t.placed', { s: sideLabel(k.side), ty: typeLabel(k.type).toLowerCase(), q: qtyFmt(r.qty), l: k.asset.label, p: px(r.entry, o) }));
+      ctx.toast(t(o.oco ? 'pt.t.placedOco' : 'pt.t.placed', { s: sideLabel(k.side), ty: typeLabel(k.type).toLowerCase(), q: qtyFmt(r.qty), l: k.asset.label, p: px(r.entry, o),
+        p2: o.oco ? px(r.oco, o) : '' }));
     }
     closeModal();
     ctx.changed();
@@ -659,6 +905,10 @@ export function createPaper(ctx) {
         <div><label for="mg-tp">${t('pt.tp')}</label><div class="alert-input"><input id="mg-tp" type="text" inputmode="decimal" value="${p.tp != null ? ctx.fmtInput(p.tp) : ''}"><span>${pu}</span></div></div>
         <div><label for="mg-sl">${t('pt.sl')}</label><div class="alert-input"><input id="mg-sl" type="text" inputmode="decimal" value="${p.sl != null ? ctx.fmtInput(p.sl) : ''}"><span>${pu}</span></div></div>
       </div>
+      <div class="trade-tpsl">
+        <div><label for="mg-trail">${t('pt.trail')}</label><div class="alert-input"><input id="mg-trail" type="text" inputmode="decimal" value="${validTrail(p.trail) ? ctx.fmtInput(p.trail) : ''}" placeholder="5"><span>%</span></div></div>
+        <div><label for="mg-note">${t('pt.note')}</label><div class="alert-input"><input id="mg-note" type="text" maxlength="280" value="${esc(p.note || '')}" placeholder="${esc(t('pt.notePh'))}"></div></div>
+      </div>
       <p class="alert-msg" id="mg-msg" hidden></p>
       <button type="button" class="btn" id="mg-save">${t('pt.saveTpSl')}</button>
       <label>${t('pt.closePos')}</label>
@@ -668,14 +918,24 @@ export function createPaper(ctx) {
     card.querySelector('#mg-save').addEventListener('click', () => {
       const P = ctx.parse, d = dirOf(p.side);
       const tpS = card.querySelector('#mg-tp').value.trim(), slS = card.querySelector('#mg-sl').value.trim();
-      const tp = tpS ? P(tpS) : null, sl = slS ? P(slS) : null;
+      const trS = card.querySelector('#mg-trail').value.trim();
+      const tp = tpS ? P(tpS) : null, sl = slS ? P(slS) : null, trail = trS ? P(trS) : null;
       const ref = isNum(q.price) ? q.price : p.entry;
       let err = '';
       if (tpS && (!isNum(tp) || (tp - ref) * d <= 0)) err = t('pt.err.tpNow');
       else if (slS && (!isNum(sl) || (sl - ref) * d >= 0)) err = t('pt.err.slNow');
       else if (isNum(sl) && liq != null && (sl - liq) * d <= 0) err = t('pt.err.slLiq', { p: px(liq, p) });
+      else if (trS && !validTrail(trail)) err = t('pt.err.trail');
       if (err) { msg.textContent = err; msg.hidden = false; return; }
       p.tp = tp; p.sl = sl;
+      if (validTrail(trail)) {
+        // Le suivi part du cours actuel ; le SL ne recule jamais (le plus protecteur des deux est gardé).
+        p.peak = p.trail ? p.peak : ref;
+        p.trail = trail;
+        const lvl = trailLevel(p.side, p.peak ?? ref, trail);
+        p.sl = p.sl == null ? lvl : d > 0 ? Math.max(p.sl, lvl) : Math.min(p.sl, lvl);
+      } else { p.trail = null; p.peak = null; }
+      p.note = card.querySelector('#mg-note').value.trim().slice(0, 280) || undefined;
       save();
       ctx.toast(t('pt.t.saved', { l: p.label }));
       closeModal();

@@ -591,3 +591,19 @@ mark.todo { background: #f5b84a; color: #1a1205; padding: 1px 5px; border-radius
 .ag-tag { color: var(--muted); font-weight: 600; font-size: 11px; }
 .ag-link { cursor: pointer; } .ag-link:active { opacity: .7; }
 .agenda .mc-note a { color: var(--accent); }
+
+/* Compte démo : plusieurs comptes, stop suiveur, OCO, notes, journal, DCA */
+.pt-accts { margin-bottom: 10px; }
+.pt-accts-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.pt-accts-row select { flex: 1 1 160px; min-width: 0; }
+.pt-badge.trail { color: var(--accent); background: rgba(124, 196, 255, .14); }
+.pt-badge.oco { color: var(--warn); background: rgba(245, 184, 74, .14); margin-left: 4px; }
+.pt-notetext { font-size: 12.5px; color: var(--muted); font-style: italic; margin-top: 3px; overflow-wrap: anywhere; }
+.pt-journal h3 { margin: 6px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.pt-jlist { margin: 0 0 6px; padding-left: 18px; }
+.pt-jlist li { display: flex; gap: 8px; align-items: baseline; padding: 3px 0; font-size: 13.5px; }
+.pt-jlist li span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pt-jlist li small { color: var(--muted); font-size: 11.5px; }
+.pt-dca { display: flex; flex-direction: column; gap: 8px; }
+.pt-dca label { font-size: 13px; color: var(--muted); font-weight: 600; }
+.dca-select { width: 100%; }

@@ -7,7 +7,7 @@ const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
 const ASSETS = [
   '/', '/index.html', '/manifest.webmanifest',
-  '/assets/styles.css', '/assets/theme.js', '/assets/app.js', '/assets/consent.js', '/assets/i18n.js', '/assets/snapshot.js', '/assets/paper.js', '/assets/paper-engine.js',
+  '/assets/styles.css', '/assets/theme.js', '/assets/app.js', '/assets/consent.js', '/assets/i18n.js', '/assets/snapshot.js', '/assets/paper.js', '/assets/paper-engine.js', '/assets/indicators.js',
   '/assets/tradechart.js', '/assets/legal.js', '/assets/cookies-page.js',
   '/vendor/lightweight-charts/lightweight-charts.standalone.production.js',
   '/mentions-legales.html', '/confidentialite.html', '/cookies.html', '/cgu.html',
