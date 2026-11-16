@@ -382,7 +382,7 @@ function renderStocks() {
   const sec = state.sectors?.sectors || {};
   renderTiles(map, stockItems(data), {
     maxAbs: 4, period: t('periodSession'), priceText: (c) => fmtStockPrice(c.price, c.currency), onOpen: openStockChart,
-    ...(bySector ? { groupOf: (c) => sec[c.id] || 'other', groupName: sectorName } : {}),
+    ...(bySector && state.sectors ? { groupOf: (c) => sec[c.id] || 'other', groupName: sectorName } : {}), // secteurs pas encore chargés : vue simple
   });
   const src = $('#stocks-sector-src');
   src.hidden = !bySector;
