@@ -246,7 +246,9 @@ export function createPaper(ctx) {
         <div class="seg seg-wide" role="group" aria-label="${esc(t('pt.capital'))}">${CAPITALS.map((c, i) =>
           `<button type="button" data-cap="${c}" aria-pressed="${i === 1}">${money(c)}</button>`).join('')}</div>
         <button type="button" class="btn btn-primary pt-create">${t('pt.create')}</button>
-        <p class="consent-small">${t('pt.disclaimer')}</p></div>`;
+        <p class="consent-small">${t('pt.disclaimer')}</p></div>
+        ${syncHTML()}`;
+      bindSync(el); // nouvel appareil : on peut aussi retrouver un compte synchronisé avec son code
       let cap = CAPITALS[1];
       el.querySelectorAll('[data-cap]').forEach((b) => b.addEventListener('click', () => {
         cap = Number(b.dataset.cap);
@@ -688,9 +690,13 @@ export function createPaper(ctx) {
   }
 
   /** Données rafraîchies : moteur, puis mise à jour du ticket ouvert (cours). */
+  // Sans synchronisation, tout s'exécute avant le rendu de l'app (pas d'attente) ; avec, l'écran est redessiné
+  // une fois la version du serveur reprise et le moteur exécuté.
   async function onData() {
-    await pull();
+    const synced = !!sync;
+    if (synced) await pull();
     const ev = run();
+    if (synced && ev.length) ctx.changed();
     if (picker && !modal.hidden) picker();
     if (ticket && !modal.hidden) {
       const head = card.querySelector('.th-p strong');
