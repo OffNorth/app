@@ -2,10 +2,15 @@
 import { getConsent, setConsent, SERVICES } from './consent.js';
 import { country, getLang, indexName, HTML_LANG, LANG_LABELS, LANGS, legalPrefix, LOCALES, setLang, t, TV_LOCALE } from './i18n.js';
 import { makeSnapshot } from './snapshot.js';
+import { createPaper, liqPrice } from './paper.js';
+import { createTradeChart, TIMEFRAMES } from './tradechart.js';
 const REFRESH_MS = 60_000;
-const TABS = ['favoris', 'crypto', 'actions', 'ameriques', 'europe', 'asie', 'afrique'];
-const LEGACY_TABS = { chine: 'asie', usa: 'ameriques' }; // anciens onglets (avant l'extension au monde entier)
-const initialTab = (t) => (TABS.includes(t) ? t : LEGACY_TABS[t]);
+const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
+const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
+const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
+// Anciens liens #europe, #asie… : onglet Indices sur la région demandée.
+const regionOf = (x) => (REGIONS.includes(x) ? x : LEGACY_REGIONS[x]);
+const initialTab = (x) => (TABS.includes(x) ? x : regionOf(x) ? 'indices' : undefined);
 const ND = 'n/d';
 
 const $ = (sel) => document.querySelector(sel);
@@ -15,10 +20,11 @@ const store = {
 };
 
 // Réglages de l'utilisateur (mémorisés sur l'appareil).
-const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD' };
-const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'] };
+const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m' };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], region: REGIONS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
 const prefs = { ...PREF_DEFAULT };
 for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
+{ const r = regionOf(location.hash.slice(1)) || regionOf(store.get('tab')); if (r) prefs.region = r; }
 
 /* Favoris : { t: 'c' (crypto) | 's' (entreprise) | 'i' (indice), id, label, name, logo, logoSmall }, mémorisés sur l'appareil. */
 const favKey = (f) => `${f.t}:${f.id}`;
@@ -30,7 +36,7 @@ function toggleFav(f) {
   store.set('favs', favs);
 }
 /** Taille du classement d'entreprises à charger : 100 si une entreprise est en favori (pour la retrouver). */
-const stocksToLoad = () => (hasStockFav() ? 100 : prefs.nStocks);
+const stocksToLoad = () => (hasStockFav() || paper?.exposure().some((x) => x.kind === 's') ? 100 : prefs.nStocks);
 
 const state = {
   fx: store.get('fx'),
@@ -174,7 +180,7 @@ function logoImg(c, size, cls = 'logo') {
 }
 // Logo introuvable → on le retire simplement (le symbole reste affiché).
 document.addEventListener('error', (e) => {
-  if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo, .idx-logo')) e.target.remove();
+  if (e.target instanceof HTMLImageElement && e.target.matches('.logo, .chart-logo, .idx-logo, .pt-logo')) e.target.remove();
 }, true);
 
 /** Hauteur de la heatmap : remplit l'écran restant, sans être trop plate ni trop haute. */
@@ -634,9 +640,14 @@ function renderFavBtn(fav) {
   b.setAttribute('aria-label', t(on ? 'fav.remove' : 'fav.add'));
   b.title = t(on ? 'fav.remove' : 'fav.add');
 }
-async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav, alert }) {
+let chartArgs = null;
+async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav, alert, trade }) {
   const token = ++chartToken;
+  chartArgs = { tv, label, missingMsg, alert, trade, token, res: undefined };
   $('#chart-alert').onclick = () => openAlert(alert);
+  const tb = $('#chart-trade');
+  tb.hidden = !trade;
+  tb.onclick = trade ? () => paper.openTicket(trade) : null;
   const favBtn = $('#chart-fav');
   renderFavBtn(fav);
   favBtn.onclick = () => {
@@ -645,36 +656,63 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav
     if (fav.t === 's' && (state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks();
     if (state.tab === 'favoris') renderFavs();
   };
-  const box = $('#chart'), frame = $('#chart-frame'), link = $('#chart-link'), note = $('#chart-note');
+  const box = $('#chart'), link = $('#chart-link');
   $('#chart-title').innerHTML = titleHTML;
   $('#chart-sub').textContent = sub;
   $('#chart-stats').innerHTML = statsHTML;
-  frame.innerHTML = `<div class="msg">${t('chartLoading')}</div>`;
   link.hidden = true;
-  note.hidden = true;
+  const modeBox = $('#chart-mode');
+  modeBox.hidden = !trade;
   if (box.hidden) {
     box.hidden = false;
     document.body.style.overflow = 'hidden';
     history.pushState({ chart: true }, '');
   }
+  // Lien « Ouvrir dans TradingView » : résolu dans tous les modes.
+  Promise.resolve(tv).then((res) => {
+    if (token !== chartToken) return;
+    chartArgs.res = res || null;
+    const sym = res?.link || res?.tv;
+    if (sym) { link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(sym)}`; link.hidden = false; }
+  });
+  await renderChartFrame();
+}
 
-  const res = await tv;
-  if (token !== chartToken || box.hidden) return; // fermé ou autre tuile ouverte entre-temps
+/** Contenu de l'écran graphique selon le mode : widget TradingView ou graphique de trading (démo). */
+async function renderChartFrame() {
+  const a = chartArgs;
+  if (!a) return;
+  const frame = $('#chart-frame'), note = $('#chart-note');
+  const mode = a.trade && prefs.chartMode === 'trade' ? 'trade' : 'tv';
+  if (a.trade) {
+    $('#chart-mode').innerHTML = [['tv', t('tc.mode.tv')], ['trade', t('tc.mode.trade')]].map(([v, l]) =>
+      `<button type="button" data-cmode="${v}" aria-pressed="${v === mode}">${l}</button>`).join('');
+  }
+  tradeChart.unmount();
+  $('#chart-trade').hidden = !a.trade || mode === 'trade'; // en mode trading, les boutons Acheter / Vendre sont sous le graphique
+  frame.classList.toggle('trade', mode === 'trade');
+  note.hidden = true;
+  if (mode === 'trade') { tradeChart.mount(frame, a.trade); return; }
+
+  frame.innerHTML = `<div class="msg">${t('chartLoading')}</div>`;
+  const res = await a.tv;
+  if (a.token !== chartToken || $('#chart').hidden || chartArgs !== a || (a.trade && prefs.chartMode === 'trade')) return;
   if (res?.tv) {
-    link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link || res.tv)}`;
-    link.hidden = false;
     if (res.note) { note.textContent = typeof res.note === 'function' ? res.note() : res.note; note.hidden = false; }
-    renderTVFrame(res, label, token);
+    renderTVFrame(res, a.label, a.token);
   } else if (res?.error) {
     frame.innerHTML = `<div class="msg">${t('chartUnavailable', { off: navigator.onLine ? '' : t('offlineSuffix') })}</div>`;
   } else {
-    frame.innerHTML = `<div class="msg">${missingMsg}</div>`;
-    if (res?.link) { // pas de graphique intégrable, mais l'indice existe sur tradingview.com
-      link.href = `https://www.tradingview.com/chart/?symbol=${encodeURIComponent(res.link)}`;
-      link.hidden = false;
-    }
+    frame.innerHTML = `<div class="msg">${a.missingMsg}</div>`;
   }
 }
+$('#chart-mode').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-cmode]');
+  if (!b || prefs.chartMode === b.dataset.cmode) return;
+  prefs.chartMode = b.dataset.cmode;
+  store.set('prefs', prefs);
+  renderChartFrame();
+});
 
 /**
  * Affiche le widget TradingView seulement si l'utilisateur l'a accepté.
@@ -723,6 +761,7 @@ function openChart(c, rank, totalTop, count) {
     missingMsg: t('missCrypto', { s: esc(c.symbol) }),
     fav: { t: 'c', id: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
     alert: { kind: 'c', assetId: c.id, label: c.symbol, price: c.price, currency: 'USD' },
+    trade: { kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
   });
 }
 
@@ -738,6 +777,7 @@ function openStockChart(c, rank, total, count) {
     missingMsg: t('missStock', { s: esc(c.name) }),
     fav: { t: 's', id: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall },
     alert: { kind: 's', assetId: c.id, label: c.label, price: c.price, currency: c.currency || null },
+    trade: c.currency === 'USD' ? { kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall } : null,
   });
 }
 
@@ -819,6 +859,8 @@ function closeChart() {
   const box = $('#chart');
   if (box.hidden) return;
   chartToken++;
+  chartArgs = null;
+  tradeChart.unmount();
   box.hidden = true;
   $('#chart-frame').innerHTML = ''; // décharge le widget
   document.body.style.overflow = '';
@@ -969,11 +1011,12 @@ function renderIndices(region) {
 
 /* ---------- En-tête, bannière ---------- */
 function renderChrome() {
-  const key = state.tab === 'actions' ? 'stocks' : ['crypto', 'favoris'].includes(state.tab) ? 'crypto' : 'indices';
+  const key = state.tab === 'actions' ? 'stocks' : ['crypto', 'favoris', 'compte'].includes(state.tab) ? 'crypto' : 'indices';
   const data = state[key];
   const when = data?.fetchedAt && (key === 'indices' || state.tab === 'favoris') ? ` · ${t('updatedShort')} ${fmtTime(data.fetchedAt)}` : '';
   const n = state.tab === 'crypto' ? cryptoItems(state.crypto).length || prefs.nCrypto : stockItems(state.stocks).length || prefs.nStocks;
-  $('#subtitle').textContent = `${t(`title.${state.tab}`, { n, p: periodLabel() })}${when}`;
+  const titleKey = state.tab === 'indices' ? `title.${prefs.region}` : `title.${state.tab}`;
+  $('#subtitle').textContent = `${t(titleKey, { n, p: periodLabel() })}${when}`;
 
   const banner = $('#banner');
   let msg = '';
@@ -1006,7 +1049,12 @@ function render() {
   if (state.tab === 'crypto') renderCrypto();
   else if (state.tab === 'actions') renderStocks();
   else if (state.tab === 'favoris') renderFavs();
-  else renderIndices(state.tab);
+  else if (state.tab === 'compte') paper.render($('#paper'));
+  else {
+    for (const r of REGIONS) $(`#grid-${r}`).hidden = r !== prefs.region;
+    $('#indices-tools').innerHTML = segHTML('region', REGIONS.map((r) => [r, t(`tab.${r}`)]), t('tools.region'));
+    renderIndices(prefs.region);
+  }
 }
 
 /* ---------- Langue : textes statiques de la page ---------- */
@@ -1059,6 +1107,8 @@ async function refresh() {
   state.loading = false;
   state.lastFetch = Date.now();
   $('#refresh').classList.remove('spinning');
+  paper.onData();
+  tradeChart.onData();
   render();
 }
 
@@ -1074,6 +1124,7 @@ async function loadStocks() {
   } catch {
     state.offline.stocks = true;
   }
+  paper.onData();
   render();
 }
 async function loadFx() {
@@ -1121,6 +1172,91 @@ document.addEventListener('click', (e) => {
   if (k === 'cur' && v === 'EUR' && !state.fx) loadFx();
 });
 
+/* ---------- Papertrading (compte de démonstration, argent fictif) ---------- */
+/** Cours utilisable pour le papertrading : ok = cours frais, en dollars, et marché ouvert (actions). */
+function quoteOf(x) {
+  if (x.kind === 'c') {
+    const coins = state.crypto?.coins || [];
+    const c = coins.find((y) => y.id === x.assetId) || coins.find((y) => y.symbol === x.label);
+    if (!c || !isNum(c.price)) return { price: null, ok: false, reason: 'na' };
+    const fresh = !state.offline.crypto && !state.crypto.stale;
+    return { price: c.price, chg: c.changePct, ok: fresh, reason: fresh ? null : 'stale', currency: 'USD' };
+  }
+  if (x.kind === 's') {
+    const c = (state.stocks?.companies || []).find((y) => y.id === x.assetId);
+    if (!c || !isNum(c.price)) return { price: null, ok: false, reason: 'na' };
+    if (c.currency !== 'USD') return { price: null, ok: false, reason: 'currency', currency: c.currency };
+    const fresh = !state.offline.stocks && !state.stocks.stale;
+    const open = c.state === 'open';
+    return { price: c.price, chg: c.changePct, ok: fresh && open, reason: !fresh ? 'stale' : open ? null : 'closed', currency: 'USD' };
+  }
+  return { price: null, ok: false, reason: 'na' };
+}
+function toast(msg, kind = '') {
+  const box = $('#toasts');
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  box.append(el);
+  while (box.children.length > 2) box.firstElementChild.remove(); // 2 messages au plus à l'écran
+  setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 400); }, 3200);
+}
+const qtyNF = () => new Intl.NumberFormat(loc(), { maximumSignificantDigits: 6 });
+const paper = createPaper({
+  t, store, esc, isNum, ND,
+  quote: quoteOf,
+  money: (v) => fmtNative(v, 'USD'),
+  pct: (v) => fmtPct(v),
+  qty: (v) => (isNum(v) ? (Math.abs(v) >= 1000 ? NF2 : qtyNF()).format(v) : ND),
+  NF1: () => NF1, NF2: () => NF2, pctSign,
+  day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
+  parse: parseAmount,
+  fmtInput,
+  logo: (a, size) => logoImg(a, size, 'pt-logo'),
+  toast,
+  changed: () => { tradeChart.refresh(); if (state.tab === 'compte') render(); if ((state.stocks?.companies?.length ?? 0) < stocksToLoad()) loadStocks(); },
+  assets: () => [
+    ...(state.crypto?.coins || []).map((c) => ({ kind: 'c', assetId: c.id, label: c.symbol, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+    ...(state.stocks?.companies || []).filter((c) => c.currency === 'USD')
+      .map((c) => ({ kind: 's', assetId: c.id, label: c.label, name: c.name, logo: c.logo, logoSmall: c.logoSmall, price: c.price, chg: c.changePct })),
+  ],
+});
+
+/** Nombre pour un champ de saisie (sans séparateur de milliers, décimale de la langue). */
+function fmtInput(v) {
+  if (!isNum(v)) return '';
+  const a = Math.abs(v);
+  const dec = a >= 1000 ? 2 : a >= 1 ? 4 : 8;
+  return new Intl.NumberFormat(loc(), { useGrouping: false, maximumFractionDigits: dec }).format(v);
+}
+const tradeChart = createTradeChart({
+  t, esc, isNum, paper, liqPrice, toast,
+  quote: quoteOf,
+  money: (v) => fmtNative(v, 'USD'),
+  signed: (v) => (isNum(v) ? `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}${fmtNative(Math.abs(v), 'USD')}` : ND),
+  num: (v, prec) => (isNum(v) ? new Intl.NumberFormat(loc(), { minimumFractionDigits: prec, maximumFractionDigits: prec }).format(v) : ''),
+  qty: (v) => (isNum(v) ? qtyNF().format(v) : ND),
+  locale: () => loc(),
+  getTf: () => prefs.tcTf,
+  setTf: (tf) => { prefs.tcTf = tf; store.set('prefs', prefs); },
+  openTicket: (asset, pre) => paper.openTicket(asset, pre),
+  openAlert: (price) => {
+    if (!chartArgs?.alert) return;
+    openAlert(chartArgs.alert);
+    $('#alert-target').value = fmtInput(price);
+    updateAlertDir();
+  },
+  fetchCandles: async (a, tf) => {
+    const q = quoteOf(a);
+    const params = new URLSearchParams({ kind: a.kind, symbol: a.kind === 'c' ? a.label : a.assetId, tf });
+    if (a.kind === 'c' && /^[a-z0-9-]+$/.test(a.assetId)) params.set('id', a.assetId);
+    if (isNum(q.price)) params.set('ref', String(q.price));
+    const r = await fetch(`/api/candles?${params}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+});
+
 /* ---------- Navigation ---------- */
 function setTab(tab) {
   if (!TABS.includes(tab) || tab === state.tab) return;
@@ -1138,7 +1274,8 @@ $('#refresh').addEventListener('click', refresh);
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
-  if (!$('#alert').hidden) closeAlert();
+  if (paper.isOpen()) paper.closeModal();
+  else if (!$('#alert').hidden) closeAlert();
   else if (!$('#snap').hidden) closeSnapshot();
   else if (!$('#chart').hidden) $('#chart-close').click();
 });

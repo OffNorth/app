@@ -106,6 +106,12 @@ Navigateur Chromium, iPhone émulé, profil vierge. Testé en local puis en prod
   - **Information** : nouvelle section « Alertes de prix » (ancre `#alertes`) dans la politique de confidentialité, ligne ajoutée au tableau des traitements, destinataires (Supabase, services push des navigateurs), transferts, droits (suppression en libre-service) et sécurité. Supabase est ajouté aux mentions légales comme hébergeur des alertes. Un article 6 bis a été ajouté aux CGU : envoi non garanti, ce n'est pas un conseil. Tout est disponible en FR, EN et ZH.
 - **Points à valider juridiquement**, ajoutés au §7 : la base légale retenue (art. 6.1.b, exécution du service demandé) et l'inscription éventuelle du traitement au registre (art. 30).
 
+## 5 quater. Compte de démonstration (papertrading), 16/11/2026
+
+- Il fonctionne **entièrement sur l'appareil** (`marches:paper`) : aucune donnée n'est envoyée au serveur. Ce stockage est strictement nécessaire au service demandé, donc exempté de consentement ; il est documenté sur la page Cookies (FR, EN, ZH).
+- **Argent fictif uniquement** : aucun ordre n'est transmis, aucun dépôt n'est possible. Un nouvel article 6 ter des CGU décrit les conditions de simulation (exécution au cours constaté, frais simulés, pas de spread ni de financement) et précise que les performances simulées ne préjugent pas de résultats réels. L'avertissement est aussi affiché dans l'onglet Compte et dans chaque ticket d'ordre.
+- **Point à faire valider** (§7) : la présentation d'un outil de simulation avec effet de levier et vente à découvert. Il n'y a pas de promotion d'un prestataire ni de lien vers un courtier, mais il faut vérifier l'absence de qualification de « recommandation » ou de « publicité » au sens de la réglementation AMF.
+
 ## 6. Informations à fournir par l'éditeur
 
 1. Statut : **particulier (non professionnel)** ou **professionnel** (micro-entreprise, société, association).
@@ -136,7 +142,8 @@ Les emplacements sont signalés sur le site par des champs surlignés « [À COM
    - confirmer la base légale (art. 6.1.b RGPD, exécution du service demandé, plutôt que le consentement, art. 6.1.a) ;
    - tenir le registre des traitements (art. 30), si l'éditeur y est soumis ;
    - signer ou accepter le DPA de Supabase (il s'applique avec les conditions d'utilisation de Supabase).
-7. Contenu informatif financier : absence de « recommandation d'investissement » au sens du règlement (UE) 596/2014 (MAR) ; mentions « pas un conseil » présentes.
+8. **Papertrading** : confirmer qu'un simulateur gratuit en argent fictif, sans lien vers un prestataire, n'appelle aucune mention réglementaire supplémentaire (AMF : communications sur les produits à effet de levier).
+9. Contenu informatif financier : absence de « recommandation d'investissement » au sens du règlement (UE) 596/2014 (MAR) ; mentions « pas un conseil » présentes.
 
 ## 8. Sources consultées
 

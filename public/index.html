@@ -55,10 +55,15 @@
       <p class="legend"><span class="sw down"></span><span data-i18n="legend.down">Baisse</span><span class="sw flat"></span><span data-i18n="legend.flat">Stable</span><span class="sw up"></span><span data-i18n="legend.upSession">Hausse sur la séance</span> <span data-i18n="legend.stocksTail">· taille = capitalisation · touchez une tuile pour son graphique</span></p>
       <div class="snap-row"><button type="button" class="btn btn-sm" data-snap="stocks"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m-5-5 5 5 5-5M5 20h14"/></svg><span data-i18n="snap.btn">Télécharger l’image</span></button></div>
     </section>
-    <section id="view-ameriques" class="view" data-tab="ameriques" aria-label="Amériques" hidden><div class="grid" id="grid-ameriques"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-europe" class="view" data-tab="europe" aria-label="Europe" hidden><div class="grid" id="grid-europe"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-asie" class="view" data-tab="asie" aria-label="Asie-Pacifique" hidden><div class="grid" id="grid-asie"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
-    <section id="view-afrique" class="view" data-tab="afrique" aria-label="Afrique et Moyen-Orient" hidden><div class="grid" id="grid-afrique"></div><p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p></section>
+    <section id="view-indices" class="view" data-tab="indices" aria-label="Indices" hidden>
+      <div class="tools" id="indices-tools" role="toolbar" aria-label="Région" data-i18n-aria="tools.region"></div>
+      <div class="grid" id="grid-ameriques" hidden></div>
+      <div class="grid" id="grid-europe" hidden></div>
+      <div class="grid" id="grid-asie" hidden></div>
+      <div class="grid" id="grid-afrique" hidden></div>
+      <p class="legend" data-i18n="legend.index">Touchez un indice pour ouvrir son graphique TradingView.</p>
+    </section>
+    <section id="view-compte" class="view" data-tab="compte" aria-label="Compte" hidden><div id="paper" class="paper"></div></section>
 
     <div id="install" class="install" hidden></div>
 
@@ -87,10 +92,14 @@
       <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="12" width="4" height="9" rx="1"/><rect x="10" y="7" width="4" height="14" rx="1"/><rect x="17" y="3" width="4" height="18" rx="1"/></svg>
       <span data-i18n="tab.actions">Actions</span>
     </button>
-    <button type="button" data-tab="ameriques"><span class="flag" aria-hidden="true">AM</span><span data-i18n="tab.ameriques">Amériques</span></button>
-    <button type="button" data-tab="europe"><span class="flag" aria-hidden="true">EU</span><span data-i18n="tab.europe">Europe</span></button>
-    <button type="button" data-tab="asie"><span class="flag" aria-hidden="true">AS</span><span data-i18n="tab.asie">Asie</span></button>
-    <button type="button" data-tab="afrique"><span class="flag" aria-hidden="true">AF</span><span data-i18n="tab.afrique">Afrique</span></button>
+    <button type="button" data-tab="indices">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M3 17l5-6 4 4 4-7 5 6"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M3 21h18"/></svg>
+      <span data-i18n="tab.indices">Indices</span>
+    </button>
+    <button type="button" data-tab="compte">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2.5" fill="none" stroke="currentColor" stroke-width="2"/><path fill="none" stroke="currentColor" stroke-width="2" d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.5"/></svg>
+      <span data-i18n="tab.compte">Compte</span>
+    </button>
   </nav>
 
   <div id="chart" class="chart" role="dialog" aria-modal="true" aria-labelledby="chart-title" hidden>
@@ -110,9 +119,13 @@
       </button>
     </div>
     <div class="chart-stats" id="chart-stats"></div>
+    <div class="seg seg-wide chart-mode" id="chart-mode" role="group" aria-label="Type de graphique" data-i18n-aria="tc.modeLabel" hidden></div>
     <div class="chart-frame" id="chart-frame"></div>
     <p class="chart-note" id="chart-note" hidden></p>
-    <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>
+    <div class="chart-bottom">
+      <button id="chart-trade" class="btn btn-trade" type="button" hidden data-i18n="pt.trade">Trader (démo)</button>
+      <a id="chart-link" class="chart-link" href="#" target="_blank" rel="noopener" hidden data-i18n="openTV">Ouvrir dans TradingView ↗</a>
+    </div>
   </div>
 
   <div id="snap" class="snap" role="dialog" aria-modal="true" aria-labelledby="snap-title" hidden>
@@ -147,6 +160,8 @@
       <p class="snap-hint" id="alert-info"></p>
     </div>
   </div>
+
+  <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
   <script src="/app.js" type="module"></script>
 </body>
