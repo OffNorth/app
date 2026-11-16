@@ -116,7 +116,7 @@ npm run icons        # régénère les icônes (Node, sans dépendance ; aussi l
 
 ## Déploiement (Vercel, offre Hobby gratuite, sans carte bancaire)
 
-Vercel déploie le dossier `public/` en statique et `api/*.js` en fonctions, sans étape de build.
+Vercel déploie le dossier `public/` en statique et `api/*.js` en fonctions, sans étape de build. Le plan Hobby limite un déploiement à 12 fonctions : les flux en lecture (`news`, `sentiment`, `cryptocats`, `econ`, `dividends`, `calendar`, `macro`, `search`, `quote`) sont des modules `api/_*.js` servis par une seule fonction, `api/feeds.js` ; les réécritures de `vercel.json` gardent leurs adresses `/api/<nom>` (le serveur local `scripts/dev-server.mjs` applique les mêmes). Les fichiers `api/_*.js` ne sont pas des fonctions.
 
 1. Rendez-vous sur https://vercel.com/new et choisissez « Continue with GitHub ».
 2. Importez le dépôt `OffNorth/app`. Laissez *Framework Preset* sur **Other** et ne remplissez ni build command ni output directory.

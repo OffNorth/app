@@ -29,11 +29,15 @@ const TYPES = {
   '.ico': 'image/x-icon',
 };
 
+const FEEDS = JSON.parse(await readFile(join(ROOT, 'vercel.json'), 'utf8')).rewrites.map((r) => r.source.slice(5));
+
 createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   try {
     if (url.pathname.startsWith('/api/')) {
-      const name = url.pathname.slice(5).replace(/[^a-z0-9-]/gi, '');
+      let name = url.pathname.slice(5).replace(/[^a-z0-9-]/gi, '');
+      // Même réécriture que vercel.json : les flux regroupés passent par /api/feeds?r=<nom>.
+      if (FEEDS.includes(name)) { url.searchParams.set('r', name); name = 'feeds'; }
       const mod = await import(pathToFileURL(join(ROOT, 'api', `${name}.js`)).href);
       const handler = mod[req.method];
       if (!handler) { res.writeHead(405); res.end(); return; }
