@@ -479,7 +479,7 @@ def page(lang, name):
     alternates = "\n  ".join(f'<link rel="alternate" hreflang="{HTML_LANG[l]}" href="{L(l, name)}">' for l in ("fr", "en", "zh"))
     links = "\n      ".join(
         f'<a href="{L(lang, p)}"{" aria-current=\"page\"" if p == name else ""}>{lbl}</a>' for p, lbl in zip(PAGES, ui["links"]))
-    script = '\n  <script src="/cookies-page.js" type="module"></script>' if name == "cookies" else ""
+    script = '\n  <script src="/assets/cookies-page.js" type="module"></script>' if name == "cookies" else ""
     return f"""<!doctype html>
 <html lang="{HTML_LANG[lang]}">
 <head>
@@ -490,7 +490,7 @@ def page(lang, name):
   <meta name="theme-color" content="#0b0f14">
   <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
-  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/assets/styles.css">
   {alternates}
 </head>
 <body class="doc">
@@ -501,7 +501,7 @@ def page(lang, name):
       {links}
     </nav>
   </main>
-  <script src="/legal.js" type="module"></script>{script}
+  <script src="/assets/legal.js" type="module"></script>{script}
 </body>
 </html>
 """

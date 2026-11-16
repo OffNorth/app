@@ -5,7 +5,8 @@ import { makeSnapshot } from './snapshot.js';
 import { createPaper, liqPrice } from './paper.js';
 import { createTradeChart, TIMEFRAMES } from './tradechart.js';
 const REFRESH_MS = 60_000;
-const APP_VERSION = '14 (16/11/2026)'; // à faire évoluer avec VERSION dans sw.js
+const APP_BUILD = 15; // à garder égal à VERSION ('v15') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
 const TABS = ['favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique'];
 const LEGACY_REGIONS = { chine: 'asie', usa: 'ameriques' }; // anciens liens (avant l'extension au monde entier)
@@ -1388,14 +1389,44 @@ window.addEventListener('resize', () => {
   });
 })();
 
+/* ---------- Mise à jour de l'app ---------- */
+/**
+ * Compare la version affichée à celle du serveur (/sw.js). Si elles diffèrent : installation de la nouvelle
+ * version, puis rechargement. Filet de sécurité si l'ancienne version reste bloquée : caches vidés et
+ * service worker réinstallé (au plus une fois par minute, pour ne jamais boucler).
+ */
+async function checkVersion(reg) {
+  if (!navigator.onLine) return;
+  let server;
+  try {
+    const txt = await (await fetch('/sw.js', { cache: 'no-store' })).text();
+    server = Number(/VERSION = 'v(\d+)'/.exec(txt)?.[1]);
+  } catch { return; }
+  if (!server || server <= APP_BUILD) return;
+  try { await reg.update(); } catch { /* on tente quand même le rechargement */ }
+  let last = 0;
+  try { last = Number(sessionStorage.getItem('marches:forcedUpdate')) || 0; } catch { /* rien */ }
+  if (Date.now() - last < 60_000) return;
+  try { sessionStorage.setItem('marches:forcedUpdate', String(Date.now())); } catch { /* rien */ }
+  setTimeout(async () => {
+    if (navigator.serviceWorker.controller && reg.active?.scriptURL && !reg.waiting && !reg.installing) {
+      // La nouvelle version est active : un simple rechargement suffit.
+    } else {
+      try { for (const k of await caches.keys()) if (k.startsWith('marches-shell-')) await caches.delete(k); } catch { /* rien */ }
+    }
+    location.reload();
+  }, 2500);
+}
+
 /* ---------- Démarrage ---------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').then((reg) => {
     // Une app installée (surtout sur iPhone) peut rester des jours en arrière-plan sans recharger la page :
-    // on cherche une nouvelle version à chaque retour au premier plan, et toutes les 15 minutes.
-    const check = () => reg.update().catch(() => {});
+    // on compare sa version à celle du serveur à chaque retour au premier plan, et toutes les 15 minutes.
+    const check = () => checkVersion(reg);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) check(); });
     setInterval(check, 15 * 60_000);
+    setTimeout(check, 3000);
   }).catch(() => {}));
   // Nouvelle version de l'app installée → rechargement unique pour l'afficher.
   const hadController = !!navigator.serviceWorker.controller;

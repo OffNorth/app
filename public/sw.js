@@ -1,11 +1,15 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
-const VERSION = 'v14';
+// Réseau d'abord pour tout (pages, scripts, styles, API) : la version en ligne est toujours celle affichée ;
+// le cache ne sert qu'hors connexion. Les logos restent en cache d'abord (ils ne changent pas).
+const VERSION = 'v15'; // à garder égal à APP_BUILD dans assets/app.js
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
 const ASSETS = [
-  '/', '/index.html', '/styles.css', '/app.js', '/consent.js', '/manifest.webmanifest',
-  '/i18n.js', '/snapshot.js', '/paper.js', '/tradechart.js', '/vendor/lightweight-charts/lightweight-charts.standalone.production.js', '/legal.js', '/cookies-page.js',
+  '/', '/index.html', '/manifest.webmanifest',
+  '/assets/styles.css', '/assets/app.js', '/assets/consent.js', '/assets/i18n.js', '/assets/snapshot.js', '/assets/paper.js',
+  '/assets/tradechart.js', '/assets/legal.js', '/assets/cookies-page.js',
+  '/vendor/lightweight-charts/lightweight-charts.standalone.production.js',
   '/mentions-legales.html', '/confidentialite.html', '/cookies.html', '/cgu.html',
   '/en/mentions-legales.html', '/en/confidentialite.html', '/en/cookies.html', '/en/cgu.html',
   '/zh/mentions-legales.html', '/zh/confidentialite.html', '/zh/cookies.html', '/zh/cgu.html',
@@ -20,8 +24,14 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
   e.waitUntil((async () => {
     const keep = new Set([SHELL, DATA, IMG]);
-    for (const k of await caches.keys()) if (!keep.has(k)) await caches.delete(k);
+    const keys = await caches.keys();
+    const isUpdate = keys.some((k) => k.startsWith('marches-shell-') && k !== SHELL);
+    for (const k of keys) if (!keep.has(k)) await caches.delete(k);
     await self.clients.claim();
+    // Mise à jour : on recharge les pages ouvertes pour qu'elles affichent tout de suite la nouvelle version.
+    if (isUpdate) {
+      for (const c of await self.clients.matchAll({ type: 'window' })) if ('navigate' in c) c.navigate(c.url).catch(() => {});
+    }
   })());
 });
 
@@ -83,13 +93,16 @@ self.addEventListener('fetch', (e) => {
     return;
   }
 
-  // Fichiers statiques : cache immédiat + mise à jour en arrière-plan.
+  // Fichiers statiques : réseau d'abord (revalidé auprès du serveur), cache seulement hors connexion.
   e.respondWith((async () => {
     const cache = await caches.open(SHELL);
-    const hit = await cache.match(req, { ignoreSearch: true });
-    const net = fetch(req).then((res) => { if (res.ok) cache.put(req, res.clone()); return res; }).catch(() => null);
-    e.waitUntil(net);
-    return hit || (await net) || new Response('', { status: 504 });
+    try {
+      const res = await fetch(req, { cache: 'no-cache' });
+      if (res.ok) e.waitUntil(cache.put(req, res.clone()));
+      return res;
+    } catch {
+      return (await cache.match(req, { ignoreSearch: true })) || new Response('', { status: 504 });
+    }
   })());
 });
 
