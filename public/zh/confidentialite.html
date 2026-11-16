@@ -9,6 +9,7 @@
   <meta name="color-scheme" content="dark">
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
   <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/theme.js"></script>
   <link rel="alternate" hreflang="fr" href="/confidentialite.html">
   <link rel="alternate" hreflang="en" href="/en/confidentialite.html">
   <link rel="alternate" hreflang="zh-CN" href="/zh/confidentialite.html">
@@ -18,10 +19,10 @@
   <main id="main">
     <h1>隐私政策</h1>
     <p class="lead">依据欧盟第2016/679号条例（GDPR）第12至14条及法国1978年1月6日第78-17号《信息与自由法》提供的信息。</p>
-    <p class="updated">最后更新: 2026年11月15日</p>
+    <p class="updated">最后更新: 2026年11月16日</p>
 
     <h2>简要说明</h2>
-    <div class="card"><ul><li>无账户、无注册、无广告、无访问统计：<strong>本网站不会要求您提供姓名、电子邮件或任何身份信息</strong>。</li><li>本网站<strong>不设置任何 Cookie</strong>。您的自选、设置和模拟账户保存在您的设备上。</li><li>市场数据和标志由我们的服务器获取：您的 IP 地址不会发送给数据提供商或标志来源网站。</li><li>在您接受的情况下，<strong>TradingView 图表</strong>会向第三方传输数据。未经您同意，图表不会加载。</li><li>如您创建<strong>价格提醒</strong>，浏览器的通知订阅地址和您的提醒将存储在位于欧盟的服务器上，仅用于通知您。您可随时全部删除（<a href="#alertes">详情</a>）。</li></ul></div>
+    <div class="card"><ul><li>无账户、无注册、无广告、无访问统计：<strong>本网站不会要求您提供姓名、电子邮件或任何身份信息</strong>。</li><li>本网站<strong>不设置任何 Cookie</strong>。您的自选、设置和模拟账户保存在您的设备上，除非您开启模拟账户同步（<a href="#demo">详情</a>）。</li><li>市场数据和标志由我们的服务器获取：您的 IP 地址不会发送给数据提供商或标志来源网站。</li><li>在您接受的情况下，<strong>TradingView 图表</strong>会向第三方传输数据。未经您同意，图表不会加载。</li><li>如您创建<strong>价格提醒</strong>，浏览器的通知订阅地址和您的提醒将存储在位于欧盟的服务器上，仅用于通知您。您可随时全部删除（<a href="#alertes">详情</a>）。</li></ul></div>
 
     <h2>数据控制者</h2>
     <p>数据控制者为本网站发布者（见<a href="/zh/mentions-legales.html">法律声明</a>）。根据 GDPR 第37条，发布者无须指定数据保护官（DPO）。</p>
@@ -31,9 +32,10 @@
       <thead><tr><th>处理活动</th><th>数据</th><th>目的</th><th>法律依据</th><th>保存期限</th></tr></thead>
       <tbody>
           <tr><td>托管与技术日志</td><td>IP 地址、日期和时间、请求的页面或资源、浏览器（user-agent）、服务器响应</td><td>显示网站，保障其运行与安全</td><td>发布者提供安全服务的正当利益（GDPR 第6(1)(f)条）</td><td>发布者可查看的运行日志：1 小时（据托管商文档，Vercel Hobby 方案）</td></tr>
-          <tr><td>您设备上的本地存储</td><td>最新市场数据和欧元/美元汇率、显示语言、标签页和设置（时间段、排名数量、货币）、自选、模拟账户（模拟交易）、Cookie 选择、安装提示的关闭状态；如您创建提醒，还包括设备的随机标识符（见<a href="/zh/cookies.html">详情</a>）</td><td>离线显示应用，记住您的偏好、自选和选择；管理您的提醒</td><td>所请求服务严格必需的跟踪器，无需同意（法国《信息与自由法》第82条）</td><td>直至您删除；Cookie 选择：6 个月</td></tr>
+          <tr><td>您设备上的本地存储</td><td>最新市场数据和欧元/美元汇率、显示语言、标签页和设置（时间段、排名数量、货币）、自选、模拟账户（模拟交易）及其同步码（如您开启）、显示主题、图表指标、Cookie 选择、安装提示的关闭状态；如您创建提醒，还包括设备的随机标识符（见<a href="/zh/cookies.html">详情</a>）</td><td>离线显示应用，记住您的偏好、自选和选择；管理您的提醒</td><td>所请求服务严格必需的跟踪器，无需同意（法国《信息与自由法》第82条）</td><td>直至您删除；Cookie 选择：6 个月</td></tr>
           <tr><td>TradingView 图表（仅在您接受时）</td><td>IP 地址、设备和浏览器信息、图表交互；TradingView 在您设备上存储的数据</td><td>显示交互式图表；TradingView 表示其还会通过小组件收集分析信息</td><td>您的同意（GDPR 第6(1)(a)条及《信息与自由法》第82条），可随时撤回</td><td>依据 <a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">TradingView 隐私政策</a>；您的选择在设备上保留 6 个月</td></tr>
           <tr><td>价格提醒（仅在您创建时）</td><td>浏览器推送服务分配的通知订阅地址及相关加密密钥；设备随机标识符的指纹（SHA-256）；语言；提醒内容（资产、数值、方向、创建和触发日期、触发时价格）；最后使用日期</td><td>检查价格并向您发送您所设置的提醒通知</td><td>履行您所请求的服务（GDPR 第6(1)(b)条）；发送通知还需您在浏览器中授权，可随时撤销</td><td>有效提醒：直至您删除；已触发提醒：30 天；设备：在您选择“全部删除”时、推送服务报告订阅失效时，或在无有效提醒且 90 天未使用后删除</td></tr>
+          <tr><td>同步模拟账户与排行榜（仅在您开启时）</td><td>同步码的指纹（SHA-256）；模拟账户内容（虚拟资金：余额、持仓、订单、历史、价值曲线）；可选昵称；加入的排行榜群组；收益率（%）和交易次数；用于成交通知的关联设备；更新和最后使用日期</td><td>在您的设备间使用同一账户，即使应用关闭也执行订单、止盈和止损并按您的要求通知您，显示群组排行榜</td><td>履行您所请求的服务（GDPR 第6(1)(b)条）</td><td>直至您删除（“删除在线账户”）或 1 年未使用后；群组：无成员时删除</td></tr>
           <tr><td>与发布者的往来（如您联系发布者）</td><td>联系方式和消息内容</td><td>答复您的请求，包括行使您的权利</td><td>答复请求的正当利益（第6(1)(f)条）；权利请求的法定义务（第6(1)(c)条）</td><td>处理请求所需的时间</td></tr>
           </tbody>
     </table></div>
@@ -42,12 +44,15 @@
     <h2 id="alertes">价格提醒</h2>
     <p>提醒为可选功能：在您创建提醒之前，不会向提醒服务器发送任何数据。创建第一个提醒时，浏览器会请求显示通知的权限，然后为本网站创建专用的订阅地址；该地址、相关加密密钥和您的提醒会被存储，以便服务器检查价格（约每 5 分钟一次）并通知您。</p><p>每个提醒只触发一次：发送通知后即停用。通知送达无法保证（数据源有时延迟，取决于浏览器推送服务）；提醒绝不构成投资建议。</p>
 
+    <h2 id="demo">同步模拟账户与排行榜</h2>
+    <p>同步为可选功能：不开启时，模拟账户仅保存在您的设备上。开启后，您的设备会生成一个<strong>随机密码</strong>；服务器只保存其指纹（SHA-256）及账户内容（虚拟资金）。服务器将约每 5 分钟按与应用相同的规则执行您的订单、止盈和止损，即使应用已关闭；如您要求，还会发送通知（见<a href="#alertes">提醒</a>）。</p><p><strong>任何知道该密码的人都可以查看和修改账户</strong>：请妥善保管。我们不要求任何身份信息；昵称为可选项，您加入的群组成员可以看到昵称、收益率（%）和交易次数：请选择无法识别您身份的昵称。排行榜仅供娱乐。</p><p>您可以在“账户”标签页停止同步（账户仍保留在服务器上，可凭密码找回）或永久删除同步账户。1 年未使用的账户将被自动删除。</p>
+
     <h2>接收方</h2>
-    <ul><li><strong>Vercel Inc.</strong>（托管商），作为发布者的托管处理者。Vercel 也可能根据其<a href="https://vercel.com/legal/privacy-notice" target="_blank" rel="noopener">隐私声明</a>为自身目的处理部分技术数据。</li><li><strong>Supabase Pte. Ltd.</strong>，作为发布者的处理者，用于存储和检查价格提醒（数据存放于欧盟巴黎区域）。见其<a href="https://supabase.com/legal/dpa" target="_blank" rel="noopener">数据处理协议</a>及<a href="https://supabase.com/privacy" target="_blank" rel="noopener">隐私政策</a>。</li><li><strong>您浏览器的推送服务</strong>（例如 Chrome 和 Android 使用 Google，Safari 和 iPhone 使用 Apple，Firefox 使用 Mozilla，Edge 使用 Microsoft），仅在您创建提醒时：负责将通知送达您的设备。通知内容经端到端加密（RFC 8291），推送服务无法读取。</li><li><strong>TradingView</strong>，仅在您接受显示图表时，作为独立的数据控制者（<a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">TradingView 隐私政策</a>）。</li></ul>
+    <ul><li><strong>Vercel Inc.</strong>（托管商），作为发布者的托管处理者。Vercel 也可能根据其<a href="https://vercel.com/legal/privacy-notice" target="_blank" rel="noopener">隐私声明</a>为自身目的处理部分技术数据。</li><li><strong>Supabase Pte. Ltd.</strong>，作为发布者的处理者，用于存储和检查价格提醒及同步模拟账户（数据存放于欧盟巴黎区域）。见其<a href="https://supabase.com/legal/dpa" target="_blank" rel="noopener">数据处理协议</a>及<a href="https://supabase.com/privacy" target="_blank" rel="noopener">隐私政策</a>。</li><li><strong>您浏览器的推送服务</strong>（例如 Chrome 和 Android 使用 Google，Safari 和 iPhone 使用 Apple，Firefox 使用 Mozilla，Edge 使用 Microsoft），仅在您创建提醒时：负责将通知送达您的设备。通知内容经端到端加密（RFC 8291），推送服务无法读取。</li><li><strong>TradingView</strong>，仅在您接受显示图表时，作为独立的数据控制者（<a href="https://www.tradingview.com/privacy-policy/" target="_blank" rel="noopener">TradingView 隐私政策</a>）。</li></ul>
     <p>任何数据都不会出于商业或广告目的出售、出租或转让。</p>
 
     <h2>向欧盟以外地区的传输</h2>
-    <ul><li><strong>Vercel Inc.</strong> 位于美国，声明已加入欧盟—美国数据隐私框架（EU-U.S. Data Privacy Framework），该框架获欧盟委员会2023年7月10日充分性决定认可（GDPR 第45条）。</li><li><strong>TradingView</strong>（如您接受）主要位于美国；其传输所适用的保障措施见其隐私政策。</li><li><strong>Supabase Pte. Ltd.</strong> 位于新加坡。提醒数据存放于欧盟；对于向欧盟以外的传输，其<a href="https://supabase.com/legal/dpa" target="_blank" rel="noopener">数据处理协议</a>规定适用欧盟委员会标准合同条款（第(EU) 2021/914号实施决定，GDPR 第46条）。</li><li><strong>浏览器推送服务</strong>可能位于欧盟以外；它们只接收订阅地址和加密通知。</li></ul>
+    <ul><li><strong>Vercel Inc.</strong> 位于美国，声明已加入欧盟—美国数据隐私框架（EU-U.S. Data Privacy Framework），该框架获欧盟委员会2023年7月10日充分性决定认可（GDPR 第45条）。</li><li><strong>TradingView</strong>（如您接受）主要位于美国；其传输所适用的保障措施见其隐私政策。</li><li><strong>Supabase Pte. Ltd.</strong> 位于新加坡。提醒和同步账户数据存放于欧盟；对于向欧盟以外的传输，其<a href="https://supabase.com/legal/dpa" target="_blank" rel="noopener">数据处理协议</a>规定适用欧盟委员会标准合同条款（第(EU) 2021/914号实施决定，GDPR 第46条）。</li><li><strong>浏览器推送服务</strong>可能位于欧盟以外；它们只接收订阅地址和加密通知。</li></ul>
 
     <h2>您的权利</h2>
     <p>您享有访问、更正、删除、限制处理、反对处理和数据可携带的权利，以及随时撤回同意、并就您身后的数据处置作出指示的权利（GDPR 第15至22条，《信息与自由法》第85条）。</p><p>如需行使上述权利，请向本网站发布者提出请求。我们将在一个月内答复，必要时可延长两个月（GDPR 第12条）。由于本网站不管理任何账户，发布者通常不持有可识别您身份的数据（GDPR 第11条）。</p><p>对于价格提醒，您可随时在“自选”标签页中自行查看和删除，或通过“全部删除并关闭通知”按钮删除全部内容（提醒和设备）。您也可以在浏览器设置中撤销通知权限。</p><p>您可在<a href="/zh/cookies.html">Cookie 设置</a>页面一键撤回对 TradingView 的同意。存储在您设备上的数据可通过浏览器设置（网站数据）删除。</p>
@@ -57,7 +62,7 @@
     <dl><dt>地址</dt><dd>CNIL, 3 Place de Fontenoy, TSA 80715, 75334 Paris Cedex 07, France</dd><dt>电话</dt><dd>+33 1 53 73 22 22</dd><dt>在线投诉</dt><dd><a href="https://www.cnil.fr/fr/adresser-une-plainte" target="_blank" rel="noopener">cnil.fr/fr/adresser-une-plainte</a></dd></dl>
 
     <h2>安全</h2>
-    <p>本网站仅通过 HTTPS 提供服务（已启用 HSTS），并采用严格的内容安全策略（CSP）。网站没有账户或密码。除价格提醒中转接口外，网站的 API 均为只读，且无法被第三方网站调用。对于提醒，设备通过随机标识符识别，服务器只保存其指纹；通知经端到端加密；服务密钥保存在加密保险库（Supabase Vault）中。</p>
+    <p>本网站仅通过 HTTPS 提供服务（已启用 HSTS），并采用严格的内容安全策略（CSP）。网站没有账户或密码。除价格提醒和同步模拟账户中转接口外，网站的 API 均为只读，且无法被第三方网站调用。对于提醒，设备通过随机标识符识别，服务器只保存其指纹；通知经端到端加密；服务密钥保存在加密保险库（Supabase Vault）中。</p>
 
     <h2>未成年人</h2>
     <p>本网站不收集任何需要父母同意的数据。需征得同意的 TradingView 图表面向15岁及以上人士，或经监护人授权者（《信息与自由法》第45条）。</p>

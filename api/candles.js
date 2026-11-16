@@ -27,7 +27,8 @@ async function yahoo(symbol, tf) {
       let candles = [];
       for (let i = 0; i < ts.length; i++) {
         const o = num(q.open[i]), h = num(q.high[i]), l = num(q.low[i]), c = num(q.close[i]);
-        if (o != null && h != null && l != null && c != null) candles.push([ts[i], r8(o), r8(h), r8(l), r8(c)]);
+        const v = num(q.volume?.[i]);
+        if (o != null && h != null && l != null && c != null) candles.push([ts[i], r8(o), r8(h), r8(l), r8(c), v ?? null]);
       }
       if (tf.group) candles = group(candles, tf.group * 3600);
       return { candles: candles.slice(-MAX), currency: r.meta?.currency || null, last: num(r.meta?.regularMarketPrice), source: 'Yahoo Finance' };
@@ -41,11 +42,11 @@ async function yahoo(symbol, tf) {
 /** Regroupe des bougies horaires en bougies de `sec` secondes (alignées sur l'heure UTC). */
 function group(candles, sec) {
   const out = [];
-  for (const [t, o, h, l, c] of candles) {
+  for (const [t, o, h, l, c, v] of candles) {
     const k = Math.floor(t / sec) * sec;
     const last = out[out.length - 1];
-    if (last && last[0] === k) { last[2] = Math.max(last[2], h); last[3] = Math.min(last[3], l); last[4] = c; }
-    else out.push([k, o, h, l, c]);
+    if (last && last[0] === k) { last[2] = Math.max(last[2], h); last[3] = Math.min(last[3], l); last[4] = c; last[5] = v == null || last[5] == null ? null : last[5] + v; }
+    else out.push([k, o, h, l, c, v ?? null]);
   }
   return out;
 }
@@ -64,7 +65,7 @@ export async function GET(request) {
   const kind = q.get('kind'), tfKey = q.get('tf') || '15m', symbol = q.get('symbol') || '', id = q.get('id') || '';
   const ref = Number(q.get('ref'));
   const tf = TF[tfKey];
-  if (!tf || !['c', 's', 'i'].includes(kind) || !/^[A-Za-z0-9.^=&-]{1,20}$/.test(symbol) || (id && !/^[a-z0-9-]{1,64}$/.test(id))) {
+  if (!tf || !['c', 's', 'i', 'm'].includes(kind) || !/^[A-Za-z0-9.^=&-]{1,20}$/.test(symbol) || (id && !/^[a-z0-9-]{1,64}$/.test(id))) {
     return json({ error: 'paramètres invalides' }, 400, 0);
   }
   try {

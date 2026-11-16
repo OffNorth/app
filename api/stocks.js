@@ -56,7 +56,7 @@ const TV_EXCHANGES = {
   LSE: ['LSE', null], JPX: ['TSE', null], TYO: ['TSE', null], NSI: ['NSE', null],
 };
 
-function tvFor(exchange, symbol) {
+export function tvFor(exchange, symbol) {
   const map = TV_EXCHANGES[exchange];
   if (!map) return { tv: null };
   const [ex, interval] = map;
@@ -67,7 +67,7 @@ function tvFor(exchange, symbol) {
 }
 
 /** Libellé court pour la tuile : ticker US, sinon nom court (initiales si trop long). */
-function labelOf(symbol, name) {
+export function labelOf(symbol, name) {
   if (!symbol.includes('.')) return symbol.replace(/-/g, '.');
   const n = name.replace(/\s*\(.*?\)\s*/g, ' ').trim();
   if (n.length <= 12) return n;
@@ -75,7 +75,7 @@ function labelOf(symbol, name) {
   return words.length > 1 ? words.map((w) => w[0]).join('').toUpperCase() : n.slice(0, 12);
 }
 
-const logoURL = (symbol, size) => `https://companiesmarketcap.com/img/company-logos/${size}/${encodeURIComponent(symbol)}.webp`;
+export const logoURL = (symbol, size) => `https://companiesmarketcap.com/img/company-logos/${size}/${encodeURIComponent(symbol)}.webp`;
 
 async function load(n) {
   const { rows: all } = await cached('stocks-ranking', RANK_TTL, fetchRanking);

@@ -6,6 +6,65 @@ const LIB = '/vendor/lightweight-charts/lightweight-charts.standalone.production
 export const TIMEFRAMES = ['5m', '15m', '1h', '4h', '1d'];
 const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
 const C = { up: '#22c55e', down: '#f05252', entry: '#7cc4ff', liq: '#f5b84a', order: '#b0b8c4', tap: '#e8eef4' };
+const C_LIGHT = { ...C, entry: '#0a66c2', liq: '#a15c07', order: '#566372', tap: '#101820' };
+const lines = () => (document.documentElement.dataset.theme === 'light' ? C_LIGHT : C);
+export const INDICATORS = ['ma20', 'ma50', 'vol', 'rsi', 'macd'];
+/** Couleurs du graphique selon le thème (variables CSS de la page). */
+function themeOpts() {
+  const v = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const light = document.documentElement.dataset.theme === 'light';
+  const grid = light ? '#e6ebf1' : '#1b2430';
+  return {
+    layout: { background: { type: 'solid', color: v('--surface') || '#121921' }, textColor: v('--muted') || '#8d9aab' },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: v('--border') || '#232d39' },
+    timeScale: { borderColor: v('--border') || '#232d39' },
+  };
+}
+const IC = { ma20: '#f5b84a', ma50: '#b48cff', rsi: '#7cc4ff', macd: '#7cc4ff', signal: '#f5b84a' };
+
+/* ---------- Indicateurs (calculés sur les clôtures) ---------- */
+function sma(bars, n) {
+  const out = []; let sum = 0;
+  bars.forEach((b, i) => { sum += b.close; if (i >= n) sum -= bars[i - n].close; if (i >= n - 1) out.push({ time: b.time, value: sum / n }); });
+  return out;
+}
+function emaArr(values, n) {
+  const k = 2 / (n + 1); const out = []; let prev = null;
+  values.forEach((v, i) => {
+    if (i < n - 1) { out.push(null); return; }
+    if (prev === null) prev = values.slice(0, n).reduce((a, b) => a + b, 0) / n; else prev = v * k + prev * (1 - k);
+    out.push(prev);
+  });
+  return out;
+}
+/** RSI de Wilder sur 14 périodes. */
+function rsi(bars, n = 14) {
+  const out = []; let g = 0, l = 0;
+  for (let i = 1; i < bars.length; i++) {
+    const d = bars[i].close - bars[i - 1].close;
+    const up = Math.max(d, 0), dn = Math.max(-d, 0);
+    if (i <= n) { g += up; l += dn; if (i === n) { g /= n; l /= n; out.push({ time: bars[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l) }); } continue; }
+    g = (g * (n - 1) + up) / n; l = (l * (n - 1) + dn) / n;
+    out.push({ time: bars[i].time, value: l === 0 ? 100 : 100 - 100 / (1 + g / l) });
+  }
+  return out;
+}
+/** MACD(12, 26, 9) : ligne, signal, histogramme. */
+function macd(bars) {
+  const closes = bars.map((b) => b.close);
+  const e12 = emaArr(closes, 12), e26 = emaArr(closes, 26);
+  const line = closes.map((_, i) => (e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null));
+  const start = line.findIndex((v) => v != null);
+  const sig = start < 0 ? [] : emaArr(line.slice(start), 9);
+  const out = { line: [], signal: [], hist: [] };
+  for (let i = start; i >= 0 && i < bars.length; i++) {
+    const t = bars[i].time, m = line[i], sgl = sig[i - start];
+    out.line.push({ time: t, value: m });
+    if (sgl != null) { out.signal.push({ time: t, value: sgl }); out.hist.push({ time: t, value: m - sgl, color: m - sgl >= 0 ? 'rgba(34,197,94,.55)' : 'rgba(240,82,82,.55)' }); }
+  }
+  return out;
+}
 
 let libPromise = null;
 function loadLib() {
@@ -43,6 +102,8 @@ export function createTradeChart(ctx) {
       <div class="tc-bar"><div class="seg" role="group" aria-label="${esc(t('tc.tf'))}">${TIMEFRAMES.map((x) =>
         `<button type="button" data-tf="${x}" aria-pressed="${x === tf}">${t(`tc.tf.${x}`)}</button>`).join('')}</div>
         <span class="tc-src" id="tc-src"></span></div>
+      <div class="tc-ind" role="group" aria-label="${esc(t('tc.ind'))}">${INDICATORS.map((k) =>
+        `<button type="button" data-ind="${k}" aria-pressed="${ctx.getInd().includes(k)}">${t(`tc.ind.${k}`)}</button>`).join('')}</div>
       <div class="tc-chart" id="tc-chart"><div class="msg">${t('chartLoading')}</div></div>
       <div class="tc-pop" id="tc-pop" hidden></div>
       <p class="tc-hint">${t('tc.hint')}</p>
@@ -52,6 +113,13 @@ export function createTradeChart(ctx) {
     cur = { asset, el, tf, lines: [], tap: null };
     el.querySelectorAll('[data-tf]').forEach((b) => b.addEventListener('click', () => { ctx.setTf(b.dataset.tf); mount(el, asset); }));
     el.querySelectorAll('[data-side]').forEach((b) => b.addEventListener('click', () => ctx.openTicket(asset, { side: b.dataset.side })));
+    el.querySelectorAll('[data-ind]').forEach((b) => b.addEventListener('click', () => {
+      const on = new Set(ctx.getInd());
+      if (on.has(b.dataset.ind)) on.delete(b.dataset.ind); else on.add(b.dataset.ind);
+      ctx.setInd([...on]);
+      b.setAttribute('aria-pressed', String(on.has(b.dataset.ind)));
+      buildIndicators();
+    }));
 
     const box = el.querySelector('#tc-chart');
     let LWC, data;
@@ -66,12 +134,13 @@ export function createTradeChart(ctx) {
 
     const lastClose = data.candles[data.candles.length - 1][4];
     const prec = lastClose >= 1000 ? 2 : lastClose >= 10 ? 2 : lastClose >= 1 ? 3 : lastClose >= 0.01 ? 5 : 8;
+    const th = themeOpts();
     const chart = LWC.createChart(box, {
       autoSize: true,
-      layout: { background: { type: 'solid', color: '#121921' }, textColor: '#8d9aab', fontFamily: getComputedStyle(document.body).fontFamily, attributionLogo: true },
-      grid: { vertLines: { color: '#1b2430' }, horzLines: { color: '#1b2430' } },
-      rightPriceScale: { borderColor: '#232d39' },
-      timeScale: { borderColor: '#232d39', timeVisible: tf !== '1d', secondsVisible: false, rightOffset: 6 },
+      layout: { ...th.layout, fontFamily: getComputedStyle(document.body).fontFamily, attributionLogo: true },
+      grid: th.grid,
+      rightPriceScale: th.rightPriceScale,
+      timeScale: { ...th.timeScale, timeVisible: tf !== '1d', secondsVisible: false, rightOffset: 6 },
       crosshair: { mode: LWC.CrosshairMode.Normal },
       localization: { locale: ctx.locale(), priceFormatter: (p) => ctx.num(p, prec) },
     });
@@ -79,10 +148,11 @@ export function createTradeChart(ctx) {
       upColor: C.up, downColor: C.down, borderVisible: false, wickUpColor: C.up, wickDownColor: C.down,
       priceFormat: { type: 'price', precision: prec, minMove: 10 ** -prec },
     });
-    const bars = data.candles.map(([ts, o, h, l, c]) => ({ time: local(ts), open: o, high: h, low: l, close: c }));
+    const bars = data.candles.map(([ts, o, h, l, c, v]) => ({ time: local(ts), open: o, high: h, low: l, close: c, volume: v ?? null }));
     series.setData(bars);
     chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, bars.length - 90), to: bars.length + 5 });
-    Object.assign(cur, { chart, series, LWC, bars, prec });
+    Object.assign(cur, { chart, series, LWC, bars, prec, ind: {} });
+    buildIndicators();
     el.querySelector('#tc-src').textContent = t('tc.src', { s: data.source });
     applyLive();
     drawLines();
@@ -109,15 +179,56 @@ export function createTradeChart(ctx) {
       const data = await ctx.fetchCandles(cur.asset, cur.tf);
       if (my !== token || !cur?.series || !data?.candles?.length) return;
       const lastT = cur.bars[cur.bars.length - 1]?.time ?? 0;
-      for (const [ts, o, h, l, c] of data.candles) {
-        const bar = { time: local(ts), open: o, high: h, low: l, close: c };
+      for (const [ts, o, h, l, c, v] of data.candles) {
+        const bar = { time: local(ts), open: o, high: h, low: l, close: c, volume: v ?? null };
         if (bar.time < lastT) continue;
         if (bar.time === lastT) cur.bars[cur.bars.length - 1] = bar; else cur.bars.push(bar);
         cur.series.update(bar);
       }
     } catch { /* on garde l'affichage actuel */ }
     applyLive();
+    updateIndicators();
     drawLines();
+  }
+
+  /** (Re)crée les séries d'indicateurs choisis : moyennes et volumes sur le graphique, RSI et MACD dans des panneaux dessous. */
+  function buildIndicators() {
+    if (!cur?.chart) return;
+    const { chart, LWC } = cur;
+    for (const s of Object.values(cur.ind)) { try { chart.removeSeries(s); } catch { /* déjà retirée */ } }
+    cur.ind = {};
+    const on = new Set(ctx.getInd());
+    const line = (color, pane = 0, extra = {}) => chart.addSeries(LWC.LineSeries, { color, lineWidth: 1.5, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...extra }, pane);
+    if (on.has('ma20')) cur.ind.ma20 = line(IC.ma20);
+    if (on.has('ma50')) cur.ind.ma50 = line(IC.ma50);
+    if (on.has('vol') && cur.bars.some((b) => b.volume != null)) {
+      cur.ind.vol = chart.addSeries(LWC.HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'vol', priceLineVisible: false, lastValueVisible: false }, 0);
+      chart.priceScale('vol', 0).applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    }
+    let pane = 1;
+    if (on.has('rsi')) {
+      cur.ind.rsi = line(IC.rsi, pane, { lastValueVisible: true, priceFormat: { type: 'price', precision: 1, minMove: 0.1 } });
+      cur.ind.rsi.createPriceLine({ price: 70, color: 'rgba(240,82,82,.6)', lineStyle: LWC.LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' });
+      cur.ind.rsi.createPriceLine({ price: 30, color: 'rgba(34,197,94,.6)', lineStyle: LWC.LineStyle.Dashed, lineWidth: 1, axisLabelVisible: false, title: '' });
+      pane++;
+    }
+    if (on.has('macd')) {
+      const pf = { type: 'price', precision: cur.prec, minMove: 10 ** -cur.prec };
+      cur.ind.hist = chart.addSeries(LWC.HistogramSeries, { priceLineVisible: false, lastValueVisible: false, priceFormat: pf }, pane);
+      cur.ind.macd = line(IC.macd, pane, { priceFormat: pf });
+      cur.ind.signal = line(IC.signal, pane, { priceFormat: pf });
+    }
+    try { chart.panes().forEach((p, i) => { if (i > 0) p.setHeight(80); }); } catch { /* ancienne version */ }
+    updateIndicators();
+  }
+  function updateIndicators() {
+    if (!cur?.chart) return;
+    const { ind, bars } = cur;
+    if (ind.ma20) ind.ma20.setData(sma(bars, 20));
+    if (ind.ma50) ind.ma50.setData(sma(bars, 50));
+    if (ind.vol) ind.vol.setData(bars.filter((b) => b.volume != null).map((b) => ({ time: b.time, value: b.volume, color: b.close >= b.open ? 'rgba(34,197,94,.35)' : 'rgba(240,82,82,.35)' })));
+    if (ind.rsi) ind.rsi.setData(rsi(bars));
+    if (ind.macd) { const m = macd(bars); ind.macd.setData(m.line); ind.signal.setData(m.signal); ind.hist.setData(m.hist); }
   }
 
   /* ---------- Lignes : entrée, TP, SL, liquidation, ordres ---------- */
@@ -138,16 +249,16 @@ export function createTradeChart(ctx) {
       const d = p.side === 'long' ? 1 : -1;
       const fx = ctx.paper.fxOf(p, q);
       const pnlAt = (px) => Math.max(-p.margin, (px - p.entry) * p.qty * d * fx); // en dollars
-      add(p.entry, C.entry, S.Solid, 2, `${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}× ${isNum(q.price) ? ctx.signed(pnlAt(q.price)) : ''}`, { type: 'entry', id: p.id });
+      add(p.entry, lines().entry, S.Solid, 2, `${p.side === 'long' ? 'LONG' : 'SHORT'} ${p.lev}× ${isNum(q.price) ? ctx.signed(pnlAt(q.price)) : ''}`, { type: 'entry', id: p.id });
       if (p.tp != null) add(p.tp, C.up, S.Dashed, 2, `TP ${ctx.signed(pnlAt(p.tp))}`, { type: 'tp', id: p.id });
       if (p.sl != null) add(p.sl, C.down, S.Dashed, 2, `SL ${ctx.signed(pnlAt(p.sl))}`, { type: 'sl', id: p.id });
       const liq = ctx.paper.liqOf(p, fx);
-      if (liq != null) add(liq, C.liq, S.Dotted, 1, t('pt.liqShort'), { type: 'liq', id: p.id });
+      if (liq != null) add(liq, lines().liq, S.Dotted, 1, t('pt.liqShort'), { type: 'liq', id: p.id });
     }
     for (const o of orders) {
-      add(o.price, C.order, S.LargeDashed, 1, `${t(o.side === 'long' ? 'pt.long' : 'pt.short')} ${t(`pt.${o.type}`).toLowerCase()} ${ctx.qty(o.qty)}`, { type: 'order', id: o.id });
+      add(o.price, lines().order, S.LargeDashed, 1, `${t(o.side === 'long' ? 'pt.long' : 'pt.short')} ${t(`pt.${o.type}`).toLowerCase()} ${ctx.qty(o.qty)}`, { type: 'order', id: o.id });
     }
-    if (cur.tap != null) add(cur.tap, C.tap, S.SparseDotted, 1, '', { type: 'tap' });
+    if (cur.tap != null) add(cur.tap, lines().tap, S.SparseDotted, 1, '', { type: 'tap' });
   }
 
   /* ---------- Interactions : glisser TP / SL, toucher pour agir à un prix ---------- */
@@ -249,6 +360,7 @@ export function createTradeChart(ctx) {
     mount,
     unmount,
     onData,
+    theme: () => { if (cur?.chart) { cur.chart.applyOptions(themeOpts()); drawLines(); } },
     refresh: () => { applyLive(); drawLines(); },
   };
 }
