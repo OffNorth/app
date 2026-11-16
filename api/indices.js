@@ -12,6 +12,7 @@ export const INDICES = [
   // Amériques
   { id: 'spx', region: 'ameriques', country: 'États-Unis', name: 'S&P 500', yahoo: '^GSPC', stooq: '^spx', logo: 'indices/s-and-p-500' },
   { id: 'ixic', region: 'ameriques', country: 'États-Unis', name: 'Nasdaq Composite', yahoo: '^IXIC', stooq: '^ndq', logo: 'indices/nasdaq-composite' },
+  { id: 'ndx', region: 'ameriques', country: 'États-Unis', name: 'Nasdaq 100', yahoo: '^NDX', logo: 'indices/nasdaq-100' },
   { id: 'dji', region: 'ameriques', country: 'États-Unis', name: 'Dow Jones', yahoo: '^DJI', stooq: '^dji', logo: 'indices/dow-30' },
   { id: 'rut', region: 'ameriques', country: 'États-Unis', name: 'Russell 2000', yahoo: '^RUT', logo: 'indices/russell-2000' },
   { id: 'tsx', region: 'ameriques', country: 'Canada', name: 'S&P/TSX Composite', yahoo: '^GSPTSE', logo: 'indices/s-and-p-tsx-composite-index' },

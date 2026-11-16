@@ -48,6 +48,7 @@ body {
   font-family: var(--font);
   font-variant-numeric: tabular-nums;
   min-height: 100dvh;
+  overflow-x: clip; /* filet de sécurité : jamais de défilement horizontal de la page */
   -webkit-tap-highlight-color: transparent;
   overscroll-behavior-y: contain;
 }
@@ -337,8 +338,9 @@ main {
 .chart-frame iframe { width: 100%; height: 100%; border: 0; display: block; }
 .chart-mode { flex: none; }
 .chart-mode button { min-height: 36px; }
-.chart-frame.trade { display: block; overflow: visible; border: 0; background: transparent; }
-.tc { position: relative; height: 100%; display: flex; flex-direction: column; gap: 8px; }
+/* place-items: normal : en bloc, « center » réduirait .tc à la largeur de son contenu (Chrome récent) et ferait déborder l'écran. */
+.chart-frame.trade { display: block; place-items: normal; overflow: visible; border: 0; background: transparent; }
+.tc { position: relative; width: 100%; min-width: 0; height: 100%; display: flex; flex-direction: column; gap: 8px; }
 .tc-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .tc-bar .seg { flex: none; }
 .tc-bar .seg button { min-width: 0; padding: 0 8px; white-space: nowrap; font-size: 13px; }
@@ -552,7 +554,9 @@ mark.todo { background: #f5b84a; color: #1a1205; padding: 1px 5px; border-radius
 .status.on { color: var(--up); } .status.off { color: var(--down); }
 
 /* Sélecteur de langue */
-.top-actions { display: flex; align-items: center; gap: 8px; }
+/* Avec un grand texte (zoom), les boutons passent à la ligne au lieu de faire déborder l'écran. */
+.top-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; }
+.brand { min-width: 0; }
 .lang-select {
   height: 44px; padding: 0 10px; border-radius: 22px; border: 1px solid var(--border);
   background: var(--surface-2); color: var(--text); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;

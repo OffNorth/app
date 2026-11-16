@@ -817,7 +817,7 @@ export function country(name) {
 
 // Noms usuels des indices en chinois (les noms anglais/français servent pour fr et en).
 const INDEX_ZH = {
-  spx: '标普500', ixic: '纳斯达克综合指数', dji: '道琼斯工业指数', rut: '罗素2000', tsx: '多伦多综合指数', ibov: '巴西IBOVESPA指数',
+  spx: '标普500', ixic: '纳斯达克综合指数', ndx: '纳斯达克100指数', dji: '道琼斯工业指数', rut: '罗素2000', tsx: '多伦多综合指数', ibov: '巴西IBOVESPA指数',
   ipc: '墨西哥IPC指数', merval: '阿根廷MERVAL指数', sx5e: '欧洲斯托克50', cac: '法国CAC 40', dax: '德国DAX', ftse: '英国富时100',
   ibex: '西班牙IBEX 35', ftsemib: '意大利富时MIB', aex: '荷兰AEX', smi: '瑞士SMI', bel20: '比利时BEL 20', psi: '葡萄牙PSI',
   atx: '奥地利ATX', omx: '瑞典OMX 30', osebx: '奥斯陆基准指数', wig20: '波兰WIG20', xu100: '土耳其BIST 100',

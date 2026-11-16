@@ -8,8 +8,8 @@ import { rsi, sma, volumeRatio } from './indicators.js';
 import { createPortfolio } from './portfolio.js';
 import { GLOSSARY } from './glossary.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 19; // à garder égal à VERSION ('v19') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (18/11/2026)`;
+const APP_BUILD = 20; // à garder égal à VERSION ('v20') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
@@ -1028,6 +1028,7 @@ const INDEX_TV = {
   // Amériques
   spx: { tv: 'CAPITALCOM:US500', link: 'SP:SPX', note: CFD('S&P 500') },
   ixic: { tv: 'NASDAQ:ONEQ', link: 'NASDAQ:IXIC', note: ETF('etf.ixic') },
+  ndx: { tv: 'CAPITALCOM:US100', link: 'NASDAQ:NDX', note: CFD('Nasdaq 100') },
   dji: { tv: 'CAPITALCOM:US30', link: 'DJ:DJI', note: CFD('Dow Jones') },
   rut: { tv: 'CAPITALCOM:RTY', link: 'TVC:RUT', note: CFD('Russell 2000') },
   tsx: { tv: 'TSX:TSX' },
