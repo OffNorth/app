@@ -1,14 +1,14 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
 // Réseau d'abord pour tout (pages, scripts, styles, API) : la version en ligne est toujours celle affichée ;
 // le cache ne sert qu'hors connexion. Les logos restent en cache d'abord (ils ne changent pas).
-const VERSION = 'v23'; // à garder égal à APP_BUILD dans assets/app.js
+const VERSION = 'v24'; // à garder égal à APP_BUILD dans assets/app.js
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
 const ASSETS = [
   '/', '/index.html', '/manifest.webmanifest',
   '/assets/styles.css', '/assets/theme.js', '/assets/app.js', '/assets/consent.js', '/assets/i18n.js', '/assets/snapshot.js', '/assets/paper.js', '/assets/paper-engine.js', '/assets/indicators.js', '/assets/portfolio.js', '/assets/glossary.js', '/assets/analysis.js', '/assets/comfort.js', '/assets/agents.js', '/assets/formation.js',
-  '/assets/tradechart.js', '/assets/legal.js', '/assets/cookies-page.js',
+  '/assets/tradechart.js', '/assets/legal.js', '/assets/cookies-page.js', '/bot.html', '/assets/bot.js', '/assets/bot.css',
   '/vendor/lightweight-charts/lightweight-charts.standalone.production.js',
   '/mentions-legales.html', '/confidentialite.html', '/cookies.html', '/cgu.html',
   '/formation.html', '/en/formation.html', '/zh/formation.html',

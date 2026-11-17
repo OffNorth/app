@@ -11,8 +11,8 @@ import { createAnalysis } from './analysis.js';
 import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 23; // à garder égal à VERSION ('v23') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
+const APP_BUILD = 24; // à garder égal à VERSION ('v24') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (18/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
@@ -2186,6 +2186,7 @@ function renderHome() {
       <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
         <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button>
         <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button>
+        <a class="btn" href="/bot.html">${t('home.bot')}</a>
         <button type="button" class="btn" data-tool="calc">${t('calc.title')}</button>
         <a class="btn" href="${legalPrefix()}/formation.html">${t('fm.title')}</a>
         <button type="button" class="btn" data-tool="tour">${t('tour.replay')}</button></div>
