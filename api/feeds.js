@@ -14,9 +14,8 @@ import { GET as rates } from './_rates.js';
 import { GET as events } from './_events.js';
 import { GET as btc } from './_btc.js';
 import { GET as agents } from './_agents.js';
-import { GET as bot } from './_bot.js';
 
-export const ROUTES = { news, sentiment, cryptocats, econ, dividends, calendar, macro, search, quote, rates, events, btc, agents, bot };
+export const ROUTES = { news, sentiment, cryptocats, econ, dividends, calendar, macro, search, quote, rates, events, btc, agents };
 
 export function GET(request) {
   const r = new URL(request.url).searchParams.get('r');

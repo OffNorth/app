@@ -13,8 +13,7 @@ const PORT = Number(process.env.PORT) || 5173;
 // Applique les en-têtes de vercel.json en local (CSP, etc.), pour tester comme en production.
 const VERCEL = JSON.parse(await readFile(join(ROOT, 'vercel.json'), 'utf8'));
 const HEADER_RULES = (VERCEL.headers || []).map((r) => ({
-  // Motif avec expression régulière (ex. « /((?!bot\\.html$).*) ») : utilisé tel quel ; sinon chemin simple.
-  re: /\(\?/.test(r.source) ? new RegExp(`^${r.source}$`) : new RegExp(`^${r.source.replace(/\./g, '\\.').replace('(.*)', '.*')}$`),
+  re: new RegExp(`^${r.source.replace(/\./g, '\\.').replace('(.*)', '.*')}$`),
   headers: Object.fromEntries(r.headers.map((h) => [h.key, h.value])),
 }));
 const extraHeaders = (path) => Object.assign({}, ...HEADER_RULES.filter((r) => r.re.test(path)).map((r) => r.headers));
