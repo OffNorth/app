@@ -16,3 +16,13 @@ Aucun secret n'est dans ce dépôt. Ils sont tous dans **Supabase Vault** :
 
 La fonction lit la base avec `SUPABASE_DB_URL`, variable fournie automatiquement par Supabase.
 Côté Vercel, `ALERTS_FUNCTION_URL` (facultatif) remplace l'adresse par défaut de la fonction.
+
+
+## Agents IA (fonction `agents`)
+Cinq agents (Claude, Anthropic) tradent chacun un compte de démonstration (`marches.paper_accounts`, `is_agent = true`, 100 000 $ fictifs).
+- **Tâche planifiée** `marches-agents-tick` (toutes les 5 min, secret `agents_cron_secret` dans Vault) : récupère les lots terminés de l'API Batches d'Anthropic, valide chaque ordre avec `rules.js` (actif connu et cours frais, marge ≤ 20 % du compte, 15 positions au plus, levier ≤ 2× avec stop loss obligatoire, marché fermé → ordre limite ou stop), l'exécute avec `paper-engine.js` (copie conforme de `public/assets/paper-engine.js`, comme pour `alerts`), puis envoie un nouveau lot pour les agents dont c'est l'heure (toutes les 6 h par défaut, colonne `cadence_min`). Les TP, SL et ordres en attente sont exécutés ensuite par la tâche `alerts`.
+- **Instantané** (`snapshot.js`) : données réelles du site (cryptos, actions, indices, matières et devises, taux US, sentiment, agenda, RSI / moyennes mobiles sur bougies journalières), « n/d » pour toute donnée absente.
+- **Modèle** : `claude-opus-5-5` par défaut (colonne `model` de `marches.ai_agents`), effort `medium`, sortie structurée (schéma `DECISION_SCHEMA`). Coût mesuré à chaque décision (`ai_decisions.cost_usd`).
+- **Secrets et interrupteurs de la fonction** (Supabase → Edge Functions → Secrets, jamais dans le code) : `ANTHROPIC_API_KEY` (clé de l'API Anthropic), `AGENTS_ENABLED` (`true` pour activer les envois planifiés ; absent = aucun appel facturé), `AGENTS_MONTHLY_BUDGET_USD` (plafond mensuel, 30 par défaut : au-delà, plus aucun envoi).
+- **Actions** : `board` (public, lecture seule, relayé par `/api/agents`), `tick`, `setup` (crée les agents et leurs comptes), `preview { slug }` (instantané sans appel facturé), `run { force: true }` (envoi immédiat, facturé) — toutes sauf `board` exigent l'en-tête `x-agents-secret`.
+- Migration : `migrations/20261120_ai_agents.sql` (tables `ai_agents`, `ai_decisions`, RLS active, tâche planifiée).

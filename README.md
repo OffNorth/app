@@ -49,6 +49,7 @@ Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 - **Repères sur le graphique de trading** (actions) : détachements de dividende (Yahoo Finance) et publications de résultats (Nasdaq) : `/api/events`.
 - **Calculatrices** (En bref → Outils, et « Selon le risque » dans le ticket) : taille de position selon le % de risque, intérêts composés.
 - **Portefeuille réel** : date d'achat facultative, courbe d'évolution reconstituée sur les clôtures réelles, dividendes reçus estimés.
+- **Agents IA** (Compte → Agents IA) : 5 agents pilotés par Claude (Anthropic) gèrent chacun un compte de démonstration de 100 000 $ fictifs sur tous les marchés de l'app (Tendance, Contrarien, Macro, Crypto, Équilibré). Classement public, positions, courbe de valeur et journal des décisions avec leur explication ; comparaison avec votre compte démo faite sur l'appareil. Décisions générées par une IA, argent fictif, information et pas un conseil financier. Fonctionnement : fonction Supabase `agents` (voir `supabase/README.md`), relais en lecture `/api/agents`.
 - **Rappels du calendrier** (veille, 18 h) et **résumé de la semaine** (samedi, 10 h) par notification ; **bandeau défilant** des favoris ; **visite guidée** au premier lancement ; bandeau et notifications « hors ligne / connexion rétablie ».
 - **Tableau de performances** des favoris : 1 j, 1 sem., 1 mois, depuis le 1er janvier, 1 an.
 - **Tracés** sur le graphique de trading : horizontale, tendance, Fibonacci (mémorisés par actif).
@@ -125,7 +126,7 @@ npm run icons        # régénère les icônes (Node, sans dépendance ; aussi l
 
 ## Déploiement (Vercel, offre Hobby gratuite, sans carte bancaire)
 
-Vercel déploie le dossier `public/` en statique et `api/*.js` en fonctions, sans étape de build. Le plan Hobby limite un déploiement à 12 fonctions : les flux en lecture (`news`, `sentiment`, `cryptocats`, `econ`, `dividends`, `calendar`, `macro`, `search`, `quote`, `rates`, `events`, `btc`) sont des modules `api/_*.js` servis par une seule fonction, `api/feeds.js` ; les réécritures de `vercel.json` gardent leurs adresses `/api/<nom>` (le serveur local `scripts/dev-server.mjs` applique les mêmes). Les fichiers `api/_*.js` ne sont pas des fonctions.
+Vercel déploie le dossier `public/` en statique et `api/*.js` en fonctions, sans étape de build. Le plan Hobby limite un déploiement à 12 fonctions : les flux en lecture (`news`, `sentiment`, `cryptocats`, `econ`, `dividends`, `calendar`, `macro`, `search`, `quote`, `rates`, `events`, `btc`, `agents`) sont des modules `api/_*.js` servis par une seule fonction, `api/feeds.js` ; les réécritures de `vercel.json` gardent leurs adresses `/api/<nom>` (le serveur local `scripts/dev-server.mjs` applique les mêmes). Les fichiers `api/_*.js` ne sont pas des fonctions.
 
 1. Rendez-vous sur https://vercel.com/new et choisissez « Continue with GitHub ».
 2. Importez le dépôt `OffNorth/app`. Laissez *Framework Preset* sur **Other** et ne remplissez ni build command ni output directory.

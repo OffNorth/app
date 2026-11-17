@@ -48,6 +48,10 @@
     {
       "source": "/api/btc",
       "destination": "/api/feeds?r=btc"
+    },
+    {
+      "source": "/api/agents",
+      "destination": "/api/feeds?r=agents"
     }
   ],
   "headers": [

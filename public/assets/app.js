@@ -9,9 +9,10 @@ import { createPortfolio } from './portfolio.js';
 import { GLOSSARY } from './glossary.js';
 import { createAnalysis } from './analysis.js';
 import { createComfort } from './comfort.js';
+import { createAgents } from './agents.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 21; // à garder égal à VERSION ('v21') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
+const APP_BUILD = 22; // à garder égal à VERSION ('v22') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
@@ -30,7 +31,7 @@ const store = {
 
 // Réglages de l'utilisateur (mémorisés sur l'appareil).
 const PREF_DEFAULT = { period: '24h', nCrypto: 25, nStocks: 25, cur: 'USD', region: 'europe', chartMode: 'tv', tcTf: '15m', stocksView: 'companies', cryptoView: 'coins', compteView: 'demo', idxView: 'cards' };
-const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors', 'screener'], cryptoView: ['coins', 'cats'], compteView: ['demo', 'real'], idxView: ['cards', 'perf'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
+const PREF_VALUES = { period: ['1h', '24h', '7d'], nCrypto: [25, 50, 100], nStocks: [25, 50, 100], cur: ['USD', 'EUR'], stocksView: ['companies', 'sectors', 'screener'], cryptoView: ['coins', 'cats'], compteView: ['demo', 'real', 'agents'], idxView: ['cards', 'perf'], region: INDEX_TABS, chartMode: ['tv', 'trade'], tcTf: TIMEFRAMES };
 const prefs = { ...PREF_DEFAULT };
 for (const [k, v] of Object.entries(store.get('prefs') || {})) if (PREF_VALUES[k]?.includes(v)) prefs[k] = v;
 { const r = regionOf(location.hash.slice(1)) || regionOf(store.get('tab')); if (r) prefs.region = r; }
@@ -1719,8 +1720,10 @@ function render() {
   else if (state.tab === 'actions') renderStocks();
   else if (state.tab === 'favoris') renderFavs();
   else if (state.tab === 'compte') {
-    $('#compte-mode').innerHTML = segHTML('compteView', [['demo', t('pf.demo')], ['real', t('pf.real')]], t('pf.mode'));
-    if (prefs.compteView === 'real') portfolio.render($('#paper')); else paper.render($('#paper'));
+    $('#compte-mode').innerHTML = segHTML('compteView', [['demo', t('pf.demo')], ['real', t('pf.real')], ['agents', t('ai.tab')]], t('pf.mode'));
+    if (prefs.compteView === 'real') portfolio.render($('#paper'));
+    else if (prefs.compteView === 'agents') agents.render($('#paper'));
+    else paper.render($('#paper'));
   }
   else {
     for (const r of INDEX_TABS) $(`#grid-${r}`).hidden = r !== prefs.region;
@@ -2171,7 +2174,8 @@ function renderHome() {
     <section class="card home-card"><h2>${t('home.demo')}</h2>
       ${pi ? `<p class="home-demo"><b>${fmtNative(pi.equity, 'USD')}</b> <span class="${signClass(pi.pnlPct)}">${fmtPct(pi.pnlPct)}</span>
         <small>${esc(pi.name)} · ${t('home.demoPos', { p: pi.positions, o: pi.orders })}</small></p>` : `<p class="mc-note">${t('home.demoNone')}</p>`}
-      <button type="button" class="btn btn-sm" data-go="compte">${t(pi ? 'home.openDemo' : 'pt.create')}</button></section>
+      <button type="button" class="btn btn-sm" data-go="compte">${t(pi ? 'home.openDemo' : 'pt.create')}</button>
+      ${agents.homeHTML()}<button type="button" class="btn btn-sm" data-go-agents>${t('ai.see')}</button></section>
     <section class="card home-card"><h2>${t('tab.favoris')}</h2>${favRows ? `<ol class="mv-list">${favRows}</ol>` : `<p class="mc-note">${t('fav.empty')}</p>`}</section>
     <section class="card home-card"><h2>${t('home.tools')}</h2>
       <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
@@ -2196,6 +2200,7 @@ function renderHome() {
     else if (tl?.dataset.tool === 'calc') analysis.openCalc();
     else if (tl?.dataset.tool === 'tour') comfort.startTour();
     if (e.target.closest('[data-go-rates]')) { prefs.region = 'taux'; store.set('prefs', prefs); setTab('indices'); return; }
+    if (e.target.closest('[data-go-agents]')) { prefs.compteView = 'agents'; store.set('prefs', prefs); if (state.tab === 'compte') render(); else setTab('compte'); return; }
     const ts = e.target.closest('[data-ts]'); if (ts) setTextScale(Number(ts.dataset.ts));
   };
   bindSummary(box);
@@ -2203,6 +2208,7 @@ function renderHome() {
   bindNotif(box);
   box.querySelector('[data-ticker]')?.addEventListener('change', (e) => comfort.setTicker(e.target.checked));
   analysis.loadRates(() => { if (state.tab === 'accueil') renderHome(); });
+  agents.load(() => { if (state.tab === 'accueil') renderHome(); });
 }
 /** Graphique d'une crypto ou d'une entreprise avec son rang et sa part du top affiché (comme depuis la heatmap). */
 function openCryptoRanked(c) {
@@ -2604,6 +2610,19 @@ const analysis = createAnalysis({
   day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
   gloss: (k) => glossBtn(k), parse: parseAmount, native: (v, c) => fmtNative(v, c),
   qty: (v) => (isNum(v) ? qtyNF().format(v) : ND),
+});
+
+/* ---------- Agents IA (comptes de démonstration publics, décisions générées par Claude) ---------- */
+const agents = createAgents({
+  t, esc, isNum, ND, getJSON, usdPer,
+  quote: quoteOf,
+  num: (v) => (isNum(v) ? fmtInput(v) : ND),
+  price: priceIn,
+  money: (v) => fmtNative(v, 'USD'),
+  signed: (v) => (isNum(v) ? `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}${fmtNative(Math.abs(v), 'USD')}` : ND),
+  pct: (v) => fmtPct(v),
+  day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
+  myAccount: () => paper.info(),
 });
 
 /* ---------- Confort : bandeau des favoris, visite guidée, connexion ---------- */
