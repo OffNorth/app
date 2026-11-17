@@ -52,6 +52,14 @@ Elle s'installe sur l'écran d'accueil d'un iPhone ou d'un Android.
 - Bouton rafraîchir, tirer-pour-rafraîchir, rafraîchissement automatique toutes les 60 s quand l'app est visible, balayage gauche/droite entre onglets.
 - Hors ligne : la coquille de l'app et les dernières données restent en cache (service worker + localStorage), avec une bannière qui donne l'heure des données.
 - Une donnée indisponible s'affiche « n/d ». Aucune valeur n'est jamais inventée.
+- **Bot de trading** (`/bot.html`, lien « Bot de trading » dans les outils de l'accueil) : suivi du bot de paper trading
+  du dépôt `OffNorth/idk` (or et Nasdaq 100, argent fictif) — portefeuilles en direct, positions, activité, simulation sur
+  l'historique et catalogue des stratégies. La page s'ouvre aussi **dans Telegram** (mini-app, commande `/app` du bot).
+  Le bot tourne sur un autre hébergeur et sert une API en http : le site la relaie par `/api/bot` (module `api/_bot.js`,
+  servi par `api/feeds.js`), car une page https ne peut pas appeler du http. Variable Vercel **`BOT_API_URL`**
+  (ex. `http://51.75.0.1:25565`, affichée dans la console du bot au démarrage). La clé d'accès éventuelle (`?k=`, `WEB_TOKEN`
+  du bot) est vérifiée par le bot et gardée sur l'appareil (`marches:botKey`). En-têtes propres à cette page dans `vercel.json`
+  (affichage dans Telegram Web et script `telegram-web-app.js` autorisés).
 
 **Mises à jour de l'app installée** : le service worker cherche une nouvelle version à chaque retour au premier plan et toutes les 15 minutes, puis recharge l'app une fois. La version (`APP_VERSION` dans `app.js`, `VERSION` dans `sw.js`) est affichée en bas de page.
 
@@ -112,6 +120,7 @@ npm run icons        # régénère les icônes (Node, sans dépendance ; aussi l
 
 | Nom | Rôle |
 |---|---|
+| `BOT_API_URL` | Adresse de l'API du bot de trading (`http://IP:PORT`), pour la page `/bot.html`. Sans elle, la page affiche « Bot non relié ». |
 | `COINGECKO_API_KEY` | Clé « Demo » CoinGecko gratuite, utile si l'API publique limite le débit. Elle se définit dans Vercel → Project → Settings → Environment Variables, jamais dans le code. |
 
 ## Déploiement (Vercel, offre Hobby gratuite, sans carte bancaire)

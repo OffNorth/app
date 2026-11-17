@@ -36,6 +36,10 @@
     {
       "source": "/api/quote",
       "destination": "/api/feeds?r=quote"
+    },
+    {
+      "source": "/api/bot",
+      "destination": "/api/feeds?r=bot"
     }
   ],
   "headers": [
@@ -62,7 +66,7 @@
       ]
     },
     {
-      "source": "/(.*)",
+      "source": "/((?!bot\\.html$).*)",
       "headers": [
         {
           "key": "X-Content-Type-Options",
@@ -89,6 +93,32 @@
           "value": "same-origin"
         }
       ]
+    },
+    {
+      "source": "/bot.html",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' https://telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; frame-src https://s.tradingview.com https://www.tradingview-widget.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors https://web.telegram.org https://*.telegram.org; upgrade-insecure-requests"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()"
+        }
+      ]
     }
-  ]
+  ],
+  "functions": {
+    "api/feeds.js": {
+      "maxDuration": 60
+    }
+  }
 }

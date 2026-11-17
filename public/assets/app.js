@@ -8,8 +8,8 @@ import { rsi, sma, volumeRatio } from './indicators.js';
 import { createPortfolio } from './portfolio.js';
 import { GLOSSARY } from './glossary.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 20; // à garder égal à VERSION ('v20') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (16/11/2026)`;
+const APP_BUILD = 21; // à garder égal à VERSION ('v21') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
@@ -2152,7 +2152,8 @@ function renderHome() {
     <section class="card home-card"><h2>${t('home.tools')}</h2>
       <div class="home-tools"><button type="button" class="btn" data-tool="search">${t('search.title')}</button>
         <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button>
-        <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button></div>
+        <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button>
+        <a class="btn" href="/bot.html">${t('home.bot')}</a></div>
       <div class="home-summary"><h3>${t('ts.title')}</h3><div class="seg" role="group" aria-label="${esc(t('ts.title'))}">${TEXT_SCALES.map((z) =>
         `<button type="button" data-ts="${z}" aria-pressed="${textScale() === z}">${Math.round(z * 100)} %</button>`).join('')}</div></div>
       ${summaryHTML()}
