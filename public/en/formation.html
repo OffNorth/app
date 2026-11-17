@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Complete course: Stock market trading, TradingView &amp; NAS100 — Markets</title>
+  <meta name="description" content="A 7-module, 30-day course: market basics, technical analysis, TradingView, NAS100, strategies, risk management, trading plan.">
+  <meta name="theme-color" content="#0b0f14">
+  <meta name="color-scheme" content="dark">
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <script src="/assets/theme.js"></script>
+  <link rel="alternate" hreflang="fr" href="/formation.html">
+  <link rel="alternate" hreflang="en" href="/en/formation.html">
+  <link rel="alternate" hreflang="zh-CN" href="/zh/formation.html">
+</head>
+<body class="doc fm">
+  <header class="topbar"><div class="topbar-row"><a class="back" href="/">← Back to Markets</a><nav class="lang-switch" aria-label="Langue / Language / 语言"><a href="/formation.html" hreflang="fr" data-setlang="fr">FR</a> · <a href="/en/formation.html" hreflang="en" data-setlang="en" aria-current="true">EN</a> · <a href="/zh/formation.html" hreflang="zh-CN" data-setlang="zh">中文</a></nav></div></header>
+  <main id="main">
+    <h1>Complete course: Stock market trading, TradingView &amp; NAS100</h1>
+    <p class="updated">17 November 2026 · @Max</p>
+    <p class="fm-small">Translation of the original French course, provided for convenience. In case of doubt, the French version prevails. Times are Paris time (CET/CEST).</p>
+    <div class="fm-actions">
+      <a class="btn" href="/docs/formation-nas100.pdf" download>Download the PDF (original version, in French)</a>
+    </div>
+
+    <h2>Before you start</h2>
+    <p>This course takes you from zero to a written trading plan, backtested and practised on a demo account on the NAS100, in 7 modules and about 30 days of work. You only move to real money once you have completed module 7.</p>
+    <div class="fm-warn" role="note"><strong>Warning.</strong> This document is educational, it is not investment advice (I am not a financial adviser). Leveraged trading (CFDs, futures) loses money for most retail traders: in Europe, CFD brokers must display this percentage on their website, and it is often around 70 to 80%. Never trade with money you need.</div>
+    <div class="table-wrap" tabindex="0" role="region" aria-label="Module"><table><thead><tr><th scope="col">Module</th><th scope="col">What you will be able to do</th><th scope="col">Suggested time</th></tr></thead><tbody><tr><td>1. Market basics</td><td>Understand what you buy, with which product and which order type</td><td>2 days</td></tr><tr><td>2. Technical analysis</td><td>Read a chart: candles, trend, levels, indicators</td><td>5 days</td></tr><tr><td>3. TradingView</td><td>Set up your workspace, draw, create alerts, replay the market</td><td>3 days</td></tr><tr><td>4. The NAS100</td><td>Know what moves the index and at what time</td><td>2 days</td></tr><tr><td>5. NAS100 strategies</td><td>Apply 3 precise setups with entry, stop and target</td><td>7 days</td></tr><tr><td>6. Risk and psychology</td><td>Calculate your position size and survive losing streaks</td><td>2 days</td></tr><tr><td>7. Plan, journal, backtest</td><td>Write your plan, test 100 trades, track your stats</td><td>9 days</td></tr></tbody></table></div>
+    <p><strong>Prerequisites:</strong> a free TradingView account, a demo account with a broker (CFDs or futures), a spreadsheet for your journal.</p>
+
+    <nav class="card fm-toc" aria-labelledby="fm-toc-h">
+      <h2 id="fm-toc-h">Contents and progress</h2>
+      <div class="fm-progress"><progress max="7" value="0" data-fprog-bar aria-labelledby="fm-prog-txt"></progress><span id="fm-prog-txt" data-fprog>0 / 7 modules completed</span></div>
+      <ol><li><a href="#m1">Stock market basics</a></li><li><a href="#m2">Technical analysis</a></li><li><a href="#m3">TradingView from A to Z</a></li><li><a href="#m4">The NAS100</a></li><li><a href="#m5">Three concrete strategies on the NAS100</a></li><li><a href="#m6">Risk management and psychology</a></li><li><a href="#m7">Trading plan, journal, backtest and 30-day programme</a></li><li><a href="#checklist">Checklist before every trade</a></li><li><a href="#glossaire">Glossary</a></li></ol>
+      <p class="fm-small">Your progress (modules, programme, checklist) is saved on this device only.</p>
+    </nav>
+    
+    <details class="fm-mod" id="m1">
+      <summary><span class="fm-num">1</span><span class="fm-st">Stock market basics</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">Trading means buying or selling an asset to profit from a price move, with a maximum loss decided in advance. Before looking at a chart, you need to know what you are trading, with which product, and what it costs.</p>
+      <h3>1.1 Stocks, indices, markets</h3>
+      <ul><li><strong>Stock:</strong> a share of a company (Apple, Nvidia). Its price moves with earnings, news and supply/demand.</li><li><strong>Index:</strong> a basket of stocks summed up in a single number. The NAS100 (Nasdaq-100) groups about 100 of the largest non-financial companies listed on the Nasdaq.</li><li><strong>Investing vs trading:</strong> an investor holds for months or years; a trader holds for a few minutes (scalping), a few hours (day trading) or a few days (swing).</li><li><strong>Long / short:</strong> long = you buy and win if it goes up. Short = you sell and win if it goes down.</li></ul>
+      <h3>1.2 Products for trading the NAS100</h3>
+      <p>You cannot buy “the index” directly: you go through a product that tracks it.</p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Product"><table><thead><tr><th scope="col">Product</th><th scope="col">Common symbol</th><th scope="col">For whom</th><th scope="col">Points to watch</th></tr></thead><tbody><tr><td>Index CFD</td><td>US100, NAS100, USTEC</td><td>Beginners, small accounts</td><td>Leverage, spread, overnight fees (swap), counterparty = the broker</td></tr><tr><td>Micro E-mini future</td><td>MNQ</td><td>Small accounts that want a real regulated market</td><td>$2 per point, quarterly expiries</td></tr><tr><td>E-mini future</td><td>NQ</td><td>Larger accounts, prop firms</td><td>$20 per point: a 100-point move = $2,000</td></tr><tr><td>ETF</td><td>QQQ, QQQM</td><td>Investing, swing trading without leverage</td><td>No leverage, US market hours only</td></tr></tbody></table></div>
+      <p><strong>Prop firms:</strong> companies that make you pass a paid challenge to trade their capital. They often use the NAS100 as a CFD or NQ/MNQ. Always read their rules (max daily loss, drawdown) before paying.</p>
+      <h3>1.3 The price and what it costs you</h3>
+      <ul><li><strong>Bid / Ask:</strong> bid = price at which you sell, ask = price at which you buy. The difference is the spread, your first cost.</li><li><strong>Slippage:</strong> difference between the price you wanted and the price you got, common during news.</li><li><strong>Commission:</strong> fixed fee per order (futures, some CFD accounts).</li><li><strong>Swap / overnight fees:</strong> cost of keeping a CFD open overnight.</li></ul>
+      <h3>1.4 Order types</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Order"><table><thead><tr><th scope="col">Order</th><th scope="col">What it does</th><th scope="col">When to use it</th></tr></thead><tbody><tr><td>Market</td><td>Executed immediately at the best available price</td><td>Immediate entry, emergency exit</td></tr><tr><td>Limit</td><td>Buys lower or sells higher than the current price</td><td>Enter on a pullback to a level</td></tr><tr><td>Stop</td><td>Becomes a market order when the price reaches a level</td><td>Enter on a breakout, or cut a loss</td></tr><tr><td>Stop Loss (SL)</td><td>Closes your position at a loss at a set price</td><td>On EVERY trade, without exception</td></tr><tr><td>Take Profit (TP)</td><td>Closes your position in profit at a set price</td><td>To lock in the target</td></tr><tr><td>OCO / bracket</td><td>SL + TP attached: if one is hit, the other is cancelled</td><td>Automate the exit</td></tr></tbody></table></div>
+      <div class="fm-app"><b>In Markets:</b><div><a class="btn btn-sm" href="/?go=demo">Practise orders in the demo account (play money)</a><a class="btn btn-sm" href="/?go=gloss:oco">OCO in the glossary</a></div></div>
+      <h3>1.5 Leverage and margin</h3>
+      <p>Leverage lets you control a large position with little money. Example: with 1:20 leverage, €1,000 of margin controls €20,000 of exposure. A 1% move against you = -€200, i.e. 20% of your margin. Leverage multiplies gains AND losses: it is your position size (module 6) that decides your risk, not the displayed leverage.</p>
+      <h3>1.6 Market sessions (Paris time)</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Session"><table><thead><tr><th scope="col">Session</th><th scope="col">Approximate hours</th><th scope="col">Activity on the NAS100</th></tr></thead><tbody><tr><td>Asia</td><td>00:00 – 08:00</td><td>Quiet, small ranges</td></tr><tr><td>Europe (London)</td><td>09:00 – 15:30</td><td>Waking up, first moves</td></tr><tr><td>US data</td><td>14:30 (sometimes 16:00)</td><td>Volatility spikes</td></tr><tr><td>US cash open</td><td>15:30</td><td>Most volatile moment of the day</td></tr><tr><td>US cash close</td><td>22:00</td><td>Last moves, then extended market</td></tr></tbody></table></div>
+      <div class="fm-warn" role="note"><strong>Careful:</strong> the United States and Europe do not change clocks on the same weekend. For 2 to 3 weeks in March and one week in late October/early November, the US open falls at 14:30 Paris time.</div>
+      <div class="fm-ex"><b>Exercise:</b> open a demo account, place a limit order, a stop order and a bracket (SL + TP) on the NAS100. Note the spread shown at 10:00 and then at 15:35.</div>
+      <label class="fm-done"><input type="checkbox" data-fk="m1" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m2">
+      <summary><span class="fm-num">2</span><span class="fm-st">Technical analysis</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">Technical analysis is for one thing only: spotting where the price is likely to react, so you can place an entry, a stop and a target. It does not predict the future, it gives probabilities.</p>
+      <h3>2.1 Japanese candlesticks</h3>
+      <p>Each candle summarises a period (1 minute, 1 hour, 1 day) with 4 prices: open, high, low, close (OHLC).</p>
+      <ul><li><strong>Body:</strong> between open and close. Green = close above the open, red = below.</li><li><strong>Wicks:</strong> the extremes reached and then rejected. A long wick = a rejection.</li><li><strong>Key candles:</strong> hammer / pin bar (rejection of a low), shooting star (rejection of a high), bullish/bearish engulfing (a candle that engulfs the previous one), doji (indecision).</li><li><strong>Rule:</strong> a candle on its own means nothing. It only counts if it forms at an important level.</li></ul>
+      <h3>2.2 Trend and market structure</h3>
+      <ul><li><strong>Uptrend:</strong> higher highs (HH) and higher lows (HL).</li><li><strong>Downtrend:</strong> lower lows (LL) and lower highs (LH).</li><li><strong>Range:</strong> the price oscillates between a ceiling and a floor.</li><li><strong>Break of structure (BOS):</strong> the price breaks the last high (uptrend) or the last low (downtrend): the trend continues.</li><li><strong>Change of character (CHoCH):</strong> in an uptrend, the price breaks the last HL: first reversal signal.</li></ul>
+      <h3>2.3 Support, resistance and key levels</h3>
+      <ul><li><strong>Support:</strong> an area where buyers have already stepped in. <strong>Resistance:</strong> an area where sellers have stepped in.</li><li>Draw zones, not lines to the exact point: on the NAS100, a zone is often 15 to 40 points wide.</li><li>Broken support often becomes resistance (and vice versa): that is the retest.</li><li><strong>Levels to mark every morning:</strong> previous day high/low (PDH/PDL), Asian and London session high/low, previous close, round numbers (multiples of 100 and 500 points).</li></ul>
+      <h3>2.4 Liquidity</h3>
+      <p>Traders' stops pile up just above obvious highs and below obvious lows. The price often goes to take them (a “sweep” or “stop hunt”) before turning the other way. Practical consequence: do not place your stop exactly on an obvious high or low, put it a little beyond.</p>
+      <h3>2.5 Useful indicators (and only those)</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Indicator"><table><thead><tr><th scope="col">Indicator</th><th scope="col">What it shows</th><th scope="col">Practical use</th></tr></thead><tbody><tr><td>Moving averages EMA 20 / 50 / 200</td><td>The direction and strength of the trend</td><td>Price above the EMA 200 = buying bias; EMA 20 = pullback zone in a strong trend</td></tr><tr><td>VWAP</td><td>The session's volume-weighted average price</td><td>Intraday reference: institutions buy below the VWAP, sell above</td></tr><tr><td>RSI (14)</td><td>The speed of the move, from 0 to 100</td><td>Divergences at a key level; above 70 or below 30 is NOT a signal on its own</td></tr><tr><td>ATR (14)</td><td>Average volatility per candle</td><td>Size your stop (e.g. 1 to 1.5 ATR)</td></tr><tr><td>Volume / Volume Profile</td><td>Where trading took place</td><td>High-volume areas attract or block the price</td></tr></tbody></table></div>
+      <p class="fm-rule"><strong>Golden rule:</strong> 2 to 3 indicators at most. More indicators = more conflicting signals, not more precision.</p>
+      <h3>2.6 Multi-timeframe analysis</h3>
+      <p>Work from the higher timeframe down to the lower one, always in this order:</p>
+      <ol><li><strong>Daily / H4:</strong> what is the underlying trend? Where are the big zones?</li><li><strong>H1 / M15:</strong> what is the day's structure? Where are the day's levels?</li><li><strong>M5 / M1:</strong> where is the precise entry point?</li></ol>
+      <p>You only take a trade on the M5 if it goes in the direction of the H1, and ideally of the Daily.</p>
+      <h3>2.7 Chart patterns to know</h3>
+      <ul><li><strong>Continuation:</strong> flag, pennant, ascending/descending triangle.</li><li><strong>Reversal:</strong> double top / double bottom, head and shoulders.</li><li>They are traded on the breakout with a candle close, and ideally on the retest.</li></ul>
+      <div class="fm-app"><b>In Markets:</b><div><a class="btn btn-sm" href="/?go=ndx">Nasdaq 100 chart (candles, RSI, moving averages)</a><a class="btn btn-sm" href="/?go=gloss:rsi">RSI in the glossary</a></div></div>
+      <div class="fm-ex"><b>Exercise:</b> on the NAS100 in H1, find the last 10 highs and lows, label them (HH, HL, LH, LL) and mark each BOS and CHoCH.</div>
+      <label class="fm-done"><input type="checkbox" data-fk="m2" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m3">
+      <summary><span class="fm-num">3</span><span class="fm-st">TradingView from A to Z</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">TradingView is your workstation: you analyse there, draw your levels, receive your alerts and can trade on a demo account. The free plan is enough to start, thanks to the tip in 3.7.</p>
+      <h3>3.1 Choosing a plan</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Plan"><table><thead><tr><th scope="col">Plan</th><th scope="col">Price (billed annually)</th><th scope="col">Indicators per chart</th><th scope="col">Charts per tab</th><th scope="col">Price alerts</th><th scope="col">History</th></tr></thead><tbody><tr><td>Basic</td><td>Free</td><td>2</td><td>1</td><td>3</td><td>5,000 bars</td></tr><tr><td>Essential</td><td>$12.95/month</td><td>5</td><td>2</td><td>20</td><td>10,000 bars</td></tr><tr><td>Plus</td><td>$29.95/month</td><td>10</td><td>4</td><td>100</td><td>10,000 bars</td></tr><tr><td>Premium</td><td>$59.95/month</td><td>25</td><td>8</td><td>400</td><td>20,000 bars</td></tr></tbody></table></div>
+      <p class="fm-small">Source: TradingView pricing page (prices and limits checked by Markets on 17 November 2026; TradingView presents them as special prices, which may change). Minute data for Bar Replay starts with Essential (180 days). Tip: stay on the free plan for the first month, move to Essential when you start serious backtesting.</p>
+      <h3>3.2 The interface</h3>
+      <ul><li><strong>Top bar:</strong> symbol search, timeframe, chart type, Indicators, Alert, Replay.</li><li><strong>Left bar:</strong> drawing tools (lines, rectangles, Fibonacci, long/short position, text).</li><li><strong>Right panel:</strong> watchlist, alerts, object tree (to hide/delete your drawings).</li><li><strong>Bottom panel:</strong> Pine Editor, Strategy Tester, trading panel (paper trading or connected broker).</li></ul>
+      <h3>3.3 Setting up your NAS100 chart</h3>
+      <ol><li>Type the symbol directly on the chart. For the NAS100: <code>PEPPERSTONE:NAS100</code>, <code>OANDA:NAS100USD</code> or your broker's CFD; <code>CME_MINI:NQ1!</code> or <code>CME_MINI:MNQ1!</code> for futures; <code>NASDAQ:NDX</code> for the index itself.</li><li>Use the same feed as your broker: each CFD has slightly different prices.</li><li>Click the clock at the bottom right and choose (UTC+1) Paris to see local times.</li><li>Right click &gt; Settings &gt; Symbol: candle colours. Scales tab: show the candle countdown.</li><li>Save your template: Settings &gt; Template &gt; Save as.</li></ol>
+      <h3>3.4 Essential drawing tools</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Tool"><table><thead><tr><th scope="col">Tool</th><th scope="col">Shortcut (Windows; Option on Mac)</th><th scope="col">Use</th></tr></thead><tbody><tr><td>Horizontal line</td><td>Alt + H</td><td>PDH, PDL, round levels</td></tr><tr><td>Trend line</td><td>Alt + T</td><td>Diagonals, channels</td></tr><tr><td>Vertical line</td><td>Alt + V</td><td>Mark 15:30, announcements</td></tr><tr><td>Fibonacci retracement</td><td>Alt + F</td><td>50% / 61.8% pullback zones</td></tr><tr><td>Rectangle</td><td>Left bar</td><td>Support/resistance zones, session ranges</td></tr><tr><td>Long / short position</td><td>Left bar</td><td>Visualise entry, stop, target and R:R ratio</td></tr><tr><td>Alert</td><td>Alt + A</td><td>Create an alert at the cursor price</td></tr><tr><td>Reset chart</td><td>Alt + R</td><td>Return to the normal view</td></tr></tbody></table></div>
+      <p>To change timeframe, simply type the number on the chart (5 then Enter = M5, 60 = H1, D = Daily).</p>
+      <h3>3.5 Alerts</h3>
+      <ul><li>Right click on a level &gt; Add alert, or Alt + A.</li><li><strong>Condition:</strong> “Crossing” of the price with your level, or an indicator condition (RSI, EMA crossover).</li><li>Turn on notifications in the TradingView mobile app: you no longer need to stare at the screen.</li><li><strong>Method:</strong> in the morning, set 2 to 3 alerts on your key levels, then close the chart.</li></ul>
+      <h3>3.6 Bar Replay and Paper Trading</h3>
+      <ul><li><strong>Bar Replay</strong> (Replay button at the top): you go back to a past date and scroll through the candles one by one. It is your flight simulator for backtesting without knowing what comes next.</li><li><strong>Paper Trading</strong> (bottom panel &gt; Trading &gt; Paper Trading): a virtual account to place real orders on the chart, with SL and TP you can drag with the mouse.</li><li>Combine the two: trade in replay, record each trade in your journal (module 7).</li></ul>
+      <h3>3.7 Pine Script: your first indicator</h3>
+      <p>Pine Script is TradingView's language. This script combines 3 EMAs and the VWAP into a single indicator, which gets around the free plan's limit of 2 indicators. Open Pine Editor, paste it, click “Add to chart”.</p>
+      <div class="fm-code"><button type="button" class="btn btn-sm" data-copy aria-label="Copy the Pine script">Copy</button><pre tabindex="0" aria-label="Pine Script"><code>//@version=6
+indicator(&quot;NAS100 - EMAs + VWAP&quot;, overlay = true)
+plot(ta.ema(close, 20),  &quot;EMA 20&quot;,  color.orange)
+plot(ta.ema(close, 50),  &quot;EMA 50&quot;,  color.blue)
+plot(ta.ema(close, 200), &quot;EMA 200&quot;, color.red, 2)
+plot(ta.vwap(hlc3),      &quot;VWAP&quot;,    color.purple, 2)</code></pre></div>
+      <p>Once you are comfortable, you can ask Claude Code to write you an indicator that automatically draws the opening range from module 5.</p>
+      <div class="fm-ex"><b>Exercise:</b> create a “NAS100” layout with your symbol, the Paris time zone, the script above, and an alert on the previous day's high.</div>
+      <label class="fm-done"><input type="checkbox" data-fk="m3" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m4">
+      <summary><span class="fm-num">4</span><span class="fm-st">The NAS100</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">The NAS100 is the index of the US tech giants: it moves fast, reacts strongly to interest rates and to a few big companies, and concentrates its volatility at 15:30 Paris time.</p>
+      <h3>4.1 What is in it</h3>
+      <ul><li>About 100 of the largest non-financial companies listed on the Nasdaq, weighted by market capitalisation (with caps to limit the heavyweights).</li><li>Rebalanced every quarter, full review of the list every December.</li><li><strong>Very concentrated:</strong> according to the QQQ fund's June 2026 filing, the top 5 holdings weigh about 31% and the top 10 about 48% (ChartRow: 30.6% and 47.8%, checked on 17 November 2026).</li><li><strong>Heavyweights to watch:</strong> Nvidia, Apple, Alphabet, Microsoft, Amazon, Broadcom, Tesla, AMD, Meta, Micron. When 3 or 4 of them rise together, the index rises.</li><li>Technology makes up more than half of the index (ChartRow, sectors: 55.8%, estimate based on the same filing).</li></ul>
+      <h3>4.2 What moves it</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Catalyst"><table><thead><tr><th scope="col">Catalyst</th><th scope="col">Time (Paris)</th><th scope="col">Typical effect</th></tr></thead><tbody><tr><td>Inflation (CPI, PCE)</td><td>14:30</td><td>Higher-than-expected inflation = rates rising = NAS100 falling</td></tr><tr><td>Jobs (NFP, 1st Friday of the month)</td><td>14:30</td><td>Violent moves both ways, wider spread</td></tr><tr><td>Jobless claims</td><td>Thursday 14:30</td><td>Moderate impact</td></tr><tr><td>ISM, consumer confidence</td><td>16:00</td><td>Moderate to strong impact</td></tr><tr><td>Fed rate decision (FOMC)</td><td>20:00, press conference 20:30</td><td>Very high volatility, frequent false starts</td></tr><tr><td>Earnings of the giants (Nvidia, Apple, Microsoft…)</td><td>After 22:00</td><td>Possible big gap the next day</td></tr></tbody></table></div>
+      <p>These times apply outside the weeks when daylight saving time is out of sync (module 1). Check the economic calendar every Sunday (TradingView's Calendar tab, or Forex Factory) and do not trade in the 5 minutes around a high-impact announcement while you are a beginner.</p>
+      <h3>4.3 Related markets to keep an eye on</h3>
+      <ul><li><strong>US 10-year yield (US10Y):</strong> in general, rising yields = NAS100 under pressure.</li><li><strong>S&amp;P 500 (US500 / ES):</strong> if the S&amp;P does not confirm the NAS100's move, be wary.</li><li><strong>VIX:</strong> the fear index. A sharply rising VIX = nervous market, widen stops or reduce size.</li><li><strong>Dollar (DXY):</strong> a very strong dollar often weighs on stocks.</li></ul>
+      <div class="fm-app"><b>In Markets:</b><div><a class="btn btn-sm" href="/?go=ndx">Nasdaq 100 chart</a><a class="btn btn-sm" href="/?go=taux">US rates (yield curve)</a><a class="btn btn-sm" href="/?go=indices">Calendar and economic calendar</a></div></div>
+      <h3>4.4 A typical NAS100 day</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Time (Paris)"><table><thead><tr><th scope="col">Time (Paris)</th><th scope="col">Usual behaviour</th><th scope="col">What you do</th></tr></thead><tbody><tr><td>00:00 – 09:00</td><td>Asian session, narrow range</td><td>You mark the Asian high and low</td></tr><tr><td>09:00 – 14:30</td><td>Europe: first moves, often a sweep of the Asian range</td><td>You watch, you prepare your levels</td></tr><tr><td>14:30</td><td>Possible US data</td><td>You stay out</td></tr><tr><td>15:30 – 17:00</td><td>Cash open: the highest volume and biggest moves</td><td>Your main trading window</td></tr><tr><td>18:00 – 20:00</td><td>New York lunch break, softer market</td><td>You avoid it, or manage your positions</td></tr><tr><td>21:00 – 22:00</td><td>Last hour, repositioning</td><td>Possible second window</td></tr></tbody></table></div>
+      <h3>4.5 Practical specifics</h3>
+      <ul><li><strong>Point value:</strong> on a CFD, it depends on your size (often €1 or $1 per point for 1 lot, check with your broker). On futures: MNQ = $2 per point, NQ = $20 per point, minimum tick 0.25 point.</li><li><strong>Futures hours (CME):</strong> from Sunday evening to Friday evening, with a one-hour break each day around 23:00 Paris time.</li><li><strong>Futures expiries:</strong> March, June, September, December. Volume moves to the next contract about a week before expiry (the rollover). On TradingView, <code>NQ1!</code> automatically follows the active contract.</li><li><strong>Gaps:</strong> on a CFD, the price can jump between the close and the reopening. A stop does not fully protect you from a gap.</li><li><strong>Volatility:</strong> the NAS100 moves more than the S&amp;P 500. Look at the Daily ATR to know the current average range in points before choosing your stop.</li></ul>
+      <div class="fm-ex"><b>Exercise:</b> for 5 days, note at 22:00 the day's range (high - low), the range between 15:30 and 16:30, and the main news. You will see for yourself what share of the move happens at the open.</div>
+      <label class="fm-done"><input type="checkbox" data-fk="m4" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m5">
+      <summary><span class="fm-num">5</span><span class="fm-st">Three concrete strategies on the NAS100</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">Choose ONE of these three strategies and trade it exclusively for at least 100 trades (backtest + demo) before adding another. Each has fixed entry, stop and exit rules: if a rule is not met, there is no trade.</p>
+      <h3>5.1 Strategy A – Opening range breakout (ORB 15 min)</h3>
+      <p><strong>The idea:</strong> the first 15 minutes after 15:30 create a range; its breakout often gives the direction of the US morning.</p>
+      <ol><li><strong>Preparation:</strong> on the H1, note the bias (price above or below the EMA 200 and the VWAP).</li><li><strong>Range:</strong> draw a rectangle from the high to the low between 15:30 and 15:45 (3 M5 candles).</li><li><strong>Filter:</strong> if the range is larger than the M15 ATR × 3, or if major news is due at 16:00, no trade.</li><li><strong>Entry:</strong> an M5 candle closes outside the range, in the direction of the H1 bias. Enter on the retest of the range edge (limit order), or at the close if the price does not come back within 3 candles.</li><li><strong>Stop:</strong> in the middle of the range, or on the other side if the range is small.</li><li><strong>Target:</strong> 2R (twice your risk), or the next key level (PDH/PDL) if it is closer.</li><li><strong>Invalidation:</strong> an M5 candle closes back inside the range = exit.</li></ol>
+      <h3>5.2 Strategy B – Pullback in the trend (VWAP / EMA 20)</h3>
+      <p><strong>The idea:</strong> in a clear trend, you do not buy the top, you buy the pullback.</p>
+      <ol><li><strong>Trend:</strong> on the M15, a series of HH/HL (bullish) or LH/LL (bearish), price on the right side of the VWAP.</li><li><strong>Pullback zone:</strong> the price comes back to the VWAP, the EMA 20, or a former resistance turned support.</li><li><strong>Confirmation:</strong> on the M5, a rejection candle (pin bar, engulfing) in the zone.</li><li><strong>Entry:</strong> above the high of the confirmation candle (stop order).</li><li><strong>Stop:</strong> below the low of the pullback, with a margin (e.g. 0.3 × M5 ATR).</li><li><strong>Target:</strong> the last high, then 2R. Lock in half at 1R if you wish.</li><li><strong>Invalidation:</strong> the M15 closes on the other side of the VWAP = the trend is broken, no new trade.</li></ol>
+      <h3>5.3 Strategy C – Stop hunt then reversal (sweep)</h3>
+      <p><strong>The idea:</strong> the price breaks an obvious level to trigger stops, then turns the other way. A more advanced strategy: start with A or B.</p>
+      <ol><li><strong>Levels:</strong> Asian, London and previous day high/low (PDH/PDL).</li><li><strong>Sweep:</strong> after 15:30, the price breaks one of these levels with a wick, then an M5 candle closes back on the other side.</li><li><strong>Confirmation:</strong> on the M1/M5, the price breaks the last minor low (after a sweep of a high) = change of character (CHoCH).</li><li><strong>Entry:</strong> on the retest of the broken zone (limit order).</li><li><strong>Stop:</strong> beyond the tip of the sweep's wick.</li><li><strong>Target:</strong> the VWAP, then the opposite side of the day's range. Minimum 2R, otherwise no trade.</li><li><strong>Invalidation:</strong> the price closes beyond the sweep's wick = real breakout, no reversal.</li></ol>
+      <h3>5.4 Rules common to all three strategies</h3>
+      <ul><li><strong>Window:</strong> 15:30 – 17:30 (Paris time) only at first.</li><li>Maximum 2 trades per day. After 2 losses, you close the platform.</li><li>The stop is set BEFORE entering, and never moves further away. You can move it closer (break-even after 1R), never further.</li><li>No trade 5 minutes before and after high-impact news.</li><li>Use TradingView's “Long/Short position” tool to check the ratio before each entry: below 1:2, you skip it.</li></ul>
+      <div class="fm-ex"><b>Exercise:</b> in Bar Replay, replay 20 15:30 opens with strategy A and record each trade (date, entry, stop, target, result in R).</div>
+      <label class="fm-done"><input type="checkbox" data-fk="m5" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m6">
+      <summary><span class="fm-num">6</span><span class="fm-st">Risk management and psychology</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">This module matters more than all the others: an average strategy with controlled risk survives, a good strategy with poorly managed risk empties the account. Basic rule: 0.5 to 1% of capital maximum per trade.</p>
+      <h3>6.1 Calculating your position size</h3>
+      <p class="fm-formula">Size = (Capital × Risk %) ÷ (Stop distance in points × Point value)</p>
+      <p><strong>CFD example:</strong> capital €5,000, risk 1% = €50, stop at 40 points, €1 per point for 1 lot. Size = 50 / (40 × 1) = 1.25 lots. Always round down: 1.2 lots.</p>
+      <p><strong>Futures example:</strong> same $50 risk, stop at 40 points on MNQ ($2 per point). 1 contract = $80 of risk, too big. You need either a stop of 25 points maximum, or more capital. That is why CFDs or micro futures suit small accounts better.</p>
+      <form class="fm-calc" data-calc="size" novalidate>
+      <h4>Calculator: position size</h4>
+      <div class="fm-grid"><label><span>Capital</span><span class="fm-in"><input type="text" inputmode="decimal" data-cs="cap" value="5000"></span></label><label><span>Risk per trade</span><span class="fm-in"><input type="text" inputmode="decimal" data-cs="risk" value="1"><i>%</i></span></label><label><span>Stop distance (points)</span><span class="fm-in"><input type="text" inputmode="decimal" data-cs="stop" value="40"></span></label><label><span>Point value for 1 lot / contract</span><span class="fm-in"><input type="text" inputmode="decimal" data-cs="pv" value="1"></span></label></div>
+      <output class="fm-out" data-out="size" aria-live="polite"></output>
+      <p class="fm-small">Formula from module 6.1, in your account currency. Check the point value and minimum size with your broker.</p>
+    </form>
+      <h3>6.2 Risk/reward ratio and expectancy</h3>
+      <ul><li><strong>R</strong> = your risk on a trade. A 2R gain = twice what you risked.</li><li>With a 2R target, you can lose 6 trades out of 10 and still come out ahead.</li></ul>
+      <p class="fm-formula">Expectancy = (% winners × average win in R) − (% losers × average loss in R)</p>
+      <p><strong>Example:</strong> 40% winners at 2R and 60% losers at 1R give 0.4 × 2 - 0.6 × 1 = +0.2R per trade. Over 100 trades risking €50, that is about +€1,000, before costs. If your expectancy is negative in backtesting, do not go live.</p>
+      <form class="fm-calc" data-calc="exp" novalidate>
+      <h4>Calculator: expectancy</h4>
+      <div class="fm-grid"><label><span>Winning trades</span><span class="fm-in"><input type="text" inputmode="decimal" data-ce="win" value="40"><i>%</i></span></label><label><span>Average win</span><span class="fm-in"><input type="text" inputmode="decimal" data-ce="gain" value="2"><i>R</i></span></label><label><span>Average loss</span><span class="fm-in"><input type="text" inputmode="decimal" data-ce="loss" value="1"><i>R</i></span></label><label><span>Number of trades</span><span class="fm-in"><input type="text" inputmode="decimal" data-ce="n" value="100"></span></label><label><span>Risk per trade (amount)</span><span class="fm-in"><input type="text" inputmode="decimal" data-ce="amt" value="50"></span></label></div>
+      <output class="fm-out" data-out="exp" aria-live="polite"></output>
+      <p class="fm-small">Formula from module 6.2. Past or simulated results do not guarantee future results.</p>
+    </form>
+      <h3>6.3 Why big losses are deadly</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Loss on the account"><table><thead><tr><th scope="col">Loss on the account</th><th scope="col">Gain needed to get back to even</th></tr></thead><tbody><tr><td>-10%</td><td>+11%</td></tr><tr><td>-20%</td><td>+25%</td></tr><tr><td>-30%</td><td>+43%</td></tr><tr><td>-50%</td><td>+100%</td></tr></tbody></table></div>
+      <p>With a 40% win rate, a streak of 8 losses in a row will almost certainly happen over a few hundred trades. At 1% per trade, it costs about 8%. At 5% per trade, it costs about 34%.</p>
+      <h3>6.4 Your protection limits</h3>
+      <ul><li><strong>Max loss per trade:</strong> 1% of capital.</li><li><strong>Max loss per day:</strong> 2% (or 2 losing trades). Then you stop until the next day.</li><li><strong>Max loss per week:</strong> 5%. Then you go back to demo until the following week.</li><li><strong>With a prop firm:</strong> set your daily limit at HALF of the prop firm's.</li></ul>
+      <h3>6.5 Psychological traps</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Trap"><table><thead><tr><th scope="col">Trap</th><th scope="col">What happens</th><th scope="col">Antidote</th></tr></thead><tbody><tr><td>FOMO</td><td>You enter late on a move that has already gone</td><td>No setup = no trade; another one will come tomorrow</td></tr><tr><td>Revenge trading</td><td>You take another trade right after a loss to “win it back”</td><td>The 2-loss rule, and 15 minutes away from the screen after each loss</td></tr><tr><td>Overtrading</td><td>You trade out of boredom, outside your window</td><td>Fixed time window, maximum 2 trades per day</td></tr><tr><td>Moving your stop</td><td>You move the stop further away to avoid the loss</td><td>Stop order set at entry, never widened</td></tr><tr><td>Cutting winners too early</td><td>You take +0.5R out of fear</td><td>Target set in advance, alert on the TP, you leave the screen</td></tr><tr><td>Increasing size after wins</td><td>Euphoria makes you double your stake</td><td>Size recalculated with the formula, never “by feel”</td></tr></tbody></table></div>
+      <p class="fm-rule">A loss is not a mistake. A mistake is a trade that did not follow your plan, even if it won.</p>
+      <div class="fm-app"><b>In Markets:</b><div><a class="btn btn-sm" href="/?go=calc">Markets position size calculator</a><a class="btn btn-sm" href="/?go=gloss:dd">Drawdown in the glossary</a></div></div>
+      <label class="fm-done"><input type="checkbox" data-fk="m6" data-mod> Module completed</label>
+      </div>
+    </details>
+    <details class="fm-mod" id="m7">
+      <summary><span class="fm-num">7</span><span class="fm-st">Trading plan, journal, backtest and 30-day programme</span><span class="fm-tick" aria-hidden="true">✓</span></summary>
+      <div class="fm-body">
+      <p class="lead">You move to real money only when your plan is written, 100 backtest trades show a positive expectancy, and 20 demo trades confirm that you can apply it.</p>
+      <h3>7.1 Your trading plan (to fill in)</h3>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Section"><table><thead><tr><th scope="col">Section</th><th scope="col">Your answer</th></tr></thead><tbody><tr><td>Market and product</td><td>E.g. NAS100 as a CFD with [broker]</td></tr><tr><td>Strategy</td><td>A, B or C (only one)</td></tr><tr><td>Time window</td><td>E.g. 15:30 – 17:30</td></tr><tr><td>Timeframes</td><td>E.g. H1 for the bias, M5 for the entry</td></tr><tr><td>Entry conditions</td><td>The 7 steps of your strategy, copied out</td></tr><tr><td>Risk per trade</td><td>E.g. 0.5%</td></tr><tr><td>Daily / weekly limits</td><td>E.g. 2 trades or -1% / -3%</td></tr><tr><td>Trade management</td><td>E.g. break-even at 1R, full exit at 2R</td></tr><tr><td>No-trading days</td><td>E.g. FOMC day, NFP, day before a US holiday</td></tr></tbody></table></div>
+      <h3>7.2 Your trading journal</h3>
+      <p>Copy this template into a spreadsheet and fill in one row per trade, with a TradingView screenshot (Alt + S).</p>
+      <div class="table-wrap" tabindex="0" role="region" aria-label="Journal template"><table><thead><tr><th scope="col">Date</th><th scope="col">Strategy</th><th scope="col">Direction</th><th scope="col">Entry</th><th scope="col">Stop</th><th scope="col">Target</th><th scope="col">Result (R)</th><th scope="col">Plan followed?</th><th scope="col">Emotion</th><th scope="col">Lesson</th></tr></thead><tbody></tbody></table></div>
+      <p>Every Sunday, calculate: number of trades, % of winners, average win in R, expectancy (module 6), and % of trades where the plan was followed.</p>
+      <div class="fm-app"><b>In Markets:</b><div><a class="btn btn-sm" href="/?go=demo">Demo account journal and CSV export</a></div></div>
+      <h3>7.3 Backtesting with Bar Replay</h3>
+      <ol><li>Pick a random date in the last 6 months, set the replay to 09:00 on that day.</li><li>Mark your levels as on a real morning (Asia, PDH/PDL, H1 bias).</li><li>Move forward candle by candle (no continuous playback) until 17:30.</li><li>Record each trade in the journal, even the ones you “would have avoided”.</li><li>Repeat until 100 trades. Mix bullish, bearish and ranging markets.</li></ol>
+      <h3>7.4 30-day programme</h3>
+      <h4>Week 1 – Basics and tools</h4><ul class="fm-checks"><li><label class="fm-check"><input type="checkbox" data-fk="s1-1"> <span>Read modules 1 to 4</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s1-2"> <span>Open a TradingView account and a demo account</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s1-3"> <span>Create the NAS100 layout and add the script from module 3</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s1-4"> <span>Do the market structure exercise (module 2)</span></label></li></ul>
+      <h4>Week 2 – Observation</h4><ul class="fm-checks"><li><label class="fm-check"><input type="checkbox" data-fk="s2-1"> <span>Every day, mark the levels at 09:00 and watch the 15:30 open without trading</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s2-2"> <span>Do the range exercise from module 4</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s2-3"> <span>Choose your strategy and fill in your trading plan</span></label></li></ul>
+      <h4>Week 3 – Backtest</h4><ul class="fm-checks"><li><label class="fm-check"><input type="checkbox" data-fk="s3-1"> <span>100 trades in Bar Replay with your strategy</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s3-2"> <span>Calculate your expectancy and win rate</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s3-3"> <span>Adjust a single rule if needed, then test again</span></label></li></ul>
+      <h4>Week 4 – Demo in real conditions</h4><ul class="fm-checks"><li><label class="fm-check"><input type="checkbox" data-fk="s4-1"> <span>20 live trades on demo or in Paper Trading</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s4-2"> <span>Plan followed on at least 90% of trades</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="s4-3"> <span>Review: positive expectancy in backtest AND on demo?</span></label></li></ul>
+      <h3>7.5 Going live</h3>
+      <ul><li>Start with a small amount of capital that you accept losing entirely.</li><li>Risk 0.25 to 0.5% per trade for the first 2 months, even if you feel sure of yourself.</li><li>If your real results differ sharply from demo, it is psychology: go back to module 6.</li><li>Increase risk only after 3 positive months and a plan followed 90% of the time or more.</li></ul>
+      <label class="fm-done"><input type="checkbox" data-fk="m7" data-mod> Module completed</label>
+      </div>
+    </details>
+
+    <section class="card fm-sec" id="checklist">
+      <h2>Checklist before every trade</h2>
+      <p class="fm-rule">A single “no” = no trade.</p>
+      <ul class="fm-checks"><li><label class="fm-check"><input type="checkbox" data-fk="c-1"> <span>I am within my time window, and there is no major news within 5 minutes</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-2"> <span>I have not reached my daily loss limit</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-3"> <span>The H1 bias goes in the direction of my trade</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-4"> <span>The price is at a level marked this morning</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-5"> <span>All the steps of my strategy are met</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-6"> <span>My stop is logical (beyond a high or a low), not just “X points away”</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-7"> <span>The ratio is at least 1:2 (TradingView Position tool)</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-8"> <span>My size is calculated with the formula from module 6</span></label></li><li><label class="fm-check"><input type="checkbox" data-fk="c-9"> <span>I am calm: no revenge, no FOMO</span></label></li></ul>
+      <button type="button" class="btn btn-sm" data-freset="c">Untick all (new trade)</button>
+    </section>
+
+    <section class="fm-sec" id="glossaire">
+      <h2>Glossary</h2>
+      <dl class="fm-gloss"><dt>ATR</dt><dd>Average volatility per candle, in points</dd><dt>BOS</dt><dd>Break of structure: the price breaks the last high or low in the direction of the trend</dd><dt>Break-even (BE)</dt><dd>Stop moved to the entry price: the trade can no longer lose</dd><dt>CFD</dt><dd>Contract that tracks the price of an asset without owning it, with leverage</dd><dt>CHoCH</dt><dd>Change of character: first sign of a structure reversal</dd><dt>Drawdown</dt><dd>Decline of the account from its peak</dd><dt>FOMC</dt><dd>Fed meeting that sets US interest rates</dd><dt>HH / HL / LH / LL</dt><dd>Higher high / higher low / lower high / lower low</dd><dt>Leverage</dt><dd>Exposure multiplier relative to your margin</dd><dt>NFP</dt><dd>US jobs figures, 1st Friday of the month</dd><dt>ORB</dt><dd>Opening Range Breakout: breakout of the opening range</dd><dt>PDH / PDL</dt><dd>Previous Day High / Low</dd><dt>R</dt><dd>Your risk on a trade, the unit for measuring gains and losses</dd><dt>Slippage</dt><dd>Difference between the requested price and the price obtained</dd><dt>Spread</dt><dd>Difference between the buy price and the sell price</dd><dt>Sweep</dt><dd>The price breaks a level to trigger stops, then turns back</dd><dt>VWAP</dt><dd>The session's volume-weighted average price</dd></dl>
+    </section>
+
+    <section class="fm-sec" id="sources">
+      <h2>Sources</h2>
+      <ul><li><a href="https://www.tradingview.com/pricing/" target="_blank" rel="noopener">TradingView – Pricing and plan comparison</a></li><li><a href="https://chartrow.com/nasdaq-100/concentration" target="_blank" rel="noopener">ChartRow – Nasdaq-100 concentration</a></li><li><a href="https://chartrow.com/nasdaq-100/sector-weights" target="_blank" rel="noopener">ChartRow – Nasdaq-100 sector weights</a></li></ul>
+      <p class="fm-small">Figures checked by Markets on 17 November 2026: plan prices and limits on TradingView's pricing page; weight of the top 5 and top 10 holdings (30.6% and 47.8%) and share of technology (55.8%) according to ChartRow estimates based on the QQQ fund's 30 June 2026 filing (these are not official weights published by Nasdaq). Futures contract specifications (point value, hours, expiries) and CFD details are taken from the document without verification: confirm them on the CME Group website and with your broker. Prices, weights and hours change: check them before relying on them.</p>
+    </section>
+
+    <p class="fm-foot">Information, not financial advice. Educational content; leveraged trading can lose you more than you planned to risk.</p>
+  </main>
+  <script src="/assets/legal.js" type="module"></script>
+  <script src="/assets/formation.js" type="module"></script>
+</body>
+</html>

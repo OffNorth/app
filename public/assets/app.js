@@ -11,7 +11,7 @@ import { createAnalysis } from './analysis.js';
 import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 22; // à garder égal à VERSION ('v22') dans /sw.js
+const APP_BUILD = 23; // à garder égal à VERSION ('v23') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (17/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
@@ -877,7 +877,7 @@ function renderFavBtn(fav) {
   b.title = t(on ? 'fav.remove' : 'fav.add');
 }
 let chartArgs = null;
-async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav, alert, trade }) {
+async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav, alert, trade, learn = null }) {
   const token = ++chartToken;
   chartArgs = { tv, label, missingMsg, alert, trade, token, res: undefined };
   $('#chart-alert').onclick = () => openAlert(alert);
@@ -896,6 +896,9 @@ async function showChart({ titleHTML, sub, statsHTML, tv, label, missingMsg, fav
   $('#chart-title').innerHTML = titleHTML;
   $('#chart-sub').textContent = sub;
   $('#chart-stats').innerHTML = statsHTML;
+  const learnEl = $('#chart-learn');
+  learnEl.hidden = !learn;
+  if (learn) learnEl.href = learn;
   renderFacts(trade, token);
   setupNews(trade || alert, token);
   setupAnalyses(trade, token);
@@ -1093,6 +1096,7 @@ function openIndexChart(ix) {
     fav: { t: 'i', id: ix.id, label: ix.name, name: ix.name, logo: ix.logo, logoSmall: ix.logoSmall },
     alert: { kind: 'i', assetId: ix.id, label: ix.name, price: ix.outdated ? null : ix.price, currency: null, chg: ix.outdated ? null : ix.changePct, symbol: ix.symbol },
     trade: ix.symbol ? { kind: 'i', assetId: ix.id, label: ix.name, name: country(ix.country), symbol: ix.symbol, logo: ix.logo, logoSmall: ix.logoSmall } : null,
+    learn: ix.id === 'ndx' ? `${legalPrefix()}/formation.html` : null, // formation NAS100
   });
 }
 
@@ -1791,6 +1795,7 @@ async function refresh() {
   paper.onData();
   tradeChart.onData();
   render();
+  runGo();
 }
 
 /** Recharge seulement les entreprises (changement du top 25 / 50 / 100). */
@@ -2182,6 +2187,7 @@ function renderHome() {
         <button type="button" class="btn" data-tool="conv">${t('conv.title')}</button>
         <button type="button" class="btn" data-tool="gloss">${t('gl.title')}</button>
         <button type="button" class="btn" data-tool="calc">${t('calc.title')}</button>
+        <a class="btn" href="${legalPrefix()}/formation.html">${t('fm.title')}</a>
         <button type="button" class="btn" data-tool="tour">${t('tour.replay')}</button></div>
       <label class="home-switch"><input type="checkbox" data-ticker ${comfort.tickerOn() ? 'checked' : ''}> ${t('tk.toggle')}</label>
       <div class="home-summary"><h3>${t('ts.title')}</h3><div class="seg" role="group" aria-label="${esc(t('ts.title'))}">${TEXT_SCALES.map((z) =>
@@ -2653,7 +2659,7 @@ function openGloss(key) {
   const entries = key && dict[key] ? [[key, dict[key]]] : Object.entries(dict).sort((a, b) => a[1][0].localeCompare(b[1][0]));
   dlg.innerHTML = `<div class="snap-card alert-card"><h2 id="gloss-title">${key ? esc(dict[key][0]) : t('gl.title')}</h2>
     <dl class="gloss">${entries.map(([, [term, def]]) => `${key ? '' : `<dt>${esc(term)}</dt>`}<dd>${esc(def)}</dd>`).join('')}</dl>
-    <p class="consent-small">${t('gl.note')}</p>
+    <p class="consent-small">${t('gl.note')} <a href="${legalPrefix()}/formation.html#glossaire">${t('fm.gloss')}</a></p>
     <div class="snap-actions">${key ? `<button type="button" class="btn" data-gl-all>${t('gl.all')}</button>` : ''}<button type="button" class="btn btn-primary" data-gl-close>${t('snap.close')}</button></div></div>`;
   dlg.querySelector('[data-gl-close]').onclick = closeGloss;
   dlg.querySelector('[data-gl-all]')?.addEventListener('click', () => openGloss());
@@ -2806,6 +2812,29 @@ document.querySelector('.tabbar').addEventListener('click', (e) => {
 $('#refresh').addEventListener('click', refresh);
 // Raccourci de l'icône de l'app (manifeste) : « Rechercher un actif ».
 if (new URLSearchParams(location.search).get('action') === 'search') setTimeout(openSearch, 400);
+
+/* ---------- Liens depuis la formation NAS100 (/?go=ndx | demo | calc | taux | indices | gloss:<terme>) ---------- */
+let pendingGo = new URLSearchParams(location.search).get('go');
+if (pendingGo) history.replaceState(history.state, '', location.pathname + location.hash);
+const goTab = (tab) => { if (state.tab === tab) render(); else setTab(tab); };
+function runGo() {
+  const g = pendingGo;
+  if (!g) return;
+  if (g === 'ndx') { // attend les données des indices
+    const x = state.indices?.indices?.find((y) => y.id === 'ndx');
+    if (!x) return;
+    pendingGo = null;
+    openIndexChart(x);
+    return;
+  }
+  pendingGo = null;
+  if (g === 'calc') analysis.openCalc();
+  else if (g === 'demo') { prefs.compteView = 'demo'; store.set('prefs', prefs); goTab('compte'); }
+  else if (g === 'taux') { prefs.region = 'taux'; store.set('prefs', prefs); goTab('indices'); }
+  else if (g === 'indices') goTab('indices');
+  else if (g.startsWith('gloss:')) openGloss(g.slice(6));
+}
+setTimeout(runGo, 400);
 
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;
