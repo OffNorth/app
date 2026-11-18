@@ -11,7 +11,7 @@ import { createAnalysis } from './analysis.js';
 import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 25; // à garder égal à VERSION ('v25') dans /sw.js
+const APP_BUILD = 26; // à garder égal à VERSION ('v26') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (18/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
