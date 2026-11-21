@@ -10,10 +10,11 @@ import { GLOSSARY } from './glossary.js';
 import { createAnalysis } from './analysis.js';
 import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
+import { createBot } from './bot.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 26; // à garder égal à VERSION ('v26') dans /sw.js
-const APP_VERSION = `${APP_BUILD} (18/11/2026)`;
-const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte'];
+const APP_BUILD = 27; // à garder égal à VERSION ('v27') dans /sw.js
+const APP_VERSION = `${APP_BUILD} (21/11/2026)`;
+const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte', 'bot'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
 const MACRO_GROUPS = ['commo', 'fx']; // matières premières, devises (dans l'onglet Indices)
 const INDEX_TABS = [...REGIONS, ...MACRO_GROUPS, 'taux']; // + courbe des taux américains
@@ -1723,6 +1724,7 @@ function render() {
   else if (state.tab === 'accueil') renderHome();
   else if (state.tab === 'actions') renderStocks();
   else if (state.tab === 'favoris') renderFavs();
+  else if (state.tab === 'bot') bot.render($('#bot'));
   else if (state.tab === 'compte') {
     $('#compte-mode').innerHTML = segHTML('compteView', [['demo', t('pf.demo')], ['real', t('pf.real')], ['agents', t('ai.tab')]], t('pf.mode'));
     if (prefs.compteView === 'real') portfolio.render($('#paper'));
@@ -2629,6 +2631,16 @@ const agents = createAgents({
   pct: (v) => fmtPct(v),
   day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
   myAccount: () => paper.info(),
+});
+
+/* ---------- Bot de paper trading en direct (comptes FTMO / Lucid simulés) ---------- */
+const bot = createBot({
+  t, esc, isNum, ND, getJSON,
+  money: (v) => fmtNative(v, 'USD'),
+  signed: (v) => (isNum(v) ? `${v > 0.004 ? '+' : v < -0.004 ? '−' : ''}${fmtNative(Math.abs(v), 'USD')}` : ND),
+  pct: (v) => fmtPct(v),
+  day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
+  locale: () => loc(),
 });
 
 /* ---------- Confort : bandeau des favoris, visite guidée, connexion ---------- */
