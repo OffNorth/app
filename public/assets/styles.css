@@ -962,3 +962,6 @@ body.tv .ticker { display: none; }
 .bot-click { cursor: pointer; }
 .bot-click:hover td { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 @media (max-width: 520px) { .bot-eq b { font-size: 22px; } .bot-chart, .bot-chart-host { min-height: 320px; height: 320px; } }
+
+.bot-more { margin-top: 8px; }
+#bot-trades .seg { margin-bottom: 6px; flex-wrap: wrap; }

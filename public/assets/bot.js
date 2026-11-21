@@ -28,7 +28,8 @@ const cssVar = (n, d) => getComputedStyle(document.documentElement).getPropertyV
 
 export function createBot(ctx) {
   const { t, esc, isNum, ND } = ctx;
-  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '15m', timer: null, chart: null, el: null };
+  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '15m', timer: null, chart: null, el: null, hist: 'ftmo', shown: 25, focus: null };
+  const PAGE = 25;
   const cls = (v) => (!isNum(v) || Math.abs(v) < 0.5 ? '' : v > 0 ? 'pos' : 'neg');
   const money = (v) => (isNum(v) ? ctx.money(v) : ND);
   const signed = (v) => (isNum(v) ? ctx.signed(v) : ND);
@@ -142,17 +143,24 @@ export function createBot(ctx) {
     const first = data.candles[0][0];
     const sec = TF_SEC[st.tf];
     const snap = (x) => local(Math.floor(x / sec) * sec);
-    const acct = st.d.accounts.find((a) => a.id === 'ftmo') || st.d.accounts[0];
+    // Repères : tous les trades de l'historique choisi (challenge en cours + anciens, ou trades paper) sur ce marché
     const marks = [];
-    for (const x of (acct?.closed || []).filter((y) => y.market === m.id && y.exitT >= first)) {
-      if (x.entryT >= first) marks.push({ time: snap(x.entryT), position: x.side === 'long' ? 'belowBar' : 'aboveBar', color: '#7cc4ff', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown', text: x.sid });
-      marks.push({ time: snap(x.exitT), position: 'aboveBar', color: x.pnl >= 0 ? '#22c55e' : '#f05252', shape: 'circle', text: signed(x.pnl) });
+    const paperMode = st.hist === 'paper';
+    for (const x of histRows().filter((y) => y.market === m.id && y.exitT >= first)) {
+      const win = paperMode ? x.pnlPct >= 0 : x.pnl >= 0;
+      if (x.entryT >= first) marks.push({ time: snap(x.entryT), position: x.side === 'long' ? 'belowBar' : 'aboveBar', color: paperMode ? '#9aa6b2' : '#7cc4ff', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown', text: x.sid });
+      marks.push({ time: snap(x.exitT), position: 'aboveBar', color: win ? '#22c55e' : '#f05252', shape: 'circle', text: paperMode ? ctx.pct(x.pnlPct) : signed(x.pnl) });
     }
     for (const p of positionsOn(m.id)) if (p.entryT >= first) marks.push({ time: snap(p.entryT), position: p.side === 'long' ? 'belowBar' : 'aboveBar', color: '#7cc4ff', shape: p.side === 'long' ? 'arrowUp' : 'arrowDown', text: `${p.acct} ${p.sid}` });
     marks.sort((a, b) => a.time - b.time);
     if (c.markers) c.markers.setMarkers(marks); else c.markers = c.LWC.createSeriesMarkers(c.series, marks);
     // Ouverture sur les ~150 dernières bougies (zoom libre ensuite, conservé aux mises à jour)
-    if (c.first) { const n = data.candles.length; c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 4 }); c.first = false; }
+    if (st.focus) {
+      // Centré sur un trade cliqué dans l'historique
+      const pad = sec * 30;
+      c.chart.timeScale().setVisibleRange({ from: local(Math.max(first, st.focus.entryT - pad)), to: local(st.focus.exitT + pad) });
+      st.focus = null; c.first = false;
+    } else if (c.first) { const n = data.candles.length; c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 4 }); c.first = false; }
   }
 
   /* ---------- Tableaux ---------- */
@@ -165,13 +173,35 @@ export function createBot(ctx) {
         <td>${px(p.entry)}</td><td class="neg">${px(p.sl)}</td><td class="pos">${isNum(p.tp) ? px(p.tp) : '—'}</td><td>${p.n ? `${p.n} ${esc(p.contract || '')}` : money(p.notional)}<small> · ${t('bot.risk')} ${money(p.risk)}</small></td>
         <td class="${cls(p.pnl)}"><b>${signed(p.pnl)}</b></td></tr>`).join('')}</tbody></table></div>`;
   }
+  /** Trades de l'historique choisi, du plus récent au plus ancien. */
+  function histRows() {
+    if (!st.d) return [];
+    if (st.hist === 'paper') return [...(st.d.paper || [])].sort((p, q) => q.exitT - p.exitT);
+    const a = st.d.accounts.find((x) => x.id === st.hist) || st.d.accounts[0];
+    if (!a) return [];
+    return [...a.closed.map((x) => ({ ...x, attempt: a.attempt })), ...(a.archive || [])].sort((p, q) => q.exitT - p.exitT);
+  }
   function tradesHTML() {
-    const rows = (st.d?.accounts || []).flatMap((a) => a.closed.map((x) => ({ a, x }))).sort((p, q) => q.x.exitT - p.x.exitT).slice(0, 40);
-    if (!rows.length) return `<p class="mc-note">${t('bot.noTrades')}</p>`;
-    return `<div class="bot-table-wrap"><table class="bot-table"><thead><tr><th>${t('bot.date')}</th><th>${t('bot.acct')}</th><th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th>${t('bot.inOut')}</th><th>${t('bot.result')}</th><th>${t('bot.why')}</th></tr></thead><tbody>
-      ${rows.map(({ a, x }) => `<tr data-mk="${esc(x.market)}" class="bot-click"><td>${esc(ctx.day(x.exitT * 1000))} ${esc(ctx.time(x.exitT * 1000))}</td><td><span class="bot-firm bot-firm-${esc(a.id)}">${esc(a.firm)}</span></td>
-        <td>${EMOJI[x.market] || ''} ${esc(mkName(x.market))}</td><td title="${esc(x.name || '')}"><code>${esc(x.sid)}</code></td><td class="${x.side === 'long' ? 'pos' : 'neg'}">${t(x.side === 'long' ? 'bot.buy' : 'bot.sell')}</td>
-        <td>${px(x.entry)} → ${px(x.exit)}</td><td class="${cls(x.pnl)}"><b>${signed(x.pnl)}</b>${isNum(x.risk) && x.risk > 0 ? `<small> · ${(x.pnl / x.risk).toFixed(1)} R</small>` : ''}</td><td><small>${esc(x.reason || '')}</small></td></tr>`).join('')}</tbody></table></div>`;
+    const ids = (st.d?.accounts || []).map((a) => [a.id, t('bot.histAcct', { f: a.firm })]);
+    const bar = `<div class="seg" role="group" aria-label="${t('bot.trades')}">${[...ids, ['paper', t('bot.histPaper')]].map(([v, txt]) => `<button type="button" data-hist="${v}" aria-pressed="${st.hist === v}">${esc(txt)}</button>`).join('')}</div>`;
+    const rows = histRows();
+    if (!rows.length) return `${bar}<p class="mc-note">${t('bot.noTrades')}</p>`;
+    const paperMode = st.hist === 'paper';
+    const val = (x) => (paperMode ? x.pnlPct : x.pnl);
+    const wins = rows.filter((x) => val(x) > 0).length;
+    const total = rows.reduce((s2, x) => s2 + (val(x) || 0), 0);
+    const sum = paperMode
+      ? t('bot.sumPaper', { n: rows.length, w: Math.round((wins / rows.length) * 100), v: signed(Math.round(total * 10)) })
+      : t('bot.sumAcct', { n: rows.length, w: Math.round((wins / rows.length) * 100), v: signed(total) });
+    const shown = rows.slice(0, st.shown);
+    const head = `<tr><th>${t('bot.date')}</th>${paperMode ? '' : `<th>${t('bot.challenge')}</th>`}<th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th>${t('bot.inOut')}</th><th>${t('bot.result')}</th><th>${t('bot.why')}</th></tr>`;
+    const body = shown.map((x) => `<tr data-mk="${esc(x.market)}" data-te="${x.entryT}" data-tx="${x.exitT}" class="bot-click"><td>${esc(ctx.day(x.exitT * 1000))} ${esc(ctx.time(x.exitT * 1000))}</td>
+        ${paperMode ? '' : `<td>${isNum(x.attempt) ? `n° ${x.attempt}` : '—'}</td>`}<td>${EMOJI[x.market] || ''} ${esc(mkName(x.market))}</td><td title="${esc(x.name || '')}"><code>${esc(x.sid)}</code></td>
+        <td class="${x.side === 'long' ? 'pos' : 'neg'}">${t(x.side === 'long' ? 'bot.buy' : 'bot.sell')}</td><td>${px(x.entry)} → ${px(x.exit)}</td>
+        <td class="${cls(paperMode ? x.pnlPct * 100 : x.pnl)}"><b>${paperMode ? ctx.pct(x.pnlPct) : signed(x.pnl)}</b>${!paperMode && isNum(x.risk) && x.risk > 0 ? `<small> · ${(x.pnl / x.risk).toFixed(1)} R</small>` : ''}${paperMode ? `<small> · ${signed(x.pnlPct * 10)}</small>` : ''}</td><td><small>${esc(x.reason || '')}</small></td></tr>`).join('');
+    return `${bar}<p class="bot-sub">${sum}${paperMode ? ` · ${t('bot.paperNote')}` : ''}</p>
+      <div class="bot-table-wrap"><table class="bot-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>
+      ${rows.length > st.shown ? `<button type="button" class="btn btn-sm bot-more" data-more>${t('bot.more', { n: Math.min(PAGE, rows.length - st.shown), r: rows.length - st.shown })}</button>` : ''}`;
   }
   function refusedHTML() {
     const r = st.d?.accounts?.find((a) => a.refused)?.refused;
@@ -208,7 +238,7 @@ export function createBot(ctx) {
         <section class="bot-sec"><div class="bot-tools" id="bot-tools"></div><div id="bot-chart" class="bot-chart"></div>
           <p class="bot-sub" id="bot-legend"></p></section>
         <section class="bot-sec"><h3>${t('bot.openPos')}</h3><div id="bot-pos"></div></section>
-        <section class="bot-sec"><h3>${t('bot.trades')}</h3><div id="bot-refused"></div><div id="bot-trades"></div></section>`;
+        <section class="bot-sec"><h3>${t('bot.history')}</h3><div id="bot-refused"></div><div id="bot-trades"></div></section>`;
     }
     body.querySelector('#bot-head').innerHTML = headHTML();
     body.querySelector('#bot-accts').innerHTML = st.d.accounts.map(accountHTML).join('') || `<p class="mc-note">${t('bot.noAcct')}</p>`;
@@ -237,11 +267,23 @@ export function createBot(ctx) {
     st.chart = null;
     fill();
     el.onclick = (e) => {
-      const b = e.target.closest('[data-bmk],[data-btf],[data-mk]');
+      const b = e.target.closest('[data-bmk],[data-btf],[data-mk],[data-hist],[data-more]');
       if (!b) return;
-      if (b.dataset.bmk) st.market = b.dataset.bmk;
+      if (b.dataset.hist) { st.hist = b.dataset.hist; st.shown = PAGE; }
+      else if (b.hasAttribute('data-more')) { st.shown += PAGE; el.querySelector('#bot-trades').innerHTML = tradesHTML(); return; }
+      else if (b.dataset.bmk) st.market = b.dataset.bmk;
       else if (b.dataset.btf) st.tf = b.dataset.btf;
-      else if (b.dataset.mk) { st.market = b.dataset.mk; el.querySelector('#bot-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+      else if (b.dataset.mk) {
+        st.market = b.dataset.mk;
+        if (b.dataset.te) {
+          // Trade de l'historique : unité de temps qui couvre sa date (Yahoo : 5 j en 5 min, 1 mois en 15 min, 3 mois en 1 h)
+          const te = Number(b.dataset.te), tx = Number(b.dataset.tx);
+          const age = (Date.now() / 1000 - te) / 86400;
+          st.tf = age < 4 && tx - te < 86400 ? '5m' : age < 28 ? '15m' : age < 85 ? '1h' : '1d';
+          st.focus = { entryT: te, exitT: tx };
+        }
+        el.querySelector('#bot-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       st.chart?.chart?.remove(); st.chart = null;
       fill();
     };
