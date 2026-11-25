@@ -122,10 +122,43 @@ export function createBot(ctx) {
     </section>`;
   }
 
+  /** Portefeuille perso simulé (50 % monde, 10 % or, 40 % bot) : valeur en €, répartition, poches du bot. */
+  function portfolioHTML(p) {
+    const eur = (v) => `${Math.round(v).toLocaleString(ctx.locale())} €`;
+    const sp = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x * 100).toFixed(1)} %`;
+    const w = p.weights || {};
+    const row = (k, v, extra = '') => `<div class="tm-kv"><span>${k}</span><b>${v}</b>${extra}</div>`;
+    const alloc = [['WORLD', t('bot.ppWorld')], ['GLD', t('bot.ppGold')], ['BOT', t('bot.ppBot')]]
+      .map(([k, name]) => row(name, `${Math.round((w[k] || 0) * 100)} %`, `<em>${t('bot.ppTarget', { p: Math.round((p.target?.[k] || 0) * 100) })}</em>`)).join('');
+    return `<section class="tm-acct">
+      <div class="tm-ph"><span class="tm-firm tm-firm-perso">PERSO</span><span class="tm-ph-t">${t('bot.ppTitle')}</span><span class="tm-ph-m">${t('bot.ppSince', { d: ctx.day(p.startT * 1000) })}</span></div>
+      <div class="tm-eq"><b>${eur(p.value)}</b><span class="${cls(p.ret * 1000)}">${sp(p.ret)}</span></div>
+      <div class="tm-kvs">
+        ${row(t('bot.ppDd'), `<span class="${cls(p.drawdown * 1000)}">${sp(p.drawdown)}</span>`, `<em>${t('bot.ppMaxDd', { v: sp(p.maxDrawdown) })}</em>`)}
+        ${alloc}
+        ${(p.sleeves || []).map((s) => row(esc(s.name), `<span class="${s.open ? 'up' : ''}">${s.open ? esc(s.sym) : t('bot.ppCash')}</span>`)).join('')}
+      </div>
+      <div class="tm-curve" data-curve="perso"></div>
+    </section>`;
+  }
+
   /** Courbe de la valeur du compte (trades clôturés, puis valeur actuelle). */
   async function drawCurves(root) {
     const LWC = await loadLib().catch(() => null);
     if (!LWC || !st.d) return;
+    const pf = st.d.portfolio;
+    const pbox = root.querySelector('[data-curve="perso"]');
+    if (pf && pbox && pf.curve?.length > 1) {
+      st.curves.perso?.remove?.();
+      pbox.innerHTML = '';
+      const ch = LWC.createChart(pbox, { height: 64, autoSize: true, layout: { background: { type: 'solid', color: 'transparent' }, textColor: cssVar(st.el, '--tm-mut', '#6b7785'), attributionLogo: false },
+        grid: { vertLines: { visible: false }, horzLines: { visible: false } }, rightPriceScale: { visible: false }, timeScale: { visible: false }, handleScroll: false, handleScale: false, crosshair: { mode: 2 } });
+      const s = ch.addSeries(LWC.LineSeries, { color: pf.value >= pf.capital ? cssVar(st.el, '--tm-up', '#2ebd85') : cssVar(st.el, '--tm-dn', '#f6465d'), lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
+      s.setData(pf.curve.map(([time, value]) => ({ time, value })));
+      s.createPriceLine({ price: pf.capital, color: cssVar(st.el, '--tm-mut', '#6b7785'), lineStyle: 2, lineWidth: 1, axisLabelVisible: false, title: '' });
+      ch.timeScale().fitContent();
+      st.curves.perso = ch;
+    }
     for (const a of st.d.accounts) {
       const box = root.querySelector(`[data-curve="${a.id}"]`);
       if (!box) continue;
@@ -310,7 +343,7 @@ export function createBot(ctx) {
     body.querySelector('#bot-status').innerHTML = statusHTML();
     body.querySelector('#bot-watch').innerHTML = watchHTML();
     body.querySelector('#bot-cbar').innerHTML = chartBarHTML();
-    body.querySelector('#bot-accts').innerHTML = st.d.accounts.map(accountHTML).join('') || `<p class="tm-empty">${t('bot.noAcct')}</p>`;
+    body.querySelector('#bot-accts').innerHTML = (st.d.accounts.map(accountHTML).join('') + (st.d.portfolio ? portfolioHTML(st.d.portfolio) : '')) || `<p class="tm-empty">${t('bot.noAcct')}</p>`;
     const sc = body.querySelector('.tm-scroll')?.scrollTop || 0; // garder la position dans le tableau
     body.querySelector('#bot-blot').innerHTML = blotterHTML();
     const scroller = body.querySelector('.tm-scroll'); if (scroller) scroller.scrollTop = sc;
