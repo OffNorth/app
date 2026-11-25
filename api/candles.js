@@ -7,6 +7,8 @@ import { cached, fetchWithTimeout, json, num } from './_lib.js';
 import { YAHOO_HOSTS } from './_yahoo.js';
 
 const TF = {
+  // 1 minute : Yahoo garde 7 jours ; on prend les 3 000 dernières (≈ 2 jours sur les futures, ≈ 5 séances sur les actions)
+  '1m': { interval: '1m', range: '5d', ttl: 20_000, gecko: null, max: 3000 },
   '5m': { interval: '5m', range: '5d', ttl: 30_000, gecko: 1 },
   '15m': { interval: '15m', range: '1mo', ttl: 45_000, gecko: 1 },
   '1h': { interval: '60m', range: '3mo', ttl: 60_000, gecko: 7 },
@@ -33,7 +35,7 @@ async function yahoo(symbol, tf) {
         if (o != null && h != null && l != null && c != null) candles.push([ts[i], r8(o), r8(h), r8(l), r8(c), v ?? null]);
       }
       if (tf.group) candles = group(candles, tf.group * 3600);
-      return { candles: candles.slice(-MAX), currency: r.meta?.currency || null, last: num(r.meta?.regularMarketPrice), source: 'Yahoo Finance' };
+      return { candles: candles.slice(-(tf.max || MAX)), currency: r.meta?.currency || null, last: num(r.meta?.regularMarketPrice), source: 'Yahoo Finance' };
     } catch (err) {
       lastErr = err;
     }

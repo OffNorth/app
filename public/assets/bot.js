@@ -6,9 +6,9 @@
 // Mise en page « terminal » : bandeau d'état, liste des marchés, graphique, comptes, blotter à onglets.
 
 const LIB = '/vendor/lightweight-charts/lightweight-charts.standalone.production.js';
-const TFS = ['5m', '15m', '1h', '1d'];
-const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
-const TV_TF = { '5m': '5', '15m': '15', '1h': '60', '1d': 'D' };
+const TFS = ['1m', '5m', '15m', '1h', '1d'];
+const TF_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
+const TV_TF = { '1m': '1', '5m': '5', '15m': '15', '1h': '60', '1d': 'D' };
 const SRC_KEY = 'marches:botChart';
 const readSrc = () => { try { return localStorage.getItem(SRC_KEY) === 'tv' ? 'tv' : 'bot'; } catch { return 'bot'; } };
 const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT',
@@ -72,7 +72,7 @@ class PositionZones {
         const yE = se.priceToCoordinate(z.entry);
         if (yE == null) continue;
         const long = z.side === 'long';
-        const gain = (v) => isFinite(v) && (long ? v > z.entry : v < z.entry);
+        const gain = (v) => Number.isFinite(v) && (long ? v > z.entry : v < z.entry);
         const tp = gain(z.tp) ? z.tp : gain(z.exit) ? z.exit : null;
         const box = (price, fill, stroke) => {
           const y = se.priceToCoordinate(price);
@@ -83,13 +83,13 @@ class PositionZones {
           return { a, b, y: Math.round(y * vr) };
         };
         // Stop du côté de la perte seulement (anciens trades : le stop publié peut avoir suivi le cours au-delà de l'entrée)
-        const slOk = isFinite(z.sl) && (long ? z.sl < z.entry : z.sl > z.entry);
+        const slOk = Number.isFinite(z.sl) && (long ? z.sl < z.entry : z.sl > z.entry);
         const red = slOk ? box(z.sl, 'rgba(242, 54, 69, 0.20)', 'rgba(242, 54, 69, 0.85)') : null;
         const green = tp != null ? box(tp, 'rgba(8, 153, 129, 0.20)', 'rgba(8, 153, 129, 0.85)') : null;
         // Ligne d'entrée
         g.fillStyle = 'rgba(178, 181, 190, 0.9)'; g.fillRect(x0, Math.round(yE * vr), x1 - x0, Math.max(1, Math.round(vr)));
         // Trajet entrée → sortie (pointillé)
-        if (!z.open && isFinite(z.exit)) {
+        if (!z.open && Number.isFinite(z.exit)) {
           const yX = se.priceToCoordinate(z.exit);
           if (yX != null) {
             g.save(); g.strokeStyle = z.win ? 'rgba(8, 153, 129, 0.95)' : 'rgba(242, 54, 69, 0.95)'; g.lineWidth = Math.max(1, Math.round(hr));
@@ -133,7 +133,7 @@ const cssVar = (el, n, d) => (el && getComputedStyle(el).getPropertyValue(n).tri
 
 export function createBot(ctx) {
   const { t, esc, isNum, ND } = ctx;
-  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '15m', timer: null, chart: null, el: null, tab: 'pos', shown: PAGE, focus: null, curves: {}, src: readSrc() };
+  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '1m', timer: null, chart: null, el: null, tab: 'pos', shown: PAGE, focus: null, curves: {}, src: readSrc() };
   const cls = (v) => (!isNum(v) || Math.abs(v) < 0.5 ? '' : v > 0 ? 'up' : 'dn');
   const money = (v) => (isNum(v) ? ctx.money(v) : ND);
   const signed = (v) => (isNum(v) ? ctx.signed(v) : ND);
@@ -355,7 +355,22 @@ export function createBot(ctx) {
         crosshair: { mode: 0, vertLine: { color: TVC.cross, width: 1, style: 3, labelBackgroundColor: TVC.label }, horzLine: { color: TVC.cross, width: 1, style: 3, labelBackgroundColor: TVC.label } },
         timeScale: { borderColor: TVC.line, timeVisible: st.tf !== '1d', secondsVisible: false, rightOffset: 8 } });
       const series = chart.addSeries(LWC.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false, wickUpColor: UP, wickDownColor: DN,
-        priceFormat: { type: 'price', precision: prec, minMove: prec === 5 ? 0.00001 : 0.01 } });
+        priceFormat: { type: 'price', precision: prec, minMove: prec === 5 ? 0.00001 : 0.01 },
+        // Zoom automatique en prix : l'échelle englobe l'entrée, le stop et l'objectif des trades visibles
+        autoscaleInfoProvider: (orig) => {
+          const r = orig();
+          const c = st.chart;
+          if (!r?.priceRange || !c?.zones) return r;
+          const vr = chart.timeScale().getVisibleRange();
+          if (!vr) return r;
+          let lo = r.priceRange.minValue, hi = r.priceRange.maxValue;
+          for (const z of c.zones.zones) {
+            const t1 = z.open ? Infinity : z.t1;
+            if (t1 < vr.from || z.t0 > vr.to) continue;
+            for (const v of [z.entry, z.sl, z.tp]) if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+          }
+          return { ...r, priceRange: { minValue: lo, maxValue: hi } };
+        } });
       const vol = chart.addSeries(LWC.HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
       chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
       const zones = new PositionZones(prec, ctx.locale());
@@ -406,11 +421,17 @@ export function createBot(ctx) {
     for (const p of open) if (p.entryT >= first) marks.push({ time: snap(p.entryT), position: p.side === 'long' ? 'belowBar' : 'aboveBar', color: TVC.entry, shape: p.side === 'long' ? 'arrowUp' : 'arrowDown', text: `${p.acct} ${p.sid}` });
     marks.sort((a, b) => a.time - b.time);
     if (c.markers) c.markers.setMarkers(marks); else c.markers = c.LWC.createSeriesMarkers(c.series, marks);
-    if (st.focus) {
-      const pad = sec * 30;
-      c.chart.timeScale().setVisibleRange({ from: local(Math.max(first, st.focus.entryT - pad)), to: local(st.focus.exitT + pad) });
-      st.focus = null; c.first = false;
-    } else if (c.first) { const n = data.candles.length; c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 6 }); c.first = false; }
+    // Zoom automatique sur la position : trade choisi, sinon (nouveau graphique) la dernière position ouverte du marché
+    const n = data.candles.length;
+    const target = st.focus || (c.first && open.length ? { entryT: Math.max(...open.map((p) => p.entryT)), exitT: null } : null);
+    const l0 = target ? c.zones.logical(local(target.entryT)) : null;
+    if (target && l0 != null && l0 >= 0) {
+      const l1 = target.exitT ? c.zones.logical(local(target.exitT)) : n - 1;
+      const pad = Math.max(12, Math.round((l1 - l0) * 0.35));
+      c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, l0 - pad), to: (target.exitT ? l1 + pad : n - 1 + Math.max(10, pad / 2)) });
+      c.first = false;
+    } else if (c.first) { c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 6 }); c.first = false; }
+    st.focus = null;
   }
 
   /* ---------- Blotter ---------- */
@@ -433,7 +454,7 @@ export function createBot(ctx) {
     const rows = allOpen();
     if (!rows.length) return `<p class="tm-empty">${t('bot.noPos')}</p>`;
     return `<table class="tm-t"><thead><tr><th>${t('bot.acct')}</th><th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th class="r">${t('bot.entry')}</th><th class="r">SL</th><th class="r">TP</th><th class="r">${t('bot.size')}</th><th class="r">${t('bot.risk')}</th><th class="r">${t('bot.tmOpened')}</th><th class="r">${t('bot.pnl')}</th></tr></thead><tbody>
-      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" class="tm-click"><td>${firm(a)}</td><td><b>${esc(code(p.market))}</b></td>
+      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" data-pe="${p.entryT || ''}" class="tm-click"><td>${firm(a)}</td><td><b>${esc(code(p.market))}</b></td>
         <td title="${esc(p.name || '')}">${esc(p.sid)}${isNum(p.ai) ? ` <em>IA ${p.ai}%</em>` : ''}</td><td>${side(p.side)}</td>
         <td class="r">${px(p.entry)}</td><td class="r dn">${px(p.sl)}</td><td class="r up">${isNum(p.tp) ? px(p.tp) : '—'}</td>
         <td class="r">${p.n ? `${p.n} ${esc(p.contract || '')}` : money(p.notional)}</td><td class="r">${money(p.risk)}</td><td class="r">${p.entryT ? hhmm(p.entryT) : ND}</td>
@@ -534,10 +555,11 @@ export function createBot(ctx) {
           // Trade de l'historique : unité de temps qui couvre sa date (Yahoo : 5 j en 5 min, 1 mois en 15 min, 3 mois en 1 h)
           const te = Number(b.dataset.te), tx = Number(b.dataset.tx);
           const age = (Date.now() / 1000 - te) / 86400;
-          st.tf = age < 4 && tx - te < 86400 ? '5m' : age < 28 ? '15m' : age < 85 ? '1h' : '1d';
+          st.tf = age < 1.8 && tx - te < 8 * 3600 ? '1m' : age < 4 && tx - te < 86400 ? '5m' : age < 28 ? '15m' : age < 85 ? '1h' : '1d';
           st.focus = { entryT: te, exitT: tx };
           st.src = 'bot';
         }
+        else if (b.dataset.pe) { st.focus = { entryT: Number(b.dataset.pe), exitT: null }; st.src = 'bot'; }
         el.querySelector('#bot-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
       st.chart?.chart?.remove(); st.chart = null;
