@@ -7,7 +7,8 @@
 const LIB = '/vendor/lightweight-charts/lightweight-charts.standalone.production.js';
 const TFS = ['5m', '15m', '1h', '1d'];
 const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
-const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT' };
+const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT',
+  tlt: 'NASDAQ:TLT', googl: 'NASDAQ:GOOGL', pltr: 'NASDAQ:PLTR', lly: 'NYSE:LLY', ba: 'NYSE:BA' };
 // Code court affiché à la place d'un émoji (contrat équivalent)
 const CODE = { gold: 'XAU', nas100: 'NDX', spx: 'SPX', eurusd: 'EURUSD', silver: 'XAG', dow: 'DJI', russell: 'RUT' };
 const LIVE_MS = 15_000;
