@@ -117,6 +117,89 @@ class PositionZones {
   }
 }
 
+
+/**
+ * Script Pine (v6) des trades du bot sur un marché, à coller dans l'éditeur Pine de TradingView : zones rouge (risque)
+ * et verte (objectif) comme l'outil position, ligne d'entrée, trajet jusqu'à la sortie, étiquettes et résultat.
+ * Photo des trades au moment de la copie (TradingView ne peut pas lire le bot en direct).
+ */
+function pineScript({ market, name, tvSymbol, trades, at }) {
+  const fl = (v) => { if (!Number.isFinite(v)) return '0.0'; let x = String(Number(v.toPrecision(10))); if (!/[.e]/.test(x)) x += '.0'; return x; };
+  const str = (v) => `"${String(v).replace(/["\\]/g, '').slice(0, 40)}"`;
+  const list = trades.slice(-150);
+  const arr = (f) => list.map(f).join(', ');
+  const d = new Date(at);
+  const stamp = `${d.toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+  const head = `//@version=6
+// Trades du bot de paper trading (simulation, argent fictif) · ${name}
+// Généré le ${stamp} : ${list.length} trade(s). Les trades suivants n'y sont pas : recopie le script depuis le site.
+// À ouvrir sur ${tvSymbol} (mêmes cours que le bot).
+indicator("Trades du bot · ${name.replace(/"/g, '')}", overlay = true, max_boxes_count = 500, max_lines_count = 500, max_labels_count = 500)
+
+showZones = input.bool(true, "Zones rouge / verte")
+showLabels = input.bool(true, "Étiquettes")
+showPath = input.bool(true, "Trajet entrée → sortie")
+
+UP = #089981
+DN = #f23645
+`;
+  if (!list.length) return `${head}
+if barstate.islastconfirmedhistory
+    label.new(bar_index, high, "Aucun trade du bot sur ce marché pour l'instant", style = label.style_label_down, color = color.gray, textcolor = color.white)
+`;
+  return `${head}
+// Un trade par colonne : entrée et sortie (ms, UTC ; 0 = position ouverte), sens (1 achat, -1 vente), prix, stop d'origine,
+// objectif (0 = inconnu), sortie, résultat ($), étiquette
+var T0 = array.from(${arr((x) => Math.round(x.entryT * 1000))})
+var T1 = array.from(${arr((x) => (x.exitT ? Math.round(x.exitT * 1000) : 0))})
+var S = array.from(${arr((x) => (x.side === 'long' ? 1 : -1))})
+var E = array.from(${arr((x) => fl(x.entry))})
+var SL = array.from(${arr((x) => fl(x.sl0 ?? x.sl))})
+var TP = array.from(${arr((x) => fl(x.tp))})
+var X = array.from(${arr((x) => fl(x.exit))})
+var PNL = array.from(${arr((x) => fl(x.pnl ?? 0))})
+var TXT = array.from(${arr((x) => str(`${x.acct} ${x.sid}`))})
+
+barMs = time - nz(time[1], time - 60000)
+
+if barstate.islastconfirmedhistory
+    n = array.size(T0)
+    for i = 0 to n - 1
+        t0 = array.get(T0, i)
+        t1 = array.get(T1, i)
+        isOpen = t1 == 0
+        tEnd = isOpen ? time + 10 * barMs : t1
+        ext = isOpen ? extend.right : extend.none
+        e = array.get(E, i)
+        sl = array.get(SL, i)
+        tp = array.get(TP, i)
+        x = array.get(X, i)
+        s = array.get(S, i)
+        pnl = array.get(PNL, i)
+        win = pnl >= 0
+        if showZones
+            if sl > 0 and (s == 1 ? sl < e : sl > e)
+                box.new(left = t0, top = math.max(e, sl), right = tEnd, bottom = math.min(e, sl), xloc = xloc.bar_time, extend = ext, border_color = color.new(DN, 20), bgcolor = color.new(DN, 80), text = "SL " + str.tostring(sl, format.mintick), text_color = color.new(DN, 0), text_size = size.tiny, text_halign = text.align_left, text_valign = s == 1 ? text.align_bottom : text.align_top)
+            tgt = tp > 0 and (s == 1 ? tp > e : tp < e) ? tp : not isOpen and (s == 1 ? x > e : x < e) ? x : 0.0
+            if tgt > 0
+                box.new(left = t0, top = math.max(e, tgt), right = tEnd, bottom = math.min(e, tgt), xloc = xloc.bar_time, extend = ext, border_color = color.new(UP, 20), bgcolor = color.new(UP, 80), text = (tgt == tp ? "TP " : "Sortie ") + str.tostring(tgt, format.mintick), text_color = color.new(UP, 0), text_size = size.tiny, text_halign = text.align_left, text_valign = s == 1 ? text.align_top : text.align_bottom)
+            line.new(t0, e, tEnd, e, xloc = xloc.bar_time, extend = ext, color = color.new(#b2b5be, 0), width = 1)
+        if showPath and not isOpen
+            line.new(t0, e, t1, x, xloc = xloc.bar_time, color = win ? UP : DN, style = line.style_dashed, width = 2)
+        if showLabels
+            label.new(t0, e, (s == 1 ? "▲ " : "▼ ") + array.get(TXT, i), xloc = xloc.bar_time, style = s == 1 ? label.style_label_up : label.style_label_down, color = #2962ff, textcolor = color.white, size = size.small)
+            if not isOpen
+                label.new(t1, x, (win ? "+" : "") + str.tostring(pnl, "#,##0") + " $", xloc = xloc.bar_time, style = label.style_label_left, color = win ? UP : DN, textcolor = color.white, size = size.small)
+
+// Rappel du symbole : les prix du bot sont ceux de ${tvSymbol}
+var table info = table.new(position.top_right, 1, 2)
+if barstate.islastconfirmedhistory
+    table.cell(info, 0, 0, "Trades du bot · ${name.replace(/"/g, '')} · ${list.length} trade(s) au ${stamp}", text_color = color.white, bgcolor = color.new(#2a2e39, 0), text_size = size.small)
+    if syminfo.prefix + ":" + syminfo.ticker != "${tvSymbol}"
+        table.cell(info, 0, 1, "Ouvre ce script sur ${tvSymbol} : ce graphique a d'autres prix", text_color = color.white, bgcolor = color.new(DN, 10), text_size = size.small)
+`;
+}
+
 let libPromise = null;
 function loadLib() {
   if (window.LightweightCharts) return Promise.resolve(window.LightweightCharts);
@@ -293,6 +376,7 @@ export function createBot(ctx) {
       <span class="tm-sp"></span>
       <span class="tm-tfs" role="group" aria-label="${t('bot.src')}">${[['tv', t('bot.srcTV')], ['bot', t('bot.srcBot')]].map(([v, l]) => `<button type="button" data-bsrc="${v}" aria-pressed="${srcOf() === v}">${esc(l)}</button>`).join('')}</span>
       <span class="tm-tfs" role="group" aria-label="${t('bot.tf')}">${TFS.map((x) => `<button type="button" data-btf="${x}" aria-pressed="${x === st.tf}">${x}</button>`).join('')}</span>
+      <button type="button" class="tm-tv" data-pine title="${esc(t('bot.pineTitle'))}">Pine</button>
       <a class="tm-tv" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(TV[st.market] || '')}" target="_blank" rel="noopener" title="${esc(t('bot.openTV', { m: m?.name || '' }))}">TV ↗</a>
     </div>`;
   }
@@ -434,6 +518,46 @@ export function createBot(ctx) {
     st.focus = null;
   }
 
+  /* ---------- Script Pine pour TradingView ---------- */
+  function marketTrades(id) {
+    const out = [];
+    for (const a of st.d?.accounts || []) {
+      for (const x of [...(a.archive || []), ...a.closed]) if (x.market === id) out.push({ ...x, acct: a.firm });
+      for (const p of a.open) if (p.market === id) out.push({ ...p, acct: a.firm, exitT: 0, exit: null, pnl: p.pnl });
+    }
+    return out.sort((p, q) => p.entryT - q.entryT);
+  }
+  function openPine() {
+    const m = st.d?.markets?.find((x) => x.id === st.market);
+    if (!m) return;
+    const trades = marketTrades(m.id);
+    const code = pineScript({ market: m.id, name: m.name || m.id, tvSymbol: TV[m.id] || '', trades, at: Date.now() });
+    document.querySelector('#bot-pine')?.remove();
+    const dlg = document.createElement('div');
+    dlg.id = 'bot-pine'; dlg.className = 'snap'; dlg.setAttribute('role', 'dialog'); dlg.setAttribute('aria-modal', 'true'); dlg.setAttribute('aria-labelledby', 'bot-pine-t');
+    dlg.innerHTML = `<div class="snap-card pine-card">
+      <h2 id="bot-pine-t">${esc(t('bot.pineH', { m: m.name || m.id }))}</h2>
+      <ol class="pine-steps">${t('bot.pineSteps', { s: `<b>${esc(TV[m.id] || '')}</b>`, n: Math.min(150, trades.length) })}</ol>
+      <textarea class="pine-code" readonly spellcheck="false" aria-label="Pine Script">${esc(code)}</textarea>
+      <p class="pine-msg" role="status"></p>
+      <div class="snap-actions"><button type="button" class="btn" data-pclose>${esc(t('snap.close'))}</button><button type="button" class="btn btn-primary" data-pcopy>${esc(t('bot.pineCopy'))}</button></div>
+    </div>`;
+    document.body.append(dlg);
+    document.body.style.overflow = 'hidden';
+    const close = () => { dlg.remove(); document.body.style.overflow = ''; };
+    const ta = dlg.querySelector('textarea');
+    dlg.addEventListener('click', async (e) => {
+      if (e.target === dlg || e.target.closest('[data-pclose]')) { close(); return; }
+      if (e.target.closest('[data-pcopy]')) {
+        let ok = false;
+        try { await navigator.clipboard.writeText(code); ok = true; } catch { ta.focus(); ta.select(); try { ok = document.execCommand('copy'); } catch { ok = false; } }
+        dlg.querySelector('.pine-msg').textContent = ok ? t('bot.pineCopied') : t('bot.pineSelect');
+      }
+    });
+    dlg.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    dlg.querySelector('[data-pcopy]').focus();
+  }
+
   /* ---------- Blotter ---------- */
   function histRows() {
     if (!st.d) return [];
@@ -537,6 +661,7 @@ export function createBot(ctx) {
     st.chart = null;
     fill();
     el.onclick = (e) => {
+      if (e.target.closest('[data-pine]')) { openPine(); return; }
       const b = e.target.closest('[data-bmk],[data-btf],[data-bsrc],[data-mk],[data-tab2],[data-more]');
       if (!b) return;
       if (b.dataset.tab2) {
