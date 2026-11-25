@@ -935,6 +935,7 @@ body.tv .ticker { display: none; }
 .tm b { color: var(--tm-hi); font-weight: 600; }
 .tm em { font-style: normal; color: var(--tm-mut); }
 .tm .up { color: var(--tm-up); } .tm .dn { color: var(--tm-dn); } .tm .wn { color: var(--tm-wn); }
+.tm .up b, .tm .dn b, .tm .wn b { color: inherit; }
 :where(.tm) button { background: none; border: 0; padding: 0; cursor: pointer; color: inherit; font: inherit; }
 .tm-empty { margin: 0; padding: 14px 12px; color: var(--tm-mut); font-size: 12px; }
 
@@ -1034,6 +1035,11 @@ body.tv .ticker { display: none; }
 .tm-t .r { text-align: right; }
 .tm-t tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--tm-bg1) 55%, var(--tm-bg0)); }
 .tm-click { cursor: pointer; }
+/* Historique : ligne verte si le trade a gagné, rouge s'il a perdu (trait de couleur à gauche) */
+.tm-t tr.tm-win td, .tm-t tr.tm-win td b { color: var(--tm-up); }
+.tm-t tr.tm-loss td, .tm-t tr.tm-loss td b { color: var(--tm-dn); }
+.tm-t tr.tm-win td:first-child { box-shadow: inset 2px 0 0 var(--tm-up); }
+.tm-t tr.tm-loss td:first-child { box-shadow: inset 2px 0 0 var(--tm-dn); }
 .tm-click:hover td { background: var(--tm-bg2) !important; }
 .tm-dir { font-family: var(--tm-mono); font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; }
 .tm-why { color: var(--tm-mut); font-family: var(--tm-sans) !important; }

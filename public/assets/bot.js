@@ -264,11 +264,11 @@ export function createBot(ctx) {
     const shown = rows.slice(0, st.shown);
     return `<div class="tm-sum">${sum}${paperMode ? ` · ${t('bot.paperNote')}` : ''}</div>
       <table class="tm-t"><thead><tr><th>${t('bot.tmClosed')}</th>${paperMode ? '' : `<th>${t('bot.challenge')}</th>`}<th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th class="r">${t('bot.entry')}</th><th class="r">${t('bot.tmExit')}</th><th class="r">${t('bot.result')}</th><th class="r">R</th><th>${t('bot.why')}</th></tr></thead><tbody>
-      ${shown.map((x) => `<tr data-mk="${esc(x.market)}" data-te="${x.entryT}" data-tx="${x.exitT}" class="tm-click"><td>${hhmm(x.exitT)}</td>
+      ${shown.map((x) => { const v = val(x); const wl = v > 0 ? 'tm-win' : v < 0 ? 'tm-loss' : ''; return `<tr data-mk="${esc(x.market)}" data-te="${x.entryT}" data-tx="${x.exitT}" class="tm-click ${wl}"><td>${hhmm(x.exitT)}</td>
         ${paperMode ? '' : `<td>${isNum(x.attempt) ? `#${x.attempt}` : '—'}</td>`}<td><b>${esc(code(x.market))}</b></td><td title="${esc(x.name || '')}">${esc(x.sid)}</td>
-        <td>${side(x.side)}</td><td class="r">${px(x.entry)}</td><td class="r">${px(x.exit)}</td>
+        <td><span class="tm-dir">${esc(t(x.side === 'long' ? 'bot.buy' : 'bot.sell'))}</span></td><td class="r">${px(x.entry)}</td><td class="r">${px(x.exit)}</td>
         <td class="r ${cls(paperMode ? x.pnlPct * 100 : x.pnl)}"><b>${paperMode ? ctx.pct(x.pnlPct) : signed(x.pnl)}</b></td>
-        <td class="r">${!paperMode && isNum(x.risk) && x.risk > 0 ? (x.pnl / x.risk).toFixed(2) : '—'}</td><td class="tm-why">${esc(x.reason || '')}</td></tr>`).join('')}</tbody></table>
+        <td class="r">${!paperMode && isNum(x.risk) && x.risk > 0 ? (x.pnl / x.risk).toFixed(2) : '—'}</td><td class="tm-why">${esc(x.reason || '')}</td></tr>`; }).join('')}</tbody></table>
       ${rows.length > st.shown ? `<button type="button" class="tm-more" data-more>${t('bot.more', { n: Math.min(PAGE, rows.length - st.shown), r: rows.length - st.shown })}</button>` : ''}`;
   }
   function aiTable() {
