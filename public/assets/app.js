@@ -12,7 +12,7 @@ import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
 import { createBot } from './bot.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 32; // à garder égal à VERSION ('v32') dans /sw.js
+const APP_BUILD = 33; // à garder égal à VERSION ('v33') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (25/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte', 'bot'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];
@@ -841,12 +841,13 @@ $('#snap').addEventListener('click', (e) => { if (e.target.id === 'snap') closeS
 const tvCache = new Map(); // symbole → réponse /api/tv (ou promesse en cours)
 let chartToken = 0;
 
-function tvWidgetURL(tvSymbol, interval = '60') {
+function tvWidgetURL(tvSymbol, interval = '60', opts = {}) {
   let tz = 'Etc/UTC';
   try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || tz; } catch { /* défaut UTC */ }
+  const light = opts.dark ? false : isLight();
   const p = new URLSearchParams({
-    symbol: tvSymbol, interval, theme: isLight() ? 'light' : 'dark', style: '1', locale: TV_LOCALE[getLang()], timezone: tz,
-    toolbarbg: isLight() ? 'f4f6f9' : '0b0f14', hidesidetoolbar: '1', symboledit: '0', saveimage: '0', withdateranges: '1',
+    symbol: tvSymbol, interval, theme: light ? 'light' : 'dark', style: '1', locale: TV_LOCALE[getLang()], timezone: tz,
+    toolbarbg: light ? 'eef1f4' : (opts.dark ? '0d1116' : '07090c'), hidesidetoolbar: opts.side ? '0' : '1', symboledit: '0', saveimage: '0', withdateranges: '1',
     hideideas: '1', studies: '[]',
   });
   return `https://s.tradingview.com/widgetembed/?${p}`;
@@ -964,10 +965,14 @@ $('#chart-mode').addEventListener('click', (e) => {
  */
 function renderTVFrame(res, label, token) {
   if (token !== chartToken || $('#chart').hidden) return;
-  const frame = $('#chart-frame');
+  mountTV($('#chart-frame'), res.tv, res.interval, label);
+}
+
+/** Widget TradingView dans `frame` si accepté ; sinon panneau de consentement (même règles partout, onglet Bot compris). */
+function mountTV(frame, tvSymbol, interval, label, opts = {}) {
   const consent = getConsent('tradingview');
   if (consent === true) {
-    frame.innerHTML = `<iframe title="TradingView — ${esc(label)}" src="${esc(tvWidgetURL(res.tv, res.interval))}" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+    frame.innerHTML = `<iframe title="TradingView — ${esc(label)}" src="${esc(tvWidgetURL(tvSymbol, interval, opts))}" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
     return;
   }
   const s = SERVICES.tradingview;
@@ -989,7 +994,7 @@ function renderTVFrame(res, label, token) {
       </div>`;
   frame.querySelectorAll('[data-consent]').forEach((b) => b.addEventListener('click', () => {
     setConsent('tradingview', b.dataset.consent === 'accept');
-    renderTVFrame(res, label, token);
+    mountTV(frame, tvSymbol, interval, label, opts);
   }));
 }
 
@@ -2641,6 +2646,7 @@ const bot = createBot({
   pct: (v) => fmtPct(v),
   day: (ms) => fmtDay(ms), time: (ms) => fmtTime(ms),
   locale: () => loc(),
+  tv: (frame, sym, interval, label) => mountTV(frame, sym, interval, label, { dark: true, side: true }),
 });
 
 /* ---------- Confort : bandeau des favoris, visite guidée, connexion ---------- */

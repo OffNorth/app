@@ -925,7 +925,7 @@ body.tv .ticker { display: none; }
 .tm {
   --tm-bg0: #07090c; --tm-bg1: #0d1116; --tm-bg2: #131920; --tm-line: #1c232b; --tm-grid: #141a20;
   --tm-txt: #c7d0d9; --tm-mut: #6b7785; --tm-hi: #eef2f6;
-  --tm-up: #2ebd85; --tm-dn: #f6465d; --tm-wn: #e0a526; --tm-acc: #f0b90b; --tm-blue: #4c8dff;
+  --tm-up: #2ebd85; --tm-dn: #f6465d; --tm-wn: #e0a526; --tm-acc: #b197fc; --tm-blue: #4c8dff;
   --tm-mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --tm-sans: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   background: var(--tm-bg0); color: var(--tm-txt); font-family: var(--tm-sans); font-size: 12px; line-height: 1.35;
@@ -1074,13 +1074,13 @@ body.tv .ticker { display: none; }
 
 /* ==========================================================================================
    Style terminal pour tout le site (repris de l'onglet « Bot ») : fonds presque noirs, filets de 1 px, angles droits,
-   chiffres en chasse fixe, titres de panneau en petites capitales, accent jaune. Le thème clair garde la même
+   chiffres en chasse fixe, titres de panneau en petites capitales, accent mauve. Le thème clair garde la même
    structure. Placé en fin de feuille : remplace les réglages plus haut sans les supprimer.
    ========================================================================================== */
 :root {
   --bg: #07090c; --surface: #0d1116; --surface-2: #131920; --border: #1c232b;
   --text: #d3dbe3; --muted: #7b8795; --hi: #eef2f6;
-  --up: #2ebd85; --down: #f6465d; --warn: #e0a526; --accent: #f0b90b; --on-accent: #0b0e11;
+  --up: #2ebd85; --down: #f6465d; --warn: #e0a526; --accent: #b197fc; --on-accent: #0b0e11;
   --radius: 0px;
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -1088,7 +1088,7 @@ body.tv .ticker { display: none; }
 :root[data-theme="light"] {
   --bg: #eef1f4; --surface: #ffffff; --surface-2: #f4f6f8; --border: #d9dee4;
   --text: #1b232c; --muted: #5d6976; --hi: #0b1117;
-  --up: #0f8a5f; --down: #d1263e; --warn: #946200; --accent: #946c00; --on-accent: #ffffff;
+  --up: #0f8a5f; --down: #d1263e; --warn: #946200; --accent: #6e45c9; --on-accent: #ffffff;
 }
 *, *::before, *::after { border-radius: 0 !important; }
 html { scrollbar-color: var(--border) transparent; }
@@ -1196,3 +1196,12 @@ select, .lang-select { background-color: var(--bg); border: 1px solid var(--bord
 .footer { font-size: 11px; }
 .footer .app-version { letter-spacing: .04em; }
 @media (prefers-reduced-motion: no-preference) { .view { animation: none; } }
+
+/* Terminal du bot : vrai graphique TradingView (widget) dans le panneau du graphique */
+.tm-chart-tv iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; }
+.tm-chart-tv > .consent-box { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; max-width: 520px; margin: 0 auto; padding: 20px; color: var(--tm-txt); font-size: 13px; }
+.tm-chart-tv .consent-box a { color: var(--tm-acc); }
+.tm-chart-tv .consent-small { color: var(--tm-mut); font-size: 11.5px; }
+@media (min-width: 1100px) { .tm-chart.tm-chart-tv { height: clamp(420px, 60vh, 640px); } }
+@media (max-width: 520px) { .tm-chart.tm-chart-tv { height: 420px; } }
+.fav-btn[aria-pressed="true"], :root[data-theme="light"] .fav-btn[aria-pressed="true"] { color: var(--accent); }

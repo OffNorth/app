@@ -1,14 +1,20 @@
 // Catégorie « Bot » : terminal de suivi du bot de paper trading (simulation, argent fictif).
 // État publié par le bot toutes les 15 s environ (/api/bot) : comptes FTMO et Lucid simulés, positions ouvertes avec
-// entrée / SL / TP, trades clôturés. Graphique : TradingView Lightweight Charts™ (servie par le site), bougies Yahoo
-// (/api/candles), lignes d'entrée, de stop et d'objectif de chaque position, repères des trades clôturés.
+// entrée / SL / TP, trades clôturés. Graphique : le vrai graphique TradingView (widget, après consentement) par défaut ;
+// vue « Trades du bot » : TradingView Lightweight Charts™ (servie par le site), bougies Yahoo (/api/candles), lignes
+// d'entrée, de stop et d'objectif de chaque position, repères des trades clôturés.
 // Mise en page « terminal » : bandeau d'état, liste des marchés, graphique, comptes, blotter à onglets.
 
 const LIB = '/vendor/lightweight-charts/lightweight-charts.standalone.production.js';
 const TFS = ['5m', '15m', '1h', '1d'];
 const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
+const TV_TF = { '5m': '5', '15m': '15', '1h': '60', '1d': 'D' };
+const SRC_KEY = 'marches:botChart';
+const readSrc = () => { try { return localStorage.getItem(SRC_KEY) === 'bot' ? 'bot' : 'tv'; } catch { return 'tv'; } };
 const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT',
   tlt: 'NASDAQ:TLT', googl: 'NASDAQ:GOOGL', pltr: 'NASDAQ:PLTR', lly: 'NYSE:LLY', ba: 'NYSE:BA' };
+// Symboles intégrables dans le widget (les indices et futures n'y sont pas disponibles : CFD équivalents, comme sur FTMO)
+const TV_EMBED = { ...TV, gold: 'OANDA:XAUUSD', nas100: 'CAPITALCOM:US100', spx: 'CAPITALCOM:US500', silver: 'OANDA:XAGUSD', dow: 'CAPITALCOM:US30', russell: 'CAPITALCOM:RTY' };
 // Code court affiché à la place d'un émoji (contrat équivalent)
 const CODE = { gold: 'XAU', nas100: 'NDX', spx: 'SPX', eurusd: 'EURUSD', silver: 'XAG', dow: 'DJI', russell: 'RUT' };
 const LIVE_MS = 15_000;
@@ -32,7 +38,7 @@ const cssVar = (el, n, d) => (el && getComputedStyle(el).getPropertyValue(n).tri
 
 export function createBot(ctx) {
   const { t, esc, isNum, ND } = ctx;
-  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '15m', timer: null, chart: null, el: null, tab: 'pos', shown: PAGE, focus: null, curves: {} };
+  const st = { d: null, at: 0, err: false, loading: false, market: null, tf: '15m', timer: null, chart: null, el: null, tab: 'pos', shown: PAGE, focus: null, curves: {}, src: readSrc() };
   const cls = (v) => (!isNum(v) || Math.abs(v) < 0.5 ? '' : v > 0 ? 'up' : 'dn');
   const money = (v) => (isNum(v) ? ctx.money(v) : ND);
   const signed = (v) => (isNum(v) ? ctx.signed(v) : ND);
@@ -190,20 +196,37 @@ export function createBot(ctx) {
       <b class="tm-cb-s">${esc(code(st.market))}</b><span class="tm-cb-n">${esc(m?.name || '')}</span><span class="tm-cb-p">${px(m?.price)}</span>
       ${pos.length ? `<span class="tm-cb-pos">${pos.map((p) => `${esc(p.acct)} ${side(p.side)} @ ${px(p.entry)}`).join(' · ')}</span>` : ''}
       <span class="tm-sp"></span>
+      <span class="tm-tfs" role="group" aria-label="${t('bot.src')}">${[['tv', t('bot.srcTV')], ['bot', t('bot.srcBot')]].map(([v, l]) => `<button type="button" data-bsrc="${v}" aria-pressed="${srcOf() === v}">${esc(l)}</button>`).join('')}</span>
       <span class="tm-tfs" role="group" aria-label="${t('bot.tf')}">${TFS.map((x) => `<button type="button" data-btf="${x}" aria-pressed="${x === st.tf}">${x}</button>`).join('')}</span>
       <a class="tm-tv" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(TV[st.market] || '')}" target="_blank" rel="noopener" title="${esc(t('bot.openTV', { m: m?.name || '' }))}">TV ↗</a>
     </div>`;
   }
+  const srcOf = () => (st.src === 'tv' && TV_EMBED[st.market] && ctx.tv ? 'tv' : 'bot');
   async function drawChart() {
     const box = st.el?.querySelector('#bot-chart');
     if (!box || !st.d) return;
+    const legend = st.el.querySelector('#bot-legend');
+    if (legend) legend.textContent = srcOf() === 'tv' ? t('bot.tvLegend') : t('bot.legend');
+    if (srcOf() === 'tv') {
+      // Vrai graphique TradingView : rechargé seulement si le marché, l'unité de temps ou le consentement changent
+      const m = st.d.markets.find((x) => x.id === st.market) || st.d.markets[0];
+      const key = `tv:${m?.id}:${st.tf}`;
+      if (box.dataset.k === key && box.firstElementChild) return;
+      st.chart?.chart?.remove(); st.chart = null;
+      box.dataset.k = key;
+      box.classList.add('tm-chart-tv');
+      ctx.tv(box, TV_EMBED[m.id], TV_TF[st.tf], m.name || m.id);
+      return;
+    }
+    if (box.dataset.k) { delete box.dataset.k; box.classList.remove('tm-chart-tv'); box.innerHTML = ''; }
     const LWC = await loadLib().catch(() => null);
+    if (srcOf() === 'tv') return;
     if (!LWC) { box.innerHTML = `<p class="tm-empty">${t('bot.chartNa')}</p>`; return; }
     const m = st.d.markets.find((x) => x.id === st.market) || st.d.markets[0];
     if (!m) return;
     let data = null;
     try { data = (await ctx.getJSON(`/api/candles?kind=i&symbol=${encodeURIComponent(m.symbol)}&tf=${st.tf}`)).body; } catch { /* n/d */ }
-    if (!box.isConnected) return;
+    if (!box.isConnected || srcOf() === 'tv') return; // entre-temps : retour au graphique TradingView
     if (!data?.candles?.length) { box.innerHTML = `<p class="tm-empty">${t('bot.chartNa')}</p>`; st.chart?.chart?.remove(); st.chart = null; return; }
     const key = `${m.id}:${st.tf}`;
     const UP = cssVar(st.el, '--tm-up', '#2ebd85');
@@ -334,7 +357,7 @@ export function createBot(ctx) {
         <div class="tm-status" id="bot-status"></div>
         <aside class="tm-panel tm-watch" id="bot-watch"></aside>
         <section class="tm-panel tm-main"><div id="bot-cbar"></div><div id="bot-chart" class="tm-chart"></div>
-          <div class="tm-legend">${t('bot.legend')}</div></section>
+          <div class="tm-legend" id="bot-legend">${t('bot.legend')}</div></section>
         <aside class="tm-side" id="bot-accts"></aside>
         <section class="tm-panel tm-blot" id="bot-blot"></section>
         <div class="tm-foot">${t('bot.disclosure')}${st.d.adapt ? ` · ${esc(String(st.d.adapt).replace(/\p{Extended_Pictographic}\uFE0F?\s*/gu, ''))}` : ''}</div>
@@ -362,7 +385,7 @@ export function createBot(ctx) {
     st.chart = null;
     fill();
     el.onclick = (e) => {
-      const b = e.target.closest('[data-bmk],[data-btf],[data-mk],[data-tab2],[data-more]');
+      const b = e.target.closest('[data-bmk],[data-btf],[data-bsrc],[data-mk],[data-tab2],[data-more]');
       if (!b) return;
       if (b.dataset.tab2) {
         st.tab = b.dataset.tab2; st.shown = PAGE;
@@ -373,6 +396,7 @@ export function createBot(ctx) {
       if (b.hasAttribute('data-more')) { st.shown += PAGE; el.querySelector('#bot-blot').innerHTML = blotterHTML(); return; }
       if (b.dataset.bmk) st.market = b.dataset.bmk;
       else if (b.dataset.btf) st.tf = b.dataset.btf;
+      else if (b.dataset.bsrc) { st.src = b.dataset.bsrc; try { localStorage.setItem(SRC_KEY, st.src); } catch { /* stockage indisponible */ } }
       else if (b.dataset.mk) {
         st.market = b.dataset.mk;
         if (b.dataset.te) {
@@ -381,6 +405,7 @@ export function createBot(ctx) {
           const age = (Date.now() / 1000 - te) / 86400;
           st.tf = age < 4 && tx - te < 86400 ? '5m' : age < 28 ? '15m' : age < 85 ? '1h' : '1d';
           st.focus = { entryT: te, exitT: tx };
+          st.src = 'bot';
         }
         el.querySelector('#bot-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
