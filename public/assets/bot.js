@@ -10,7 +10,7 @@ const TFS = ['5m', '15m', '1h', '1d'];
 const TF_SEC = { '5m': 300, '15m': 900, '1h': 3600, '1d': 86400 };
 const TV_TF = { '5m': '5', '15m': '15', '1h': '60', '1d': 'D' };
 const SRC_KEY = 'marches:botChart';
-const readSrc = () => { try { return localStorage.getItem(SRC_KEY) === 'bot' ? 'bot' : 'tv'; } catch { return 'tv'; } };
+const readSrc = () => { try { return localStorage.getItem(SRC_KEY) === 'tv' ? 'tv' : 'bot'; } catch { return 'bot'; } };
 const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT',
   tlt: 'NASDAQ:TLT', googl: 'NASDAQ:GOOGL', pltr: 'NASDAQ:PLTR', lly: 'NYSE:LLY', ba: 'NYSE:BA' };
 // Symboles intégrables dans le widget (les indices et futures n'y sont pas disponibles : CFD équivalents, comme sur FTMO)
@@ -21,6 +21,101 @@ const LIVE_MS = 15_000;
 const CANDLE_MS = 30_000;
 const PAGE = 40;
 const local = (sec) => sec - new Date(sec * 1000).getTimezoneOffset() * 60;
+
+
+// Thème sombre de TradingView (couleurs des bougies, grille, réticule, volume)
+const TVC = { bg: '#0f1217', txt: '#b2b5be', grid: 'rgba(42, 46, 57, 0.55)', line: '#2a2e39', cross: '#9598a1', label: '#363a45',
+  up: '#089981', dn: '#f23645', volUp: 'rgba(8, 153, 129, 0.45)', volDn: 'rgba(242, 54, 69, 0.45)', entry: '#2962ff',
+  font: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif' };
+
+/**
+ * Zones d'un trade, comme l'outil « position longue / courte » de TradingView : rouge de l'entrée au stop d'origine,
+ * vert de l'entrée à l'objectif (ou au cours de sortie si l'objectif n'est pas connu), de l'entrée à la sortie
+ * (position ouverte : jusqu'à la dernière bougie et un peu au-delà). Trait pointillé de l'entrée à la sortie.
+ */
+class PositionZones {
+  constructor(prec, locale) { this.zones = []; this.times = []; this.sec = 60; this.prec = prec; this.locale = locale; this.chart = null; this.series = null; this.req = null; }
+  attached({ chart, series, requestUpdate }) { this.chart = chart; this.series = series; this.req = requestUpdate; }
+  detached() { this.chart = null; this.series = null; this.req = null; }
+  set(zones, times, sec) { this.zones = zones; this.times = times; this.sec = sec; this.req?.(); }
+  updateAllViews() {}
+  // Temps → position logique (fractionnaire) dans la liste des bougies, y compris avant / après
+  logical(t) {
+    const T = this.times; const n = T.length;
+    if (!n) return null;
+    if (t <= T[0]) return (t - T[0]) / this.sec;
+    if (t >= T[n - 1]) return n - 1 + (t - T[n - 1]) / this.sec;
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (T[mid] <= t) lo = mid; else hi = mid; }
+    return lo + Math.min(1, (t - T[lo]) / Math.max(1, T[hi] - T[lo]));
+  }
+  fmt(v) { return v.toLocaleString(this.locale, { minimumFractionDigits: this.prec, maximumFractionDigits: this.prec }); }
+  paneViews() {
+    return [{ zOrder: () => 'bottom', renderer: () => ({ draw: (target) => this.draw(target) }) }];
+  }
+  draw(target) {
+    const ch = this.chart, se = this.series;
+    if (!ch || !se || !this.zones.length) return;
+    const ts = ch.timeScale();
+    const lastL = this.times.length - 1;
+    target.useBitmapCoordinateSpace(({ context: g, horizontalPixelRatio: hr, verticalPixelRatio: vr, bitmapSize }) => {
+      for (const z of this.zones) {
+        const l0 = this.logical(z.t0);
+        const l1 = z.open ? lastL + 6 : this.logical(z.t1);
+        if (l0 == null || l1 == null) continue;
+        // logicalToCoordinate n'accepte que des positions entières : interpolation entre deux bougies
+        const xOf = (l) => { const i = Math.floor(l); const a = ts.logicalToCoordinate(i), b = ts.logicalToCoordinate(i + 1); return a == null || b == null ? null : a + (l - i) * (b - a); };
+        let x0 = xOf(l0), x1 = xOf(Math.max(l1, l0 + 1));
+        if (x0 == null || x1 == null) continue;
+        x0 = Math.round(x0 * hr); x1 = Math.round(x1 * hr);
+        if (x1 < 0 || x0 > bitmapSize.width) continue;
+        const yE = se.priceToCoordinate(z.entry);
+        if (yE == null) continue;
+        const long = z.side === 'long';
+        const gain = (v) => isFinite(v) && (long ? v > z.entry : v < z.entry);
+        const tp = gain(z.tp) ? z.tp : gain(z.exit) ? z.exit : null;
+        const box = (price, fill, stroke) => {
+          const y = se.priceToCoordinate(price);
+          if (y == null) return null;
+          const a = Math.round(Math.min(y, yE) * vr), b = Math.round(Math.max(y, yE) * vr);
+          g.fillStyle = fill; g.fillRect(x0, a, x1 - x0, Math.max(1, b - a));
+          g.fillStyle = stroke; g.fillRect(x0, Math.round(y * vr), x1 - x0, Math.max(1, Math.round(vr)));
+          return { a, b, y: Math.round(y * vr) };
+        };
+        // Stop du côté de la perte seulement (anciens trades : le stop publié peut avoir suivi le cours au-delà de l'entrée)
+        const slOk = isFinite(z.sl) && (long ? z.sl < z.entry : z.sl > z.entry);
+        const red = slOk ? box(z.sl, 'rgba(242, 54, 69, 0.20)', 'rgba(242, 54, 69, 0.85)') : null;
+        const green = tp != null ? box(tp, 'rgba(8, 153, 129, 0.20)', 'rgba(8, 153, 129, 0.85)') : null;
+        // Ligne d'entrée
+        g.fillStyle = 'rgba(178, 181, 190, 0.9)'; g.fillRect(x0, Math.round(yE * vr), x1 - x0, Math.max(1, Math.round(vr)));
+        // Trajet entrée → sortie (pointillé)
+        if (!z.open && isFinite(z.exit)) {
+          const yX = se.priceToCoordinate(z.exit);
+          if (yX != null) {
+            g.save(); g.strokeStyle = z.win ? 'rgba(8, 153, 129, 0.95)' : 'rgba(242, 54, 69, 0.95)'; g.lineWidth = Math.max(1, Math.round(hr));
+            g.setLineDash([4 * hr, 3 * hr]); g.beginPath(); g.moveTo(x0, Math.round(yE * vr)); g.lineTo(x1, Math.round(yX * vr)); g.stroke(); g.restore();
+          }
+        }
+        // Libellés (si la zone est assez grande) : objectif et stop, en R
+        const w = x1 - x0;
+        if (w > 70 * hr) {
+          const R = slOk ? Math.abs(z.entry - z.sl) : 0;
+          g.font = `${Math.round(10.5 * vr)}px ${TVC.font}`; g.textBaseline = 'middle';
+          const tag = (zone, txt, color) => {
+            if (!zone || zone.b - zone.a < 14 * vr) return;
+            const yy = zone.y === zone.a ? zone.a + 8 * vr : zone.b - 8 * vr;
+            const tw = g.measureText(txt).width + 8 * hr;
+            if (tw > w - 6 * hr) return; // pas assez de place dans la zone
+            g.fillStyle = color; g.fillRect(x0 + 3 * hr, yy - 7 * vr, tw, 14 * vr);
+            g.fillStyle = '#ffffff'; g.fillText(txt, x0 + 7 * hr, yy + 0.5 * vr);
+          };
+          if (green && tp != null) tag(green, `${tp === z.tp ? 'TP' : 'Sortie'} ${this.fmt(tp)}${R ? ` · ${(Math.abs(tp - z.entry) / R).toFixed(2).replace('.', ',')} R` : ''}`, 'rgba(8, 153, 129, 0.95)');
+          if (red) tag(red, `SL ${this.fmt(z.sl)}`, 'rgba(242, 54, 69, 0.95)');
+        }
+      }
+    });
+  }
+}
 
 let libPromise = null;
 function loadLib() {
@@ -201,6 +296,19 @@ export function createBot(ctx) {
       <a class="tm-tv" href="https://www.tradingview.com/chart/?symbol=${encodeURIComponent(TV[st.market] || '')}" target="_blank" rel="noopener" title="${esc(t('bot.openTV', { m: m?.name || '' }))}">TV ↗</a>
     </div>`;
   }
+  // Légende O H L C (style TradingView) : symbole · unité de temps · source, puis les cours de la bougie
+  function ohlcHTML(m, b, bars) {
+    if (!b) return '';
+    const i = bars.indexOf(b);
+    const prev = i > 0 ? bars[i - 1].close : b.open;
+    const d = b.close - prev;
+    const dp = m.id === 'eurusd' ? 5 : 2;
+    const fd = (v) => v.toLocaleString(ctx.locale(), { minimumFractionDigits: dp, maximumFractionDigits: dp });
+    const c2 = b.close >= b.open ? 'up' : 'dn';
+    return `<span class="tm-ohlc-s">${esc(code(m.id))} · ${esc(st.tf)} · ${esc(m.name || '')}</span>
+      <span>O<b class="${c2}">${px(b.open)}</b></span><span>H<b class="${c2}">${px(b.high)}</b></span><span>L<b class="${c2}">${px(b.low)}</b></span><span>C<b class="${c2}">${px(b.close)}</b></span>
+      <b class="${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : '−'}${fd(Math.abs(d))} (${d >= 0 ? '+' : '−'}${Math.abs((d / prev) * 100).toFixed(2).replace('.', ',')} %)</b>`;
+  }
   const srcOf = () => (st.src === 'tv' && TV_EMBED[st.market] && ctx.tv ? 'tv' : 'bot');
   async function drawChart() {
     const box = st.el?.querySelector('#bot-chart');
@@ -229,50 +337,73 @@ export function createBot(ctx) {
     if (!box.isConnected || srcOf() === 'tv') return; // entre-temps : retour au graphique TradingView
     if (!data?.candles?.length) { box.innerHTML = `<p class="tm-empty">${t('bot.chartNa')}</p>`; st.chart?.chart?.remove(); st.chart = null; return; }
     const key = `${m.id}:${st.tf}`;
-    const UP = cssVar(st.el, '--tm-up', '#2ebd85');
-    const DN = cssVar(st.el, '--tm-dn', '#f6465d');
+    // Couleurs et réglages de TradingView (thème sombre)
+    const UP = TVC.up, DN = TVC.dn;
+    const prec = m.id === 'eurusd' ? 5 : 2;
     if (!st.chart || st.chart.key !== key || !box.contains(st.chart.host)) {
       st.chart?.chart?.remove();
       box.innerHTML = '';
       const host = document.createElement('div');
       host.className = 'tm-chart-host';
-      box.append(host);
-      const line = cssVar(st.el, '--tm-grid', '#161c23');
+      const ohlc = document.createElement('div');
+      ohlc.className = 'tm-ohlc';
+      box.append(host, ohlc);
       const chart = LWC.createChart(host, { autoSize: true,
-        layout: { background: { type: 'solid', color: cssVar(st.el, '--tm-bg1', '#0d1116') }, textColor: cssVar(st.el, '--tm-mut', '#6b7785'), fontSize: 11,
-          fontFamily: cssVar(st.el, '--tm-mono', 'ui-monospace, Menlo, Consolas, monospace'), attributionLogo: false },
-        grid: { vertLines: { color: line }, horzLines: { color: line } },
-        rightPriceScale: { borderColor: cssVar(st.el, '--tm-line', '#1c232b') },
-        crosshair: { mode: 0, vertLine: { color: '#5d6875', labelBackgroundColor: '#2a313a' }, horzLine: { color: '#5d6875', labelBackgroundColor: '#2a313a' } },
-        timeScale: { borderColor: cssVar(st.el, '--tm-line', '#1c232b'), timeVisible: st.tf !== '1d', secondsVisible: false } });
+        layout: { background: { type: 'solid', color: TVC.bg }, textColor: TVC.txt, fontSize: 11, fontFamily: TVC.font, attributionLogo: true },
+        grid: { vertLines: { color: TVC.grid }, horzLines: { color: TVC.grid } },
+        rightPriceScale: { borderColor: TVC.line, scaleMargins: { top: 0.1, bottom: 0.22 } },
+        crosshair: { mode: 0, vertLine: { color: TVC.cross, width: 1, style: 3, labelBackgroundColor: TVC.label }, horzLine: { color: TVC.cross, width: 1, style: 3, labelBackgroundColor: TVC.label } },
+        timeScale: { borderColor: TVC.line, timeVisible: st.tf !== '1d', secondsVisible: false, rightOffset: 8 } });
       const series = chart.addSeries(LWC.CandlestickSeries, { upColor: UP, downColor: DN, borderVisible: false, wickUpColor: UP, wickDownColor: DN,
-        priceFormat: { type: 'price', precision: m.id === 'eurusd' ? 5 : 2, minMove: m.id === 'eurusd' ? 0.00001 : 0.01 } });
-      st.chart = { key, host, chart, series, LWC, lines: [], markers: null, first: true };
+        priceFormat: { type: 'price', precision: prec, minMove: prec === 5 ? 0.00001 : 0.01 } });
+      const vol = chart.addSeries(LWC.HistogramSeries, { priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
+      chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+      const zones = new PositionZones(prec, ctx.locale());
+      series.attachPrimitive(zones);
+      st.chart = { key, host, chart, series, vol, zones, ohlc, bars: [], LWC, lines: [], markers: null, first: true };
+      // Légende O H L C en haut à gauche, comme TradingView (suit le réticule)
+      chart.subscribeCrosshairMove((param) => {
+        const c = st.chart;
+        if (!c || c.chart !== chart) return;
+        const bar = param?.time ? c.bars.find((b) => b.time === param.time) : null;
+        c.ohlc.innerHTML = ohlcHTML(m, bar || c.bars[c.bars.length - 1], c.bars);
+      });
     }
     const c = st.chart;
-    c.series.setData(data.candles.map(([time, o, h, l, cl]) => ({ time: local(time), open: o, high: h, low: l, close: cl })));
-    // Lignes des positions ouvertes : entrée (bleu), SL (rouge), TP (vert)
+    c.bars = data.candles.map(([time, o, h, l, cl]) => ({ time: local(time), open: o, high: h, low: l, close: cl }));
+    c.series.setData(c.bars);
+    const hasVol = data.candles.some((x) => x[5] > 0);
+    c.vol.setData(hasVol ? data.candles.map(([time, o, , , cl, v]) => ({ time: local(time), value: v || 0, color: cl >= o ? TVC.volUp : TVC.volDn })) : []);
+    c.ohlc.innerHTML = ohlcHTML(m, c.bars[c.bars.length - 1], c.bars);
+    // Lignes des positions ouvertes : stop actuel (il peut avoir suivi le cours) ; entrée et objectif sont dans les zones
     for (const l of c.lines) c.series.removePriceLine(l);
     c.lines = [];
     const add = (price, color, title, style = 0) => { if (isNum(price)) c.lines.push(c.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })); };
     for (const p of positionsOn(m.id)) {
       const tag = `${p.acct} ${p.sid}`;
-      add(p.entry, '#4c8dff', `${tag} ${t(p.side === 'long' ? 'bot.buy' : 'bot.sell')}`);
+      add(p.entry, TVC.entry, `${tag} ${t(p.side === 'long' ? 'bot.buy' : 'bot.sell')}`);
       add(p.sl, DN, `${tag} SL`, 2);
-      add(p.tp, UP, `${tag} TP`, 2);
+      if (isNum(p.tp)) add(p.tp, UP, `${tag} TP`, 2);
     }
-    // Repères : trades de l'historique affiché (compte choisi ou paper) sur ce marché, et positions ouvertes
+    // Zones rouge (risque : entrée → stop) et verte (objectif : entrée → TP), comme l'outil « position » de TradingView
     const first = data.candles[0][0];
+    const paperMode = st.tab === 'paper';
+    const hist = histRows().filter((y) => y.market === m.id && y.exitT >= first);
+    const open = positionsOn(m.id);
+    const zl = [];
+    for (const x of hist) zl.push({ side: x.side, entry: x.entry, sl: x.sl0 ?? x.sl, tp: x.tp, exit: x.exit, t0: local(x.entryT), t1: local(x.exitT), win: paperMode ? x.pnlPct >= 0 : x.pnl >= 0 });
+    for (const p of open) zl.push({ side: p.side, entry: p.entry, sl: p.sl0 ?? p.sl, tp: p.tp, exit: null, t0: local(p.entryT), t1: null, open: true, label: `${p.acct} ${p.sid}` });
+    c.zones.set(zl, c.bars.map((b) => b.time), TF_SEC[st.tf]);
+    // Repères : entrée (flèche) et sortie (résultat)
     const sec = TF_SEC[st.tf];
     const snap = (x) => local(Math.floor(x / sec) * sec);
     const marks = [];
-    const paperMode = st.tab === 'paper';
-    for (const x of histRows().filter((y) => y.market === m.id && y.exitT >= first)) {
+    for (const x of hist) {
       const win = paperMode ? x.pnlPct >= 0 : x.pnl >= 0;
-      if (x.entryT >= first) marks.push({ time: snap(x.entryT), position: x.side === 'long' ? 'belowBar' : 'aboveBar', color: '#4c8dff', shape: x.side === 'long' ? 'arrowUp' : 'arrowDown', text: x.sid });
-      marks.push({ time: snap(x.exitT), position: 'aboveBar', color: win ? UP : DN, shape: 'square', text: paperMode ? ctx.pct(x.pnlPct) : signed(x.pnl) });
+      if (x.entryT >= first) marks.push({ time: snap(x.entryT), position: x.side === 'long' ? 'belowBar' : 'aboveBar', color: TVC.entry, shape: x.side === 'long' ? 'arrowUp' : 'arrowDown', text: x.sid });
+      marks.push({ time: snap(x.exitT), position: x.side === 'long' ? 'aboveBar' : 'belowBar', color: win ? UP : DN, shape: 'circle', text: paperMode ? ctx.pct(x.pnlPct) : signed(x.pnl) });
     }
-    for (const p of positionsOn(m.id)) if (p.entryT >= first) marks.push({ time: snap(p.entryT), position: p.side === 'long' ? 'belowBar' : 'aboveBar', color: '#4c8dff', shape: p.side === 'long' ? 'arrowUp' : 'arrowDown', text: `${p.acct} ${p.sid}` });
+    for (const p of open) if (p.entryT >= first) marks.push({ time: snap(p.entryT), position: p.side === 'long' ? 'belowBar' : 'aboveBar', color: TVC.entry, shape: p.side === 'long' ? 'arrowUp' : 'arrowDown', text: `${p.acct} ${p.sid}` });
     marks.sort((a, b) => a.time - b.time);
     if (c.markers) c.markers.setMarkers(marks); else c.markers = c.LWC.createSeriesMarkers(c.series, marks);
     if (st.focus) {
