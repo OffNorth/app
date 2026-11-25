@@ -1,13 +1,14 @@
-// Thème de l'interface : « auto » (réglage de l'appareil), sombre ou clair.
+// Thème de l'interface : sombre (par défaut, style terminal), « auto » (réglage de l'appareil) ou clair.
 // Chargé de façon bloquante dans <head> pour appliquer le thème avant l'affichage (pas de flash).
 // Préférence gardée sur l'appareil (localStorage marches:theme) ; aucune donnée envoyée.
 (function () {
   var KEY = 'marches:theme';
   var MODES = ['auto', 'dark', 'light'];
-  var BG = { dark: '#0b0f14', light: '#f4f6f9' };
+  var BG = { dark: '#07090c', light: '#eef1f4' };
   var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
   function read() {
-    try { var v = JSON.parse(localStorage.getItem(KEY)); return MODES.indexOf(v) >= 0 ? v : 'auto'; } catch (e) { return 'auto'; }
+    // Par défaut : sombre (style terminal) ; « auto » suit l'appareil quand on le choisit
+    try { var v = JSON.parse(localStorage.getItem(KEY)); return MODES.indexOf(v) >= 0 ? v : 'dark'; } catch (e) { return 'dark'; }
   }
   var pref = read();
   function resolved() { return pref === 'auto' ? (mq && mq.matches ? 'light' : 'dark') : pref; }
@@ -24,7 +25,7 @@
   }
   function set(v) {
     pref = MODES.indexOf(v) >= 0 ? v : 'auto';
-    try { if (pref === 'auto') localStorage.removeItem(KEY); else localStorage.setItem(KEY, JSON.stringify(pref)); } catch (e) { /* stockage indisponible */ }
+    try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch (e) { /* stockage indisponible */ }
     apply();
   }
   if (mq) {
