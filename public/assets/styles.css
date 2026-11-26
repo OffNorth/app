@@ -1213,6 +1213,7 @@ select, .lang-select { background-color: var(--bg); border: 1px solid var(--bord
 .tm-ohlc b { font-weight: 400; margin-left: 2px; color: #d1d4dc; }
 .tm-ohlc b.up, .tm .tm-ohlc b.up { color: #089981; } .tm-ohlc b.dn, .tm .tm-ohlc b.dn { color: #f23645; }
 .tm-ohlc-s { color: #d1d4dc; font-size: 12.5px; margin-right: 4px; }
+.tm-src { color: #f0b90b; border: 1px solid rgba(240, 185, 11, .45); border-radius: 3px; padding: 0 4px; font-size: 11px; }
 .tm-chart:not(.tm-chart-tv) { background: #0f1217; }
 
 /* Script Pine du bot (fenêtre) */

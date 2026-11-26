@@ -12,7 +12,7 @@ import { createComfort } from './comfort.js';
 import { createAgents } from './agents.js';
 import { createBot } from './bot.js';
 const REFRESH_MS = 60_000;
-const APP_BUILD = 47; // à garder égal à VERSION ('v47') dans /sw.js
+const APP_BUILD = 48; // à garder égal à VERSION ('v48') dans /sw.js
 const APP_VERSION = `${APP_BUILD} (25/11/2026)`;
 const TABS = ['accueil', 'favoris', 'crypto', 'actions', 'indices', 'compte', 'bot'];
 const REGIONS = ['ameriques', 'europe', 'asie', 'afrique', 'carte'];

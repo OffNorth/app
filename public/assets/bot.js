@@ -22,6 +22,49 @@ const CANDLE_MS = 30_000;
 const PAGE = 40;
 const local = (sec) => sec - new Date(sec * 1000).getTimezoneOffset() * 60;
 
+/*
+ * Or et argent en temps réel : bougies des contrats perpétuels publics de Binance (XAUUSDT / XAGUSDT), lues
+ * directement par le navigateur (sans compte ni clé ; Yahoo a ≈ 10 min de retard). Les trades du bot sont publiés à
+ * l'échelle Yahoo : ils sont décalés de l'écart Binance − Yahoo (celui du bot s'il trade sur Binance, sinon la médiane
+ * des clôtures communes). Binance injoignable (pays bloqué) ou écart inconnu : bougies Yahoo, comme avant.
+ */
+const BN_SYM = { gold: 'XAUUSDT', silver: 'XAGUSDT' };
+const NYH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', hour12: false });
+/** Marché des métaux ouvert (dimanche 18 h → vendredi 17 h à New York, pause de 17 h) : Binance cote aussi le week-end. */
+function metalsOpen(t) {
+  const p = Object.fromEntries(NYH.formatToParts(new Date(t * 1000)).map((x) => [x.type, x.value]));
+  const h = Number(p.hour) % 24;
+  if (p.weekday === 'Sat') return false;
+  if (p.weekday === 'Sun') return h >= 18;
+  if (p.weekday === 'Fri') return h < 17;
+  return h !== 17;
+}
+async function binanceCandles(id, tf, yahoo, botBasis) {
+  const sym = BN_SYM[id];
+  if (!sym || tf === '1d') return null;
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=1000`, { signal: ctl.signal });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    const bars = (Array.isArray(rows) ? rows : []).map((r) => [Math.floor(Number(r[0]) / 1000), +r[1], +r[2], +r[3], +r[4], +r[5]])
+      .filter((b) => b[4] > 0 && metalsOpen(b[0]));
+    if (bars.length < 10) return null;
+    let shift = Number.isFinite(botBasis) ? botBasis : null;
+    if (shift === null) {
+      const ym = new Map((yahoo || []).map((c) => [c[0], c[4]]));
+      const d = bars.filter((b) => ym.has(b[0])).slice(-60).map((b) => b[4] - ym.get(b[0])).sort((x, y) => x - y);
+      if (d.length >= 3) shift = d[Math.floor(d.length / 2)];
+    }
+    return shift === null ? null : { candles: bars, shift, sym };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 
 // Thème sombre de TradingView (couleurs des bougies, grille, réticule, volume)
 const TVC = { bg: '#0f1217', txt: '#b2b5be', grid: 'rgba(42, 46, 57, 0.55)', line: '#2a2e39', cross: '#9598a1', label: '#363a45',
@@ -420,6 +463,10 @@ export function createBot(ctx) {
     let data = null;
     const tf0 = st.tf, mk0 = st.market;
     try { data = (await ctx.getJSON(`/api/candles?kind=i&symbol=${encodeURIComponent(m.symbol)}&tf=${tf0}`)).body; } catch { /* n/d */ }
+    // Or / argent : bougies Binance en temps réel si joignables (décalage des trades : sh)
+    const bn = BN_SYM[m.id] ? await binanceCandles(m.id, tf0, data?.candles, m.feed === 'binance' ? m.basis : null) : null;
+    const sh = bn ? bn.shift : 0;
+    if (bn) data = { ...(data || {}), candles: bn.candles };
     if (!box.isConnected || srcOf() === 'tv') return; // entre-temps : retour au graphique TradingView
     if (st.tf !== tf0 || st.market !== mk0) return; // réponse d'un ancien choix : le nouveau graphique arrive
     if (!data?.candles?.length) { box.innerHTML = `<p class="tm-empty">${t('bot.chartNa')}</p>`; st.chart?.chart?.remove(); st.chart = null; return; }
@@ -468,7 +515,7 @@ export function createBot(ctx) {
         const c = st.chart;
         if (!c || c.chart !== chart) return;
         const bar = param?.time ? c.bars.find((b) => b.time === param.time) : null;
-        c.ohlc.innerHTML = ohlcHTML(m, bar || c.bars[c.bars.length - 1], c.bars) + (c.stale ? `<span class="tm-stale">${esc(c.stale)}</span>` : '');
+        c.ohlc.innerHTML = ohlcHTML(m, bar || c.bars[c.bars.length - 1], c.bars) + (c.srcTag || '') + (c.stale ? `<span class="tm-stale">${esc(c.stale)}</span>` : '');
       });
     }
     const c = st.chart;
@@ -476,7 +523,8 @@ export function createBot(ctx) {
     c.series.setData(c.bars);
     const hasVol = data.candles.some((x) => x[5] > 0);
     c.vol.setData(hasVol ? data.candles.map(([time, o, , , cl, v]) => ({ time: local(time), value: v || 0, color: cl >= o ? TVC.volUp : TVC.volDn })) : []);
-    c.ohlc.innerHTML = ohlcHTML(m, c.bars[c.bars.length - 1], c.bars);
+    c.srcTag = bn ? `<span class="tm-src" title="${esc(t('bot.srcBinanceTip'))}">${esc(t('bot.srcBinance', { s: bn.sym }))}</span>` : '';
+    c.ohlc.innerHTML = ohlcHTML(m, c.bars[c.bars.length - 1], c.bars) + c.srcTag;
     // Données figées (marché fermé, jour férié, flux Yahoo en retard) : dite clairement plutôt qu'un graphique qui semble bloqué
     const lastT = data.candles[data.candles.length - 1][0];
     const ageMin = (Date.now() / 1000 - lastT) / 60;
@@ -487,7 +535,10 @@ export function createBot(ctx) {
     for (const l of c.lines) c.series.removePriceLine(l);
     c.lines = [];
     const add = (price, color, title, style = 0) => { if (isNum(price)) c.lines.push(c.series.createPriceLine({ price, color, lineWidth: 1, lineStyle: style, axisLabelVisible: true, title })); };
-    for (const p of positionsOn(m.id)) {
+    // Trades publiés à l'échelle Yahoo → échelle des bougies affichées (Binance : + écart)
+    const S = (v) => (isNum(v) ? v + sh : v);
+    const shifted = (x) => (sh ? { ...x, entry: S(x.entry), sl: S(x.sl), sl0: S(x.sl0), tp: S(x.tp), exit: S(x.exit) } : x);
+    for (const p of positionsOn(m.id).map(shifted)) {
       const tag = `${p.acct} ${p.sid}`;
       add(p.entry, TVC.entry, `${tag} ${t(p.side === 'long' ? 'bot.buy' : 'bot.sell')}`);
       add(p.sl, DN, `${tag} SL`, 2);
@@ -496,8 +547,8 @@ export function createBot(ctx) {
     // Zones rouge (risque : entrée → stop) et verte (objectif : entrée → TP), comme l'outil « position » de TradingView
     const first = data.candles[0][0];
     const paperMode = st.tab === 'paper';
-    const hist = histRows().filter((y) => y.market === m.id && y.exitT >= first);
-    const open = positionsOn(m.id);
+    const hist = histRows().filter((y) => y.market === m.id && y.exitT >= first).map(shifted);
+    const open = positionsOn(m.id).map(shifted);
     const zl = [];
     for (const x of hist) zl.push({ side: x.side, entry: x.entry, sl: x.sl0 ?? x.sl, tp: x.tp, exit: x.exit, t0: local(x.entryT), t1: local(x.exitT), win: paperMode ? x.pnlPct >= 0 : x.pnl >= 0 });
     for (const p of open) zl.push({ side: p.side, entry: p.entry, sl: p.sl0 ?? p.sl, tp: p.tp, exit: null, t0: local(p.entryT), t1: null, open: true, label: `${p.acct} ${p.sid}` });
