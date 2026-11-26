@@ -284,7 +284,9 @@ export function createBot(ctx) {
     after?.();
   }
 
-  const acctName = (a) => (a.id === 'lucidf' ? `${a.firm} ${t('bot.fundedShort')}` : a.firm);
+  // Libellé court d'un compte : « Lucid financé », « Lucid journalier », « Lucid intraday » (2 évaluations Lucid)
+  const tagOf = (a) => { const g = a.tag || (a.id === 'lucidf' ? 'funded' : ''); return g === 'funded' ? t('bot.fundedShort') : g === 'daily' ? t('bot.tagDaily') : g === 'intraday' ? t('bot.tagIntraday') : ''; };
+  const acctName = (a) => (tagOf(a) ? `${a.firm} ${tagOf(a)}` : a.firm);
   const positionsOn = (market) => (st.d?.accounts || []).flatMap((a) => a.open.filter((p) => p.market === market).map((p) => ({ ...p, acct: acctName(a) })));
   const allOpen = () => (st.d?.accounts || []).flatMap((a) => a.open.map((p) => ({ a, p })));
 
@@ -631,7 +633,7 @@ export function createBot(ctx) {
   function tabsHTML() {
     const refused = st.d?.accounts?.find((a) => a.refused)?.refused;
     const tabs = [['pos', `${t('bot.tmTabPos')} <i>${allOpen().length}</i>`],
-      ...(st.d?.accounts || []).map((a) => [`hist-${a.id}`, `${t('bot.tmTabHist')} ${esc(a.firm)}${a.id === 'lucidf' ? ` ${esc(t('bot.fundedShort'))}` : ''}`]),
+      ...(st.d?.accounts || []).map((a) => [`hist-${a.id}`, `${t('bot.tmTabHist')} ${esc(acctName(a))}`]),
       ['paper', t('bot.tmTabPaper')], ...(refused ? [['ai', `${t('bot.tmTabAi')} <i>${refused.n}</i>`]] : [])];
     return `<div class="tm-tabs" role="tablist">${tabs.map(([v, txt]) => `<button type="button" role="tab" data-tab2="${v}" aria-selected="${st.tab === v}">${txt}</button>`).join('')}</div>`;
   }
@@ -639,7 +641,7 @@ export function createBot(ctx) {
     const rows = allOpen();
     if (!rows.length) return `<p class="tm-empty">${t('bot.noPos')}</p>`;
     return `<table class="tm-t"><thead><tr><th>${t('bot.acct')}</th><th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th class="r">${t('bot.entry')}</th><th class="r">SL</th><th class="r">TP</th><th class="r">${t('bot.size')}</th><th class="r">${t('bot.risk')}</th><th class="r">${t('bot.tmOpened')}</th><th class="r">${t('bot.pnl')}</th></tr></thead><tbody>
-      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" data-pe="${p.entryT || ''}" class="tm-click"><td>${firm(a)}${a.id === 'lucidf' ? ` <em>${esc(t('bot.fundedShort'))}</em>` : ''}</td><td><b>${esc(code(p.market))}</b></td>
+      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" data-pe="${p.entryT || ''}" class="tm-click"><td>${firm(a)}${tagOf(a) ? ` <em>${esc(tagOf(a))}</em>` : ''}</td><td><b>${esc(code(p.market))}</b></td>
         <td title="${esc(p.name || '')}">${esc(p.sid)}${isNum(p.ai) ? ` <em>IA ${p.ai}%</em>` : ''}</td><td>${side(p.side)}</td>
         <td class="r">${px(p.entry)}</td><td class="r dn">${px(p.sl)}</td><td class="r up">${isNum(p.tp) ? px(p.tp) : '—'}</td>
         <td class="r">${p.n ? `${p.n} ${esc(p.contract || '')}` : money(p.notional)}</td><td class="r">${money(p.risk)}</td><td class="r">${p.entryT ? hhmm(p.entryT) : ND}</td>
