@@ -109,7 +109,7 @@ class PositionZones {
             g.fillStyle = color; g.fillRect(x0 + 3 * hr, yy - 7 * vr, tw, 14 * vr);
             g.fillStyle = '#ffffff'; g.fillText(txt, x0 + 7 * hr, yy + 0.5 * vr);
           };
-          if (green && tp != null) tag(green, `${tp === z.tp ? 'TP' : 'Sortie'} ${this.fmt(tp)}${R ? ` · ${(Math.abs(tp - z.entry) / R).toFixed(2).replace('.', ',')} R` : ''}`, 'rgba(8, 153, 129, 0.95)');
+          if (green && tp != null) tag(green, `${tp === z.tp ? 'TP' : 'Sortie'} ${this.fmt(tp)}${R ? ` · ${(Math.abs(tp - z.entry) / R).toLocaleString(this.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} R` : ''}`, 'rgba(8, 153, 129, 0.95)');
           if (red) tag(red, `SL ${this.fmt(z.sl)}`, 'rgba(242, 54, 69, 0.95)');
         }
       }
@@ -241,7 +241,8 @@ export function createBot(ctx) {
     after?.();
   }
 
-  const positionsOn = (market) => (st.d?.accounts || []).flatMap((a) => a.open.filter((p) => p.market === market).map((p) => ({ ...p, acct: a.firm })));
+  const acctName = (a) => (a.id === 'lucidf' ? `${a.firm} ${t('bot.fundedShort')}` : a.firm);
+  const positionsOn = (market) => (st.d?.accounts || []).flatMap((a) => a.open.filter((p) => p.market === market).map((p) => ({ ...p, acct: acctName(a) })));
   const allOpen = () => (st.d?.accounts || []).flatMap((a) => a.open.map((p) => ({ a, p })));
 
   /* ---------- Bandeau d'état ---------- */
@@ -391,7 +392,7 @@ export function createBot(ctx) {
     const c2 = b.close >= b.open ? 'up' : 'dn';
     return `<span class="tm-ohlc-s">${esc(code(m.id))} · ${esc(st.tf)} · ${esc(m.name || '')}</span>
       <span>O<b class="${c2}">${px(b.open)}</b></span><span>H<b class="${c2}">${px(b.high)}</b></span><span>L<b class="${c2}">${px(b.low)}</b></span><span>C<b class="${c2}">${px(b.close)}</b></span>
-      <b class="${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : '−'}${fd(Math.abs(d))} (${d >= 0 ? '+' : '−'}${Math.abs((d / prev) * 100).toFixed(2).replace('.', ',')} %)</b>`;
+      <b class="${d >= 0 ? 'up' : 'dn'}">${d >= 0 ? '+' : '−'}${fd(Math.abs(d))} (${d >= 0 ? '+' : '−'}${Math.abs((d / prev) * 100).toLocaleString(ctx.locale(), { minimumFractionDigits: 2, maximumFractionDigits: 2 })} %)</b>`;
   }
   const srcOf = () => (st.src === 'tv' && TV_EMBED[st.market] && ctx.tv ? 'tv' : 'bot');
   async function drawChart() {
@@ -417,8 +418,10 @@ export function createBot(ctx) {
     const m = st.d.markets.find((x) => x.id === st.market) || st.d.markets[0];
     if (!m) return;
     let data = null;
-    try { data = (await ctx.getJSON(`/api/candles?kind=i&symbol=${encodeURIComponent(m.symbol)}&tf=${st.tf}`)).body; } catch { /* n/d */ }
+    const tf0 = st.tf, mk0 = st.market;
+    try { data = (await ctx.getJSON(`/api/candles?kind=i&symbol=${encodeURIComponent(m.symbol)}&tf=${tf0}`)).body; } catch { /* n/d */ }
     if (!box.isConnected || srcOf() === 'tv') return; // entre-temps : retour au graphique TradingView
+    if (st.tf !== tf0 || st.market !== mk0) return; // réponse d'un ancien choix : le nouveau graphique arrive
     if (!data?.candles?.length) { box.innerHTML = `<p class="tm-empty">${t('bot.chartNa')}</p>`; st.chart?.chart?.remove(); st.chart = null; return; }
     const key = `${m.id}:${st.tf}`;
     // Couleurs et réglages de TradingView (thème sombre)
@@ -515,21 +518,22 @@ export function createBot(ctx) {
     const n = data.candles.length;
     const target = st.focus || (c.first && open.length ? { entryT: Math.max(...open.map((p) => p.entryT)), exitT: null } : null);
     const l0 = target ? c.zones.logical(local(target.entryT)) : null;
-    if (target && l0 != null && l0 >= 0) {
-      const l1 = target.exitT ? c.zones.logical(local(target.exitT)) : n - 1;
-      const pad = Math.max(12, Math.round((l1 - l0) * 0.35));
-      c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, l0 - pad), to: (target.exitT ? l1 + pad : n - 1 + Math.max(10, pad / 2)) });
-      c.first = false;
-    } else if (c.first) { c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 6 }); c.first = false; }
-    st.focus = null;
+    try {
+      if (target && l0 != null && l0 >= 0 && l0 <= n - 1) {
+        const l1 = Math.max(l0, Math.min(n - 1, target.exitT ? c.zones.logical(local(target.exitT)) : n - 1));
+        const pad = Math.max(12, Math.round((l1 - l0) * 0.35));
+        const from = Math.max(0, l0 - pad), to = Math.max(from + 20, target.exitT ? l1 + pad : n - 1 + Math.max(10, pad / 2));
+        c.chart.timeScale().setVisibleLogicalRange({ from, to });
+      } else if (c.first || target) c.chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 150), to: n + 6 }); // position plus récente que les bougies : fin du graphique
+    } finally { c.first = false; st.focus = null; }
   }
 
   /* ---------- Script Pine pour TradingView ---------- */
   function marketTrades(id) {
     const out = [];
     for (const a of st.d?.accounts || []) {
-      for (const x of [...(a.archive || []), ...a.closed]) if (x.market === id) out.push({ ...x, acct: a.firm });
-      for (const p of a.open) if (p.market === id) out.push({ ...p, acct: a.firm, exitT: 0, exit: null, pnl: p.pnl });
+      for (const x of [...(a.archive || []), ...a.closed]) if (x.market === id) out.push({ ...x, acct: acctName(a) });
+      for (const p of a.open) if (p.market === id) out.push({ ...p, acct: acctName(a), exitT: 0, exit: null, pnl: p.pnl });
     }
     return out.sort((p, q) => p.entryT - q.entryT);
   }
@@ -584,7 +588,7 @@ export function createBot(ctx) {
     const rows = allOpen();
     if (!rows.length) return `<p class="tm-empty">${t('bot.noPos')}</p>`;
     return `<table class="tm-t"><thead><tr><th>${t('bot.acct')}</th><th>${t('bot.market')}</th><th>${t('bot.strat')}</th><th>${t('bot.side')}</th><th class="r">${t('bot.entry')}</th><th class="r">SL</th><th class="r">TP</th><th class="r">${t('bot.size')}</th><th class="r">${t('bot.risk')}</th><th class="r">${t('bot.tmOpened')}</th><th class="r">${t('bot.pnl')}</th></tr></thead><tbody>
-      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" data-pe="${p.entryT || ''}" class="tm-click"><td>${firm(a)}</td><td><b>${esc(code(p.market))}</b></td>
+      ${rows.map(({ a, p }) => `<tr data-mk="${esc(p.market)}" data-pe="${p.entryT || ''}" class="tm-click"><td>${firm(a)}${a.id === 'lucidf' ? ` <em>${esc(t('bot.fundedShort'))}</em>` : ''}</td><td><b>${esc(code(p.market))}</b></td>
         <td title="${esc(p.name || '')}">${esc(p.sid)}${isNum(p.ai) ? ` <em>IA ${p.ai}%</em>` : ''}</td><td>${side(p.side)}</td>
         <td class="r">${px(p.entry)}</td><td class="r dn">${px(p.sl)}</td><td class="r up">${isNum(p.tp) ? px(p.tp) : '—'}</td>
         <td class="r">${p.n ? `${p.n} ${esc(p.contract || '')}` : money(p.notional)}</td><td class="r">${money(p.risk)}</td><td class="r">${p.entryT ? hhmm(p.entryT) : ND}</td>
