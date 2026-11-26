@@ -562,7 +562,7 @@ export function createBot(ctx) {
   function histRows() {
     if (!st.d) return [];
     if (st.tab === 'paper') return [...(st.d.paper || [])].sort((p, q) => q.exitT - p.exitT);
-    const id = st.tab === 'hist-lucid' ? 'lucid' : 'ftmo';
+    const id = st.tab.startsWith('hist-') ? st.tab.slice(5) : 'ftmo'; // ftmo, lucid ou lucidf (compte Lucid financé à part)
     const a = st.d.accounts.find((x) => x.id === id) || st.d.accounts[0];
     if (!a) return [];
     return [...a.closed.map((x) => ({ ...x, attempt: a.attempt })), ...(a.archive || [])].sort((p, q) => q.exitT - p.exitT);
@@ -570,7 +570,7 @@ export function createBot(ctx) {
   function tabsHTML() {
     const refused = st.d?.accounts?.find((a) => a.refused)?.refused;
     const tabs = [['pos', `${t('bot.tmTabPos')} <i>${allOpen().length}</i>`],
-      ...(st.d?.accounts || []).map((a) => [`hist-${a.id}`, `${t('bot.tmTabHist')} ${esc(a.firm)}`]),
+      ...(st.d?.accounts || []).map((a) => [`hist-${a.id}`, `${t('bot.tmTabHist')} ${esc(a.firm)}${a.id === 'lucidf' ? ` ${esc(t('bot.fundedShort'))}` : ''}`]),
       ['paper', t('bot.tmTabPaper')], ...(refused ? [['ai', `${t('bot.tmTabAi')} <i>${refused.n}</i>`]] : [])];
     return `<div class="tm-tabs" role="tablist">${tabs.map(([v, txt]) => `<button type="button" role="tab" data-tab2="${v}" aria-selected="${st.tab === v}">${txt}</button>`).join('')}</div>`;
   }
