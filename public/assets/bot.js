@@ -258,7 +258,7 @@ export function createBot(ctx) {
       <span class="tm-k">${t('bot.tmOpen')}</span><span class="tm-v">${allOpen().length}</span>
       <span class="tm-k">${t('bot.tmUnreal')}</span><span class="tm-v ${cls(pnl)}">${signed(pnl)}</span>
       ${st.d?.version ? `<span class="tm-k">${t('bot.tmVer')}</span><span class="tm-v">${esc(String(st.d.version).slice(0, 7))}</span>` : ''}
-      <span class="tm-sp"></span><span class="tm-sim">${t('bot.tmSim')}</span>
+      <span class="tm-sp"></span><a class="tm-tv tm-pdf" href="/docs/strategies-bot.pdf" target="_blank" rel="noopener" title="${esc(t('bot.pdf'))}">📄 PDF</a><span class="tm-sim">${t('bot.tmSim')}</span>
     </div>`;
   }
 

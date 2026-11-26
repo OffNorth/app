@@ -1224,3 +1224,8 @@ select, .lang-select { background-color: var(--bg); border: 1px solid var(--bord
 
 .tm-ohlc .tm-stale { flex-basis: 100%; margin-top: 2px; color: #e0a526; font-size: 11px; white-space: normal; }
 .tm-chart { overflow: hidden; }
+
+/* Lien vers le dossier PDF : pied de page et bandeau du terminal */
+.doc-link { margin: 10px 0 4px; }
+.doc-link .btn { text-decoration: none; }
+.tm-stat .tm-pdf { padding: 1px 6px; font-size: 10px; text-decoration: none; }
