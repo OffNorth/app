@@ -346,7 +346,9 @@ export function createBot(ctx) {
     ? row(t('bot.tmDay', { p: a.dailyLimitPct }), money(a.dailyFloor), `<em>${Math.round((a.dailyUsed || 0) * 100)} %</em>${bar(a.dailyUsed, danger(a.dailyUsed))}`)
     : row(t('bot.tmDayNone'), '—')}
         ${row(t(a.trailing ? 'bot.tmMaxT' : 'bot.tmMax', { v: money(a.maxLoss) }), money(a.maxFloor), `<em>${Math.round((a.maxUsed || 0) * 100)} %</em>${bar(a.maxUsed, danger(a.maxUsed))}`)}
-        ${row(t('bot.tmDays'), `${a.days} / ${a.minDays}`, a.bestDayPct ? `<em>${t('bot.tmBest', { p: a.bestDayPct })}</em>` : '')}
+        ${a.phase === 'funded'
+    ? row(t('bot.tmPayouts'), `${a.payouts?.n || 0}${a.payoutsMax ? ` / ${a.payoutsMax}` : ''}`, `<em>${money(a.payouts?.trader || 0)}</em>`) + (a.maxContracts ? row(t('bot.tmContracts'), `${a.maxContracts} micros`) : '')
+    : row(t('bot.tmDays'), `${a.days} / ${a.minDays}`, a.bestDayPct ? `<em>${t('bot.tmBest', { p: a.bestDayPct })}</em>` : '')}
       </div>
       <div class="tm-curve" data-curve="${esc(a.id)}"></div>
     </section>`;
