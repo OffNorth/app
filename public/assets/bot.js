@@ -465,7 +465,7 @@ export function createBot(ctx) {
         const c = st.chart;
         if (!c || c.chart !== chart) return;
         const bar = param?.time ? c.bars.find((b) => b.time === param.time) : null;
-        c.ohlc.innerHTML = ohlcHTML(m, bar || c.bars[c.bars.length - 1], c.bars);
+        c.ohlc.innerHTML = ohlcHTML(m, bar || c.bars[c.bars.length - 1], c.bars) + (c.stale ? `<span class="tm-stale">${esc(c.stale)}</span>` : '');
       });
     }
     const c = st.chart;
@@ -474,6 +474,12 @@ export function createBot(ctx) {
     const hasVol = data.candles.some((x) => x[5] > 0);
     c.vol.setData(hasVol ? data.candles.map(([time, o, , , cl, v]) => ({ time: local(time), value: v || 0, color: cl >= o ? TVC.volUp : TVC.volDn })) : []);
     c.ohlc.innerHTML = ohlcHTML(m, c.bars[c.bars.length - 1], c.bars);
+    // Données figées (marché fermé, jour férié, flux Yahoo en retard) : dite clairement plutôt qu'un graphique qui semble bloqué
+    const lastT = data.candles[data.candles.length - 1][0];
+    const ageMin = (Date.now() / 1000 - lastT) / 60;
+    c.stale = ageMin > Math.max(20, (3 * TF_SEC[st.tf]) / 60) && st.tf !== '1d'
+      ? t('bot.stale', { d: ctx.day(lastT * 1000), t: ctx.time(lastT * 1000) }) : '';
+    if (c.stale) c.ohlc.insertAdjacentHTML('beforeend', `<span class="tm-stale">${esc(c.stale)}</span>`);
     // Lignes des positions ouvertes : stop actuel (il peut avoir suivi le cours) ; entrée et objectif sont dans les zones
     for (const l of c.lines) c.series.removePriceLine(l);
     c.lines = [];

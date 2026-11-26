@@ -1221,3 +1221,5 @@ select, .lang-select { background-color: var(--bg); border: 1px solid var(--bord
 .pine-steps li { margin: 3px 0; }
 .pine-code { width: 100%; min-height: 220px; resize: vertical; font: 11px/1.45 var(--mono); color: var(--text); background: var(--bg); border: 1px solid var(--border); padding: 8px; white-space: pre; overflow: auto; }
 .pine-msg { margin: 0; font-size: 12.5px; color: var(--up); min-height: 1em; }
+
+.tm-stale { flex-basis: 100%; margin-top: 2px; color: #e0a526; font-size: 11px; }
