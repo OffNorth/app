@@ -285,7 +285,7 @@ export function createBot(ctx) {
   }
 
   // Libellé court d'un compte : « Lucid financé », « Lucid journalier », « Lucid intraday » (2 évaluations Lucid)
-  const tagOf = (a) => { const g = a.tag || (a.id === 'lucidf' ? 'funded' : ''); return g === 'funded' ? t('bot.fundedShort') : g === 'daily' ? t('bot.tagDaily') : g === 'intraday' ? t('bot.tagIntraday') : ''; };
+  const tagOf = (a) => { const g = a.tag || (a.id === 'lucidf' ? 'funded' : ''); return g === 'funded' ? t('bot.fundedShort') : g === 'daily' ? t('bot.tagDaily') : g === 'intraday' ? t('bot.tagIntraday') : g === 'combined' ? t('bot.tagCombined') : ''; };
   const acctName = (a) => (tagOf(a) ? `${a.firm} ${tagOf(a)}` : a.firm);
   const positionsOn = (market) => (st.d?.accounts || []).flatMap((a) => a.open.filter((p) => p.market === market).map((p) => ({ ...p, acct: acctName(a) })));
   const allOpen = () => (st.d?.accounts || []).flatMap((a) => a.open.map((p) => ({ a, p })));
