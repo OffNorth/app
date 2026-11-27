@@ -1,7 +1,7 @@
 // Service worker Marchés : coquille de l'app en cache + dernières données API pour le hors-ligne.
 // Réseau d'abord pour tout (pages, scripts, styles, API) : la version en ligne est toujours celle affichée ;
 // le cache ne sert qu'hors connexion. Les logos restent en cache d'abord (ils ne changent pas).
-const VERSION = 'v60'; // à garder égal à APP_BUILD dans assets/app.js
+const VERSION = 'v61'; // à garder égal à APP_BUILD dans assets/app.js
 const SHELL = `marches-shell-${VERSION}`;
 const DATA = `marches-data-${VERSION}`;
 const IMG = 'marches-logos-v2'; // logos (servis par le relais /api/logo du site), conservés d'une version à l'autre
