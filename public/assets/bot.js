@@ -39,15 +39,34 @@ function metalsOpen(t) {
   if (p.weekday === 'Fri') return h < 17;
   return h !== 17;
 }
+// Lecture directe de Binance par le navigateur ; si elle échoue une fois (réseau, pays, navigateur), relais du site
+// (/api/bn, serveur en Europe) pour le reste de la visite
+let bnDirect = true;
+async function getJSONTimeout(url, ms) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctl.signal, cache: 'no-store' });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function binanceRows(sym, tf) {
+  if (bnDirect) {
+    const rows = await getJSONTimeout(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=1000`, 5000);
+    if (Array.isArray(rows)) return rows;
+    bnDirect = false;
+  }
+  return getJSONTimeout(`/api/bn?symbol=${sym}&interval=${tf}`, 8000);
+}
 async function binanceCandles(id, tf, yahoo, botBasis) {
   const sym = BN_SYM[id];
   if (!sym || tf === '1d') return null;
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 8000);
   try {
-    const res = await fetch(`https://fapi.binance.com/fapi/v1/klines?symbol=${sym}&interval=${tf}&limit=1000`, { signal: ctl.signal });
-    if (!res.ok) return null;
-    const rows = await res.json();
+    const rows = await binanceRows(sym, tf);
     const bars = (Array.isArray(rows) ? rows : []).map((r) => [Math.floor(Number(r[0]) / 1000), +r[1], +r[2], +r[3], +r[4], +r[5]])
       .filter((b) => b[4] > 0 && metalsOpen(b[0]));
     if (bars.length < 10) return null;
@@ -60,8 +79,6 @@ async function binanceCandles(id, tf, yahoo, botBasis) {
     return shift === null ? null : { candles: bars, shift, sym };
   } catch {
     return null;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
