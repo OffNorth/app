@@ -14,9 +14,9 @@ const readSrc = () => { try { return localStorage.getItem(SRC_KEY) === 'tv' ? 't
 const TV = { gold: 'COMEX:GC1!', nas100: 'NASDAQ:NDX', spx: 'SP:SPX', eurusd: 'FX:EURUSD', silver: 'COMEX:SI1!', dow: 'DJ:DJI', russell: 'TVC:RUT',
   tlt: 'NASDAQ:TLT', googl: 'NASDAQ:GOOGL', pltr: 'NASDAQ:PLTR', lly: 'NYSE:LLY', ba: 'NYSE:BA' };
 // Symboles intégrables dans le widget (les indices et futures n'y sont pas disponibles : CFD équivalents, comme sur FTMO)
-const TV_EMBED = { ...TV, gold: 'OANDA:XAUUSD', nas100: 'CAPITALCOM:US100', spx: 'CAPITALCOM:US500', silver: 'OANDA:XAGUSD', dow: 'CAPITALCOM:US30', russell: 'CAPITALCOM:RTY' };
+const TV_EMBED = { ...TV, gold: 'OANDA:XAUUSD', nas100: 'CAPITALCOM:US100', spx: 'CAPITALCOM:US500', silver: 'OANDA:XAGUSD', dow: 'CAPITALCOM:US30', russell: 'CAPITALCOM:RTY', btc: 'BINANCE:BTCUSDT.P', eth: 'BINANCE:ETHUSDT.P' };
 // Code court affiché à la place d'un émoji (contrat équivalent)
-const CODE = { gold: 'XAU', nas100: 'NDX', spx: 'SPX', eurusd: 'EURUSD', silver: 'XAG', dow: 'DJI', russell: 'RUT' };
+const CODE = { btc: 'BTC', eth: 'ETH', gold: 'XAU', nas100: 'NDX', spx: 'SPX', eurusd: 'EURUSD', silver: 'XAG', dow: 'DJI', russell: 'RUT' };
 const LIVE_MS = 15_000;
 const CANDLE_MS = 30_000;
 const PAGE = 40;
