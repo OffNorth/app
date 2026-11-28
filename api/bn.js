@@ -4,7 +4,7 @@
 // serveurs américains (451). Données publiques, sans compte ni clé. Cache CDN 10 s.
 export const config = { runtime: 'edge', regions: ['fra1', 'cdg1'] };
 
-const SYMBOLS = new Set(['XAUUSDT', 'XAGUSDT']);
+const SYMBOLS = new Set(['XAUUSDT', 'XAGUSDT', 'BTCUSDT', 'ETHUSDT']);
 const INTERVALS = new Set(['1m', '5m', '15m', '1h', '4h']);
 const out = (body, status = 200, cache = 'no-store') =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': cache } });

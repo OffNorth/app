@@ -28,7 +28,8 @@ const local = (sec) => sec - new Date(sec * 1000).getTimezoneOffset() * 60;
  * l'échelle Yahoo : ils sont décalés de l'écart Binance − Yahoo (celui du bot s'il trade sur Binance, sinon la médiane
  * des clôtures communes). Binance injoignable (pays bloqué) ou écart inconnu : bougies Yahoo, comme avant.
  */
-const BN_SYM = { gold: 'XAUUSDT', silver: 'XAGUSDT' };
+const BN_SYM = { gold: 'XAUUSDT', silver: 'XAGUSDT', btc: 'BTCUSDT', eth: 'ETHUSDT' };
+const BN_CRYPTO = new Set(['btc', 'eth']); // cotent 24 h / 24, même échelle que le bot (pas de décalage)
 const NYH = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', hour12: false });
 /** Marché des métaux ouvert (dimanche 18 h → vendredi 17 h à New York, pause de 17 h) : Binance cote aussi le week-end. */
 function metalsOpen(t) {
@@ -39,9 +40,8 @@ function metalsOpen(t) {
   if (p.weekday === 'Fri') return h < 17;
   return h !== 17;
 }
-// Lecture directe de Binance par le navigateur ; si elle échoue une fois (réseau, pays, navigateur), relais du site
-// (/api/bn, serveur en Europe) pour le reste de la visite
-let bnDirect = true;
+// Binance n'autorise pas la lecture directe depuis un site web (CORS) : toujours le relais du site (/api/bn, serveur en Europe)
+let bnDirect = false;
 async function getJSONTimeout(url, ms) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), ms);
@@ -68,9 +68,9 @@ async function binanceCandles(id, tf, yahoo, botBasis) {
   try {
     const rows = await binanceRows(sym, tf);
     const bars = (Array.isArray(rows) ? rows : []).map((r) => [Math.floor(Number(r[0]) / 1000), +r[1], +r[2], +r[3], +r[4], +r[5]])
-      .filter((b) => b[4] > 0 && metalsOpen(b[0]));
+      .filter((b) => b[4] > 0 && (BN_CRYPTO.has(id) || metalsOpen(b[0])));
     if (bars.length < 10) return null;
-    let shift = Number.isFinite(botBasis) ? botBasis : null;
+    let shift = BN_CRYPTO.has(id) ? 0 : Number.isFinite(botBasis) ? botBasis : null;
     if (shift === null) {
       const ym = new Map((yahoo || []).map((c) => [c[0], c[4]]));
       const d = bars.filter((b) => ym.has(b[0])).slice(-60).map((b) => b[4] - ym.get(b[0])).sort((x, y) => x - y);
